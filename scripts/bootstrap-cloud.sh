@@ -35,6 +35,22 @@ ensure_durable_directory SARAFAN_BACKUP_LOG_DIR
   || fail "SARAFAN_POSTGRES_PASSWORD must be set to a non-default value"
 readonly JWT_SECRET="${SARAFAN_JWT_SECRET:-}"
 [[ ${#JWT_SECRET} -ge 32 ]] || fail "SARAFAN_JWT_SECRET must contain at least 32 characters"
+readonly BACKOFFICE_JWT_SECRET="${SARAFAN_BACKOFFICE_JWT_SECRET:-}"
+[[ ${#BACKOFFICE_JWT_SECRET} -ge 32 ]] \
+  || fail "SARAFAN_BACKOFFICE_JWT_SECRET must contain at least 32 characters"
+[[ "$BACKOFFICE_JWT_SECRET" != "$JWT_SECRET" ]] \
+  || fail "SARAFAN_BACKOFFICE_JWT_SECRET must differ from SARAFAN_JWT_SECRET"
+if [[ "${SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED:-false}" == true ]]; then
+  [[ "${SARAFAN_REAL_ORDERS_ENABLED:-false}" != true ]] \
+    || fail "Back-office demo bootstrap cannot run with real orders enabled"
+  [[ "${SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED:-false}" != true ]] \
+    || fail "Back-office demo bootstrap cannot run with real payment integration enabled"
+  [[ -n "${SARAFAN_BACKOFFICE_BOOTSTRAP_EMAIL:-}" ]] \
+    || fail "SARAFAN_BACKOFFICE_BOOTSTRAP_EMAIL must be set while bootstrap is enabled"
+  readonly BACKOFFICE_BOOTSTRAP_PASSWORD="${SARAFAN_BACKOFFICE_BOOTSTRAP_PASSWORD:-}"
+  [[ ${#BACKOFFICE_BOOTSTRAP_PASSWORD} -ge 12 && ${#BACKOFFICE_BOOTSTRAP_PASSWORD} -le 72 ]] \
+    || fail "SARAFAN_BACKOFFICE_BOOTSTRAP_PASSWORD must contain 12 to 72 characters"
+fi
 
 case "$DEPLOYMENT_TARGET" in
   edge)

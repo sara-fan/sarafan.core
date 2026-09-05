@@ -4,14 +4,22 @@
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+
+using Sarafan.Core.Authentication;
+using Sarafan.Core.Data;
 
 namespace Sarafan.Core.Tests;
 
 [SetUpFixture]
 public sealed class IntegrationTestEnvironment
 {
+    public const string BackofficeEmail = "administrator@sarafan.test";
+    public const string BackofficePassword = "Backoffice_test_password_13";
+
     private static string _databaseName = string.Empty;
     private static string _adminConnectionString = string.Empty;
     private static readonly Dictionary<string, string?> PreviousEnvironment = new(StringComparer.Ordinal);
@@ -57,10 +65,41 @@ public sealed class IntegrationTestEnvironment
         SetEnvironment("Authentication__SecureCookies", "false");
         SetEnvironment("Authentication__TermsVersion", "test-terms");
         SetEnvironment("Authentication__PersonalDataVersion", "test-personal-data");
+        SetEnvironment("BackofficeAuthentication__Issuer", "sarafan.core.backoffice.tests");
+        SetEnvironment("BackofficeAuthentication__Audience", "sarafan.backoffice.tests");
+        SetEnvironment(
+            "BackofficeAuthentication__SigningKey",
+            "sarafan-backoffice-tests-signing-key-distinct-from-customer-key");
+        SetEnvironment("BackofficeAuthentication__AccessTokenMinutes", "15");
+        SetEnvironment("BackofficeAuthentication__RefreshTokenDays", "7");
+        SetEnvironment("BackofficeAuthentication__RefreshCookieName", "sarafan.backoffice.refresh");
+        SetEnvironment("BackofficeAuthentication__BCryptWorkFactor", "10");
+        SetEnvironment("BackofficeAuthentication__SecureCookies", "false");
+        SetEnvironment("BackofficeBootstrap__Enabled", "true");
+        SetEnvironment("BackofficeBootstrap__FirstName", "Maxim");
+        SetEnvironment("BackofficeBootstrap__LastName", "Samsonov");
+        SetEnvironment("BackofficeBootstrap__Email", BackofficeEmail);
+        SetEnvironment("BackofficeBootstrap__Password", BackofficePassword);
         Factory = new TestWebApplicationFactory();
         using var client = Factory.CreateClient();
         using var response = await client.GetAsync("/api/v1/status/status");
         response.EnsureSuccessStatusCode();
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var initialUsers = await database.BackofficeUsers
+            .AsNoTracking()
+            .Include(item => item.UserRoles)
+            .ToListAsync();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(initialUsers, Has.Count.EqualTo(1));
+            Assert.That(initialUsers[0].FirstName, Is.EqualTo("Maxim"));
+            Assert.That(initialUsers[0].LastName, Is.EqualTo("Samsonov"));
+            Assert.That(initialUsers[0].NormalizedEmail, Is.EqualTo(BackofficeEmail));
+            Assert.That(initialUsers[0].UserRoles.Select(item => item.RoleCode),
+                Is.EqualTo(new[] { BackofficeRoles.Administrator }));
+            Assert.That(initialUsers[0].IsDemo, Is.True);
+        }
     }
 
     [OneTimeTearDown]

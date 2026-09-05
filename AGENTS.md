@@ -17,6 +17,13 @@ This file is a part of the Sarafan application
 
 ## Code Standards and Requirements
 
+### Back-office identity boundary
+
+- Keep back-office users, roles, refresh sessions, credentials, JWT issuer/audience/signing key, cookie, authentication scheme, and `/api/v1/backoffice` routes separate from customer identity and `/api/v1/auth`.
+- Keep the fixed back-office role catalogue and deny-by-default action-to-role matrix in `src/Sarafan.Core/Authentication`; unknown roles and actions must never grant access.
+- Revoke back-office refresh sessions and increment the user's token version whenever email, password, active state, or roles change. Serialize administrator state/role mutations with the PostgreSQL advisory transaction lock and reject disabling or demoting the last active Administrator.
+- Mark the bootstrap Administrator as demo until its password is changed. Provision it only through the explicitly enabled, idempotent migration bootstrap; supply credentials through secure runtime configuration, never tracked files or logs. Reject bootstrap and reject startup with any active demo staff account while real orders or real payment integration are enabled, then disable and remove bootstrap credentials after the first successful run.
+
 ### Controller Error Responses
 
 - Represent every in-scope API error as an RFC 9457 Problem Details document and return it as `application/problem+json`.

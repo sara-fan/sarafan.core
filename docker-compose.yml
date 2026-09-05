@@ -42,6 +42,9 @@ services:
       ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${SARAFAN_POSTGRES_DB:-sarafan};Username=${SARAFAN_POSTGRES_USER:-postgres};Password=${SARAFAN_POSTGRES_PASSWORD:-postgres}
       Authentication__SigningKey: ${SARAFAN_JWT_SECRET:-sarafan-development-signing-key-change-before-deployment}
       Authentication__SecureCookies: "false"
+      BackofficeAuthentication__SigningKey: ${SARAFAN_BACKOFFICE_JWT_SECRET:-sarafan-backoffice-development-signing-key-change-before-deployment}
+      BackofficeAuthentication__SecureCookies: "false"
+      BackofficeBootstrap__Enabled: "false"
     depends_on:
       db:
         condition: service_healthy

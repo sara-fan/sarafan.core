@@ -4,6 +4,7 @@
 
 using Microsoft.EntityFrameworkCore;
 
+using Sarafan.Core.Authentication;
 using Sarafan.Core.Models;
 
 namespace Sarafan.Core.Data;
@@ -15,6 +16,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<CustomerPhoto> CustomerPhotos => Set<CustomerPhoto>();
     public DbSet<CustomerConsent> CustomerConsents => Set<CustomerConsent>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
+    public DbSet<BackofficeUser> BackofficeUsers => Set<BackofficeUser>();
+    public DbSet<BackofficeRole> BackofficeRoles => Set<BackofficeRole>();
+    public DbSet<BackofficeUserRole> BackofficeUserRoles => Set<BackofficeUserRole>();
+    public DbSet<BackofficeRefreshSession> BackofficeRefreshSessions => Set<BackofficeRefreshSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -96,6 +101,74 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         session.HasOne(item => item.Customer)
             .WithMany(item => item.RefreshSessions)
             .HasForeignKey(item => item.CustomerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        ConfigureBackoffice(modelBuilder);
+    }
+
+    private static void ConfigureBackoffice(ModelBuilder modelBuilder)
+    {
+        var user = modelBuilder.Entity<BackofficeUser>();
+        user.ToTable("backoffice_users");
+        user.HasKey(item => item.Id);
+        user.Property(item => item.Id).HasColumnName("id");
+        user.Property(item => item.Email).HasColumnName("email").HasMaxLength(254).IsRequired();
+        user.Property(item => item.NormalizedEmail).HasColumnName("normalized_email").HasMaxLength(254).IsRequired();
+        user.HasIndex(item => item.NormalizedEmail).IsUnique();
+        user.Property(item => item.FirstName).HasColumnName("first_name").HasMaxLength(100).IsRequired();
+        user.Property(item => item.LastName).HasColumnName("last_name").HasMaxLength(100).IsRequired();
+        user.Property(item => item.Patronymic).HasColumnName("patronymic").HasMaxLength(100);
+        user.Property(item => item.PasswordHash).HasColumnName("password_hash").HasMaxLength(128).IsRequired();
+        user.Property(item => item.IsActive).HasColumnName("is_active");
+        user.Property(item => item.IsDemo).HasColumnName("is_demo");
+        user.Property(item => item.TokenVersion).HasColumnName("token_version");
+        user.Property(item => item.CreatedAt).HasColumnName("created_at");
+        user.Property(item => item.UpdatedAt).HasColumnName("updated_at");
+
+        var role = modelBuilder.Entity<BackofficeRole>();
+        role.ToTable("backoffice_roles");
+        role.HasKey(item => item.Code);
+        role.Property(item => item.Code).HasColumnName("code").HasMaxLength(32);
+        role.Property(item => item.DisplayName).HasColumnName("display_name").HasMaxLength(64).IsRequired();
+        role.HasData(Sarafan.Core.Authentication.BackofficeRoles.Definitions.Select(item => new BackofficeRole
+        {
+            Code = item.Code,
+            DisplayName = item.DisplayName
+        }));
+
+        var userRole = modelBuilder.Entity<BackofficeUserRole>();
+        userRole.ToTable("backoffice_user_roles");
+        userRole.HasKey(item => new { item.BackofficeUserId, item.RoleCode });
+        userRole.Property(item => item.BackofficeUserId).HasColumnName("backoffice_user_id");
+        userRole.Property(item => item.RoleCode).HasColumnName("role_code").HasMaxLength(32);
+        userRole.HasOne(item => item.BackofficeUser)
+            .WithMany(item => item.UserRoles)
+            .HasForeignKey(item => item.BackofficeUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        userRole.HasOne(item => item.Role)
+            .WithMany(item => item.UserRoles)
+            .HasForeignKey(item => item.RoleCode)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var refreshSession = modelBuilder.Entity<BackofficeRefreshSession>();
+        refreshSession.ToTable("backoffice_refresh_sessions");
+        refreshSession.HasKey(item => item.Id);
+        refreshSession.Property(item => item.Id).HasColumnName("id");
+        refreshSession.Property(item => item.BackofficeUserId).HasColumnName("backoffice_user_id");
+        refreshSession.Property(item => item.FamilyId).HasColumnName("family_id");
+        refreshSession.Property(item => item.TokenHash).HasColumnName("token_hash").HasMaxLength(64);
+        refreshSession.Property(item => item.ReplacedByTokenHash).HasColumnName("replaced_by_token_hash").HasMaxLength(64);
+        refreshSession.Property(item => item.CreatedAt).HasColumnName("created_at");
+        refreshSession.Property(item => item.ExpiresAt).HasColumnName("expires_at");
+        refreshSession.Property(item => item.RevokedAt).HasColumnName("revoked_at");
+        refreshSession.Property(item => item.CreatedByIp).HasColumnName("created_by_ip").HasMaxLength(64);
+        refreshSession.Property(item => item.UserAgent).HasColumnName("user_agent").HasMaxLength(256);
+        refreshSession.Property(item => item.Version).HasColumnName("xmin").IsRowVersion();
+        refreshSession.HasIndex(item => item.TokenHash).IsUnique();
+        refreshSession.HasIndex(item => new { item.BackofficeUserId, item.FamilyId });
+        refreshSession.HasOne(item => item.BackofficeUser)
+            .WithMany(item => item.RefreshSessions)
+            .HasForeignKey(item => item.BackofficeUserId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

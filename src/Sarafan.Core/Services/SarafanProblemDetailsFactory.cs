@@ -71,10 +71,22 @@ public sealed class SarafanProblemDetailsFactory(
                 StatusCodes.Status401Unauthorized,
                 "Сеанс завершён",
                 "Сеанс истёк или больше недействителен. Войдите в систему повторно."),
+            ["invalid_backoffice_access_token"] = new(
+                StatusCodes.Status401Unauthorized,
+                "Недействительный токен сотрудника",
+                "Войдите в служебную систему повторно."),
+            ["invalid_backoffice_refresh_token"] = new(
+                StatusCodes.Status401Unauthorized,
+                "Служебный сеанс завершён",
+                "Служебный сеанс истёк или больше недействителен. Войдите повторно."),
             ["login_failed"] = new(
                 StatusCodes.Status401Unauthorized,
                 "Не удалось войти",
                 "Номер телефона или код подтверждения неверен."),
+            ["backoffice_login_failed"] = new(
+                StatusCodes.Status401Unauthorized,
+                "Не удалось войти",
+                "Адрес электронной почты или пароль неверен."),
             ["access_denied"] = new(
                 StatusCodes.Status403Forbidden,
                 "Доступ запрещён",
@@ -87,10 +99,34 @@ public sealed class SarafanProblemDetailsFactory(
                 StatusCodes.Status404NotFound,
                 "Фотография не найдена",
                 "Фотография пользователя ещё не загружена."),
+            ["backoffice_user_not_found"] = new(
+                StatusCodes.Status404NotFound,
+                "Сотрудник не найден",
+                "Запрошенная служебная учётная запись не найдена."),
             ["account_exists"] = new(
                 StatusCodes.Status409Conflict,
                 "Учётная запись уже существует",
                 "Для этого номера телефона уже зарегистрирована учётная запись."),
+            ["backoffice_email_exists"] = new(
+                StatusCodes.Status409Conflict,
+                "Учётная запись уже существует",
+                "Служебная учётная запись с этим адресом электронной почты уже существует."),
+            ["last_backoffice_administrator"] = new(
+                StatusCodes.Status409Conflict,
+                "Требуется администратор",
+                "Нельзя отключить или понизить последнего активного администратора."),
+            ["demo_backoffice_forbidden"] = new(
+                StatusCodes.Status409Conflict,
+                "Демонстрационная учётная запись запрещена",
+                "Сначала замените демонстрационный пароль или отключите эту учётную запись."),
+            ["invalid_backoffice_role"] = new(
+                StatusCodes.Status400BadRequest,
+                "Некорректная служебная роль",
+                "Укажите хотя бы одну роль из доступного каталога."),
+            ["invalid_backoffice_user_data"] = new(
+                StatusCodes.Status400BadRequest,
+                "Некорректные данные сотрудника",
+                "Проверьте имя, фамилию и требования к паролю."),
             ["rate_limited"] = new(
                 StatusCodes.Status429TooManyRequests,
                 "Слишком много запросов",

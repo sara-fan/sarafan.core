@@ -397,6 +397,8 @@ public sealed class ProblemDetailsContractTests
         var expected = new Dictionary<string, int>
         {
             ["invalid_refresh_token"] = 401,
+            ["invalid_backoffice_refresh_token"] = 401,
+            ["access_denied"] = 403,
             ["customer_not_found"] = 404,
             ["photo_not_found"] = 404,
             ["invalid_photo_size"] = 400,
@@ -432,6 +434,7 @@ public sealed class ProblemDetailsContractTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(controller.CustomerId(), Is.EqualTo(42));
+            Assert.That(controller.BackofficeUserId(), Is.EqualTo(42));
             Assert.That(controller.Address(), Is.EqualTo("unknown"));
         }
 
@@ -452,6 +455,22 @@ public sealed class ProblemDetailsContractTests
         {
             Assert.That(exception!.StatusCode, Is.EqualTo(401));
             Assert.That(exception.Code, Is.EqualTo("invalid_access_token"));
+        }
+    }
+
+    [Test]
+    public void ControllerIdentityHelper_RejectsMissingBackofficeClaimWithoutClientText()
+    {
+        var controller = new TestController(new SarafanProblemDetailsFactory())
+        {
+            ControllerContext = new ControllerContext { HttpContext = Context("/controller") }
+        };
+
+        var exception = Assert.Throws<ServiceException>(() => controller.BackofficeUserId());
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exception!.StatusCode, Is.EqualTo(401));
+            Assert.That(exception.Code, Is.EqualTo("invalid_backoffice_access_token"));
         }
     }
 
@@ -503,11 +522,20 @@ public sealed class ProblemDetailsContractTests
             ["invalid_code"] = 401,
             ["invalid_access_token"] = 401,
             ["invalid_refresh_token"] = 401,
+            ["invalid_backoffice_access_token"] = 401,
+            ["invalid_backoffice_refresh_token"] = 401,
             ["login_failed"] = 401,
+            ["backoffice_login_failed"] = 401,
             ["access_denied"] = 403,
             ["customer_not_found"] = 404,
             ["photo_not_found"] = 404,
+            ["backoffice_user_not_found"] = 404,
             ["account_exists"] = 409,
+            ["backoffice_email_exists"] = 409,
+            ["last_backoffice_administrator"] = 409,
+            ["demo_backoffice_forbidden"] = 409,
+            ["invalid_backoffice_role"] = 400,
+            ["invalid_backoffice_user_data"] = 400,
             ["rate_limited"] = 429,
             ["internal_error"] = 500,
             ["verification_unavailable"] = 503,
@@ -729,6 +757,8 @@ public sealed class ProblemDetailsContractTests
         public ActionResult Problem(string code) => code switch
         {
             "invalid_refresh_token" => InvalidRefreshTokenProblem(),
+            "invalid_backoffice_refresh_token" => InvalidBackofficeRefreshTokenProblem(),
+            "access_denied" => AccessDeniedProblem(),
             "customer_not_found" => CustomerNotFoundProblem(),
             "photo_not_found" => PhotoNotFoundProblem(),
             "invalid_photo_size" => InvalidPhotoSizeProblem(),
@@ -738,6 +768,8 @@ public sealed class ProblemDetailsContractTests
         };
 
         public int CustomerId() => CurrentCustomerId();
+
+        public int BackofficeUserId() => CurrentBackofficeUserId();
 
         public string Address() => RemoteAddress();
     }
