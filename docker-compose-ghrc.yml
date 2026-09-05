@@ -9,6 +9,10 @@ x-api-environment: &api-environment
   ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${SARAFAN_POSTGRES_DB:-sarafan};Username=${SARAFAN_POSTGRES_USER:-postgres};Password=${SARAFAN_POSTGRES_PASSWORD:?Set SARAFAN_POSTGRES_PASSWORD}
   Authentication__SigningKey: ${SARAFAN_JWT_SECRET:?Set SARAFAN_JWT_SECRET}
   Authentication__SecureCookies: "true"
+  BackofficeAuthentication__SigningKey: ${SARAFAN_BACKOFFICE_JWT_SECRET:?Set SARAFAN_BACKOFFICE_JWT_SECRET}
+  BackofficeAuthentication__SecureCookies: "true"
+  BackofficeBootstrap__RealOrdersEnabled: ${SARAFAN_REAL_ORDERS_ENABLED:-false}
+  BackofficeBootstrap__RealPaymentIntegrationEnabled: ${SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED:-false}
   Database__ApplyMigrations: "false"
   ForwardedHeaders__ForwardLimit: "2"
   ForwardedHeaders__KnownNetworks__0: "10.0.0.0/8"
@@ -70,7 +74,13 @@ services:
   migrate:
     image: ghcr.io/maxirmx/sarafan.core:${SARAFAN_CORE_IMAGE_TAG:-latest}
     restart: "no"
-    environment: *api-environment
+    environment:
+      <<: *api-environment
+      BackofficeBootstrap__Enabled: ${SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED:-false}
+      BackofficeBootstrap__FirstName: Maxim
+      BackofficeBootstrap__LastName: Samsonov
+      BackofficeBootstrap__Email: ${SARAFAN_BACKOFFICE_BOOTSTRAP_EMAIL:-}
+      BackofficeBootstrap__Password: ${SARAFAN_BACKOFFICE_BOOTSTRAP_PASSWORD:-}
     command: ["dotnet", "Sarafan.Core.dll", "--migrate-only"]
     depends_on:
       db:

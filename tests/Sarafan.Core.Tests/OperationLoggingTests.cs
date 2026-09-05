@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -165,6 +166,21 @@ public sealed class OperationLoggingTests
         var customer = new Customer { Phone = Secret, Profile = new CustomerProfile { FirstName = Secret } };
         var dto = CustomerDto.From(customer, true);
         var session = new AuthenticationSessionDto(Secret, DateTimeOffset.UtcNow, dto);
+        var backofficeUser = new BackofficeUser
+        {
+            Email = Secret,
+            NormalizedEmail = Secret,
+            FirstName = Secret,
+            LastName = Secret,
+            PasswordHash = Secret,
+            UserRoles = [new BackofficeUserRole { RoleCode = BackofficeRoles.Operator }]
+        };
+        var backofficeDto = BackofficeUserDto.From(backofficeUser);
+        var backofficeIdentity = BackofficeIdentityDto.From(backofficeUser);
+        var backofficeSession = new BackofficeAuthenticationSessionDto(
+            Secret,
+            DateTimeOffset.UtcNow,
+            backofficeIdentity);
         var problem = new SarafanProblemDetailsFactory().Create(new DefaultHttpContext(), 400, "bad_request");
         problem.Detail = Secret;
         using var stream = new MemoryStream([1, 2, 3]);
@@ -173,7 +189,14 @@ public sealed class OperationLoggingTests
         object?[] values =
         [
             Secret, new PoisonValue(), null, customer, dto, session, new AuthenticationSession(session, Secret),
+            backofficeUser, backofficeDto, backofficeIdentity, new[] { backofficeDto },
+            new BackofficeRoleDto(Secret, Secret), new[] { new BackofficeRoleDto(Secret, Secret) },
+            backofficeSession, new BackofficeAuthenticationSession(backofficeSession, Secret),
             new AccessTokenResult(Secret, DateTimeOffset.UtcNow), new CustomerProfileUpdateRequest { Address = Secret },
+            new BackofficeLoginRequest { Email = Secret, Password = Secret },
+            new BackofficeUserCreateRequest { Email = Secret, Password = Secret, Roles = [Secret] },
+            new BackofficeUserUpdateRequest { Email = Secret, Password = Secret, Roles = [Secret] },
+            new BackofficeSelfUpdateRequest { FirstName = Secret, LastName = Secret, Password = Secret },
             new RequestCodeRequest { Phone = Secret, Purpose = " REGISTER " },
             new RequestCodeRequest { Phone = Secret, Purpose = Secret },
             new RequestCodeRequest { Phone = Secret, Purpose = null! },
@@ -194,6 +217,8 @@ public sealed class OperationLoggingTests
         Assert.That(summaries, Does.Contain("cancellation requested=False"));
         Assert.That(summaries, Does.Contain($"ServiceStatus(name=Sarafan.Core; status=ok; version={VersionInfo.AppVersion})"));
         Assert.That(summaries, Does.Contain("RequestCodeRequest(purpose=register; phone=[redacted])"));
+        Assert.That(summaries, Does.Contain("BackofficeUserDto collection(count=1)"));
+        Assert.That(summaries, Does.Contain("BackofficeRoleDto collection(count=1)"));
         Assert.That(summaries.Count(summary => summary.Contains("purpose=other")), Is.EqualTo(2));
         Assert.That(LogValueSummary.Inputs(), Is.EqualTo("none"));
     }
@@ -430,6 +455,106 @@ public sealed class OperationLoggingTests
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("CustomerDto([redacted])")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
         Assert.That(string.Join(' ', _logs.Records.Select(record => record.Message)), Does.Not.Contain(phone).And.Not.Contain(session.AccessToken));
+        AssertPrivate();
+    }
+
+    [Test]
+    public async Task BackofficeHttpFlow_LogsEveryControllerAndServiceBoundaryWithoutIdentityOrSecrets()
+    {
+        using var app = IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder =>
+            builder.ConfigureLogging(logging => logging.AddProvider(_logs).AddFilter<LogCollector>(null, LogLevel.Debug)));
+        using var client = app.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            HandleCookies = true
+        });
+        using var login = await client.PostAsJsonAsync("/api/v1/backoffice/auth/login", new BackofficeLoginRequest
+        {
+            Email = IntegrationTestEnvironment.BackofficeEmail,
+            Password = IntegrationTestEnvironment.BackofficePassword
+        });
+        login.EnsureSuccessStatusCode();
+        var administrator = (await login.Content.ReadFromJsonAsync<BackofficeAuthenticationSessionDto>())!;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", administrator.AccessToken);
+
+        using var me = await client.GetAsync("/api/v1/backoffice/auth/me");
+        using var roles = await client.GetAsync("/api/v1/backoffice/roles");
+        using var operations = await client.GetAsync("/api/v1/backoffice/users/ops");
+        using var users = await client.GetAsync("/api/v1/backoffice/users");
+        var email = $"{Guid.NewGuid():N}@sarafan.test";
+        const string password = "Operation_logging_password";
+        using var create = await client.PostAsJsonAsync("/api/v1/backoffice/users", new BackofficeUserCreateRequest
+        {
+            Email = email,
+            FirstName = "Logging",
+            LastName = "Test",
+            Password = password,
+            Roles = [BackofficeRoles.Operator]
+        });
+        create.EnsureSuccessStatusCode();
+        var created = (await create.Content.ReadFromJsonAsync<BackofficeUserDto>())!;
+        using var get = await client.GetAsync($"/api/v1/backoffice/users/{created.Id}");
+        using var update = await client.PutAsJsonAsync(
+            $"/api/v1/backoffice/users/{created.Id}",
+            new BackofficeUserUpdateRequest
+            {
+                Email = email,
+                FirstName = "Logging",
+                LastName = "Updated",
+                IsActive = true,
+                Roles = [BackofficeRoles.Operator]
+            });
+        using var updateSelf = await client.PutAsJsonAsync(
+            "/api/v1/backoffice/users/me",
+            new BackofficeSelfUpdateRequest
+            {
+                FirstName = administrator.User.FirstName,
+                LastName = administrator.User.LastName
+            });
+        using var disable = await client.DeleteAsync($"/api/v1/backoffice/users/{created.Id}");
+        using var refresh = await client.PostAsync("/api/v1/backoffice/auth/refresh", null);
+        using var logout = await client.PostAsync("/api/v1/backoffice/auth/logout", null);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<BackofficeBootstrapService>().ProvisionAsync(default);
+        }
+
+        Assert.That(new[] { me, roles, operations, users, get, update, updateSelf, refresh },
+            Is.All.Matches<HttpResponseMessage>(response => response.IsSuccessStatusCode));
+        Assert.That(disable.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+        Assert.That(logout.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+
+        Type[] controllers =
+        [
+            typeof(BackofficeAuthController),
+            typeof(BackofficeUsersController),
+            typeof(BackofficeRolesController)
+        ];
+        foreach (var action in controllers.SelectMany(type =>
+                     type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)))
+        {
+            AssertBoundary($"{action.DeclaringType!.FullName}.{action.Name}");
+        }
+
+        Type[] services =
+        [
+            typeof(BackofficeAuthenticationService),
+            typeof(BackofficeUserService),
+            typeof(BackofficeJwtTokenService),
+            typeof(BCryptBackofficePasswordHasher),
+            typeof(BackofficeBootstrapService)
+        ];
+        foreach (var type in services)
+        {
+            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            {
+                AssertBoundary($"{type.FullName}.{method.Name}");
+            }
+        }
+
+        var messages = string.Join(' ', _logs.Records.Select(record => record.Message));
+        Assert.That(messages, Does.Not.Contain(email).And.Not.Contain(password).And.Not.Contain(administrator.AccessToken));
+        Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
         AssertPrivate();
     }
 

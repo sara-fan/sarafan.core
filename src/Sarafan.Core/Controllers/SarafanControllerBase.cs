@@ -53,6 +53,18 @@ public abstract class SarafanControllerBase(SarafanProblemDetailsFactory problem
             StatusCodes.Status401Unauthorized,
             "invalid_refresh_token");
 
+    protected ActionResult InvalidBackofficeRefreshTokenProblem()
+        => problemDetailsFactory.CreateResult(
+            HttpContext,
+            StatusCodes.Status401Unauthorized,
+            "invalid_backoffice_refresh_token");
+
+    protected ActionResult AccessDeniedProblem()
+        => problemDetailsFactory.CreateResult(
+            HttpContext,
+            StatusCodes.Status403Forbidden,
+            "access_denied");
+
     protected ActionResult CustomerNotFoundProblem()
         => problemDetailsFactory.CreateResult(
             HttpContext,
@@ -92,6 +104,17 @@ public abstract class SarafanControllerBase(SarafanProblemDetailsFactory problem
             : throw new ServiceException(
                 StatusCodes.Status401Unauthorized,
                 "invalid_access_token");
+    }
+
+    protected int CurrentBackofficeUserId()
+    {
+        var value = User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.TryParse(value, out var userId)
+            ? userId
+            : throw new ServiceException(
+                StatusCodes.Status401Unauthorized,
+                "invalid_backoffice_access_token");
     }
 
     protected string RemoteAddress()

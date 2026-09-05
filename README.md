@@ -41,6 +41,25 @@ The v1 API status endpoint is <http://localhost:5080/api/v1/status/status> when 
 | `GET`, `PUT` | `/api/v1/customers/me` | Read or update the authenticated customer profile |
 | `GET`, `PUT`, `DELETE` | `/api/v1/customers/me/photo` | Manage a JPEG, PNG, or WebP profile photo up to 5 MiB |
 
+### Back-office identity
+
+Back-office users are a separate identity realm, not customer records. They use email/password login with BCrypt hashes, a dedicated JWT issuer, audience, signing key and authentication scheme, a separate refresh cookie/session table, and routes under `/api/v1/backoffice`. Customer tokens cannot authorize back-office routes, and back-office tokens cannot authorize customer routes.
+
+The fixed role catalogue contains `administrator`, `shift-manager`, `senior-operator`, and `operator`. Only Administrators can list, create, update, disable, or assign roles to back-office users. Any authenticated back-office user can read their current identity and update only their own name and password. The service prevents disabling or demoting the last active Administrator.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/backoffice/auth/login` | Log in with back-office email and password |
+| `POST` | `/api/v1/backoffice/auth/refresh` | Rotate the dedicated HttpOnly refresh cookie |
+| `POST` | `/api/v1/backoffice/auth/logout` | Revoke the back-office refresh-token family |
+| `GET` | `/api/v1/backoffice/auth/me` | Check the current back-office identity |
+| `GET`, `POST`, `PUT`, `DELETE` | `/api/v1/backoffice/users` | Administrator-only user management; same-user reads are limited |
+| `GET` | `/api/v1/backoffice/users/ops` | Logibooks-compatible Administrator role catalogue |
+| `PUT` | `/api/v1/backoffice/users/me` | Update the current user's name or password |
+| `GET` | `/api/v1/backoffice/roles` | Administrator-only role catalogue |
+
+For the one-time demo bootstrap, obtain the initial Administrator credentials securely from the issue owner. Configure a signing key distinct from the customer key, keep `SARAFAN_REAL_ORDERS_ENABLED` and `SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED` false, set `SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED=true`, and provide the email and password only through the protected deployment environment. Run the migration service once, verify login, then set the bootstrap flag to `false` and remove both credential values. The service and deployment bootstrap reject demo provisioning when either real-operation flag is enabled. Tracked configuration contains no credential value.
+
 ### API error contract (0.0.4)
 
 Version 0.0.4 replaces the demo's ad-hoc error responses with RFC 9457 Problem Details. API errors use `application/problem+json`; `type` is the canonical machine-readable identifier, while `code` remains an explicit compatibility extension. Clients should branch on `type`, display the safe Russian `detail`, and retain the structured `errors` extension for field-level validation. Clients must not make decisions by parsing localized `title` or `detail` text.

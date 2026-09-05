@@ -28,14 +28,33 @@ var authentication = builder.Configuration
     .GetSection(AuthenticationOptions.SectionName)
     .Get<AuthenticationOptions>()
     ?? throw new InvalidOperationException("Authentication configuration is required");
+var backofficeAuthentication = builder.Configuration
+    .GetSection(BackofficeAuthenticationOptions.SectionName)
+    .Get<BackofficeAuthenticationOptions>()
+    ?? throw new InvalidOperationException("BackofficeAuthentication configuration is required");
+var backofficeBootstrap = builder.Configuration
+    .GetSection(BackofficeBootstrapOptions.SectionName)
+    .Get<BackofficeBootstrapOptions>()
+    ?? new BackofficeBootstrapOptions();
 
 authentication.Validate();
+backofficeAuthentication.Validate();
+backofficeBootstrap.Validate();
+backofficeAuthentication.ValidateDistinctFrom(authentication);
 
 builder.Services
     .AddOptions<AuthenticationOptions>()
     .Bind(builder.Configuration.GetSection(AuthenticationOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+builder.Services
+    .AddOptions<BackofficeAuthenticationOptions>()
+    .Bind(builder.Configuration.GetSection(BackofficeAuthenticationOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services
+    .AddOptions<BackofficeBootstrapOptions>()
+    .Bind(builder.Configuration.GetSection(BackofficeBootstrapOptions.SectionName));
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddSingleton<SarafanProblemDetailsFactory>();
 builder.Services.AddExceptionHandler<SarafanExceptionHandler>();
@@ -55,8 +74,16 @@ builder.Services.AddSingleton<IPhoneNormalizer, PhoneNormalizer>();
 builder.Services.AddSingleton<IVerificationCodeProvider, PhoneSuffixVerificationCodeProvider>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<AuthenticationService>();
+builder.Services.AddScoped<IBackofficePasswordHasher, BCryptBackofficePasswordHasher>();
+builder.Services.AddScoped<BackofficeJwtTokenService>();
+builder.Services.AddScoped<BackofficeAuthenticationService>();
+builder.Services.AddScoped<BackofficeUserService>();
+builder.Services.AddScoped<BackofficeBootstrapService>();
+builder.Services.AddScoped<BackofficeJwtBearerEvents>();
 
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authentication.SigningKey));
+var backofficeSigningKey = new SymmetricSecurityKey(
+    Encoding.UTF8.GetBytes(backofficeAuthentication.SigningKey));
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -64,8 +91,17 @@ builder.Services
         options.MapInboundClaims = false;
         options.TokenValidationParameters = JwtTokenService.CreateValidationParameters(authentication, signingKey);
         options.Events = new SarafanJwtBearerEvents();
+    })
+    .AddJwtBearer(BackofficeAuthenticationDefaults.Scheme, options =>
+    {
+        options.MapInboundClaims = false;
+        options.Challenge = "Bearer";
+        options.TokenValidationParameters = BackofficeJwtTokenService.CreateValidationParameters(
+            backofficeAuthentication,
+            backofficeSigningKey);
+        options.EventsType = typeof(BackofficeJwtBearerEvents);
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(BackofficeAuthorization.Configure);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -73,6 +109,14 @@ builder.Services.AddSwaggerGen(options =>
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization token. Example: \"Authorization: Bearer {token}\"",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer"
+    });
+    options.AddSecurityDefinition("BackofficeBearer", new OpenApiSecurityScheme
+    {
+        Description = "Back-office JWT Authorization token. Example: \"Authorization: Bearer {token}\"",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.Http,
@@ -97,6 +141,9 @@ if (migrateOnly || builder.Configuration.GetValue<bool>("Database:ApplyMigration
         await using var scope = app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await database.Database.MigrateAsync();
+        await scope.ServiceProvider
+            .GetRequiredService<BackofficeBootstrapService>()
+            .ProvisionAsync(CancellationToken.None);
         SarafanEvents.MigrationCompleted(applicationLogger);
     }
     catch (Exception exception)
@@ -104,6 +151,13 @@ if (migrateOnly || builder.Configuration.GetValue<bool>("Database:ApplyMigration
         SarafanEvents.MigrationFailed(applicationLogger, exception);
         throw;
     }
+}
+
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    await scope.ServiceProvider
+        .GetRequiredService<BackofficeBootstrapService>()
+        .EnsureReleaseGateAsync(CancellationToken.None);
 }
 
 if (migrateOnly)
