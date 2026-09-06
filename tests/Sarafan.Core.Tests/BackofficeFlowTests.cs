@@ -562,6 +562,19 @@ public sealed class BackofficeFlowTests
                 IsActive = true,
                 Roles = [BackofficeRoles.Operator]
             }));
+        using var deactivate = await SendAuthorized(
+            _client,
+            HttpMethod.Put,
+            $"/api/v1/backoffice/users/{administrator.User.Id}",
+            administrator.AccessToken,
+            JsonContent.Create(new BackofficeUserUpdateRequest
+            {
+                Email = administrator.User.Email,
+                FirstName = administrator.User.FirstName,
+                LastName = administrator.User.LastName,
+                IsActive = false,
+                Roles = [BackofficeRoles.Administrator]
+            }));
         using var disable = await SendAuthorized(
             _client,
             HttpMethod.Delete,
@@ -571,6 +584,7 @@ public sealed class BackofficeFlowTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That((await ReadProblem(demote)).Code, Is.EqualTo("last_backoffice_administrator"));
+            Assert.That((await ReadProblem(deactivate)).Code, Is.EqualTo("last_backoffice_administrator"));
             Assert.That((await ReadProblem(disable)).Code, Is.EqualTo("last_backoffice_administrator"));
         }
 
