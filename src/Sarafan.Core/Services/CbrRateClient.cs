@@ -41,6 +41,8 @@ public sealed partial class CbrRateClient(HttpClient httpClient, ILogger<CbrRate
                     Content = new StringContent(envelope.ToString(), Encoding.UTF8, "text/xml")
                 };
                 request.Headers.Add("SOAPAction", SoapAction);
+                // Intentionally buffer this small response: the configured HttpClient timeout and byte cap
+                // cover the entire download. ResponseHeadersRead would require separate body limits/timeouts.
                 using var response = await httpClient.SendAsync(request, cancellationToken);
                 response.EnsureSuccessStatusCode();
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

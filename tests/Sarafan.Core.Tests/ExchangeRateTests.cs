@@ -205,7 +205,7 @@ public sealed class ExchangeRateTests
     }
 
     [Test]
-    public async Task WorkerStartsImmediatelyRetriesNextMoscowMidnightAfterFailureAndCancelsWait()
+    public async Task WorkerStartsImmediatelyRetriesNextMoscow0010RunAfterFailureAndCancelsWait()
     {
         var time = new ManualTime(Now);
         var calls = 0;

@@ -116,6 +116,17 @@ public sealed class CbrRateClientTests
         Assert.ThrowsAsync<XmlException>(() => new CbrRateClient(largeHttp, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
     }
 
+    [Test]
+    public void BufferedDownloadEnforcesHttpByteLimitBeforeXmlParsing()
+    {
+        using var http = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(Soap() + new string(' ', 1_048_577))
+        })))
+        { MaxResponseContentBufferSize = 1_048_576 };
+        Assert.ThrowsAsync<HttpRequestException>(() => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request, cancellationToken);
