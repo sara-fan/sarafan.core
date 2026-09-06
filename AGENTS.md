@@ -19,6 +19,8 @@ This file is a part of the Sarafan application
 
 ### Back-office identity boundary
 
+- Serve the back-office SPA in its independent `backoffice` container at `sarafan-b.sw.consulting`, with shared-edge alias `sarafan-backoffice`. Preserve the same-origin API proxy and forwarded HTTPS scheme so secure staff cookies work. Keep its image/tag/logging settings independent from the customer UI; the local sibling build belongs in the explicit backoffice Compose overlay.
+
 - Keep back-office users, roles, refresh sessions, credentials, JWT issuer/audience/signing key, cookie, authentication scheme, and `/api/v1/backoffice` routes separate from customer identity and `/api/v1/auth`.
 - Keep the fixed back-office role catalogue and deny-by-default action-to-role matrix in `src/Sarafan.Core/Authentication`; unknown roles and actions must never grant access.
 - Revoke back-office refresh sessions and increment the user's token version whenever email, password, active state, or roles change. Serialize administrator state/role mutations with the PostgreSQL advisory transaction lock and reject disabling or demoting the last active Administrator.

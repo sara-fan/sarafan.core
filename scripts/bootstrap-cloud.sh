@@ -64,6 +64,8 @@ case "$DEPLOYMENT_TARGET" in
       || fail "TLS certificate files s.crt and s.key are required in $CERTIFICATE_DIR"
     openssl x509 -in "$CERTIFICATE_DIR/s.crt" -noout -checkhost sarafan.sw.consulting >/dev/null \
       || fail "Certificate does not cover sarafan.sw.consulting: $CERTIFICATE_DIR/s.crt"
+    openssl x509 -in "$CERTIFICATE_DIR/s.crt" -noout -checkhost sarafan-b.sw.consulting >/dev/null \
+      || fail "Certificate does not cover sarafan-b.sw.consulting: $CERTIFICATE_DIR/s.crt"
     ;;
   *) fail "Deployment target must be 'edge' or 'production'" ;;
 esac
@@ -72,8 +74,9 @@ readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV
 "${COMPOSE[@]}" config --quiet
 "${COMPOSE[@]}" pull
 "${COMPOSE[@]}" up -d backup api
-"${COMPOSE[@]}" up -d ui
+"${COMPOSE[@]}" up -d --wait ui
 if [[ "$DEPLOYMENT_TARGET" == production ]]; then
   "${COMPOSE[@]}" up -d production-edge
 fi
+"${COMPOSE[@]}" up -d --wait backoffice
 "${COMPOSE[@]}" ps

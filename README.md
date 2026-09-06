@@ -105,13 +105,13 @@ Framework Warning, Error, and Critical records remain visible as the stable `fra
 
 ## Cloud deployment
 
-The cloud stack contains the UI and Sarafan Core without publishing either
-container directly on the host. Choose exactly one deployment overlay:
+The cloud stack contains the customer UI, back office and Sarafan Core without
+publishing their containers directly on the host. Choose exactly one deployment overlay:
 
-- `edge` attaches the UI to the external `sw-consulting-edge` network using the
-  alias `sarafan-ui`;
+- `edge` attaches both frontends to the external `sw-consulting-edge` network using
+  aliases `sarafan-ui` and `sarafan-backoffice`;
 - `production` starts a dedicated TLS edge on ports 80 and 443 for
-  `sarafan.sw.consulting`.
+  `sarafan.sw.consulting` and `sarafan-b.sw.consulting`.
 
 ```bash
 cp sarafan.env.example sarafan.env
@@ -127,13 +127,32 @@ scripts/bootstrap-cloud.sh production
 
 For a dedicated server, place `s.crt` and `s.key` in
 `/srv/sarafan/certificate` (or set `SARAFAN_CERTIFICATE_DIR`). The certificate
-must cover `sarafan.sw.consulting`. For the shared server, start the
+must cover both hostnames (the `*.sw.consulting` wildcard covers both). For the shared server, start the
 `sw-consulting-edge` project before Sarafan so the external Docker network
 exists.
 
 Update the selected deployment with `scripts/update-cloud.sh edge` or
 `scripts/update-cloud.sh production`. UI and Core image tags are independent so
-the two repositories do not need synchronized release numbers.
+the repositories do not need synchronized release numbers. Set `SARAFAN_BACKOFFICE_IMAGE`
+to the registry/repository name without a tag and `SARAFAN_BACKOFFICE_IMAGE_TAG`
+to its version. `SARAFAN_BACKOFFICE_LOGGING_ENABLED` controls staff UI logging independently.
+
+Create the DNS record for `sarafan-b.sw.consulting` pointing to the selected edge.
+The shared-edge configuration must route that host to `sarafan-backoffice:8080`;
+the API and database stay on the private application network. Forward the original
+HTTPS scheme through both proxies so staff refresh cookies remain secure.
+
+For local back-office development with the sibling checkout available:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.backoffice.yml up -d --build --wait
+# Back office: http://localhost:8083 (override SARAFAN_BACKOFFICE_PORT if needed)
+```
+
+The explicit overlay builds `../sarafan.back.office`; the ordinary Core Compose
+file and CI remain usable without that repository. The staff API and bootstrap
+configuration are described above; no additional identity tables or migrations
+are required for the UI integration.
 
 The production stack starts `ghcr.io/sw-consulting/db-backup:latest`, matching Logibooks' `tooling.db-backup` setup. Configure durable `SARAFAN_BACKUP_DATA_DIR` and `SARAFAN_BACKUP_LOG_DIR` host paths plus the retention period in `sarafan.env`; bootstrap validates all database and backup paths before deployment.
 

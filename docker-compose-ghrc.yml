@@ -106,6 +106,23 @@ services:
         aliases:
           - api
 
+  backoffice:
+    image: ${SARAFAN_BACKOFFICE_IMAGE:-ghcr.io/sara-fan/sarafan.back.office}:${SARAFAN_BACKOFFICE_IMAGE_TAG:-latest}
+    restart: always
+    environment:
+      SARAFAN_BACKOFFICE_LOGGING_ENABLED: ${SARAFAN_BACKOFFICE_LOGGING_ENABLED:-false}
+    depends_on:
+      api:
+        condition: service_healthy
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
   ui:
     image: ghcr.io/maxirmx/sarafan.ui:${SARAFAN_UI_IMAGE_TAG:-latest}
     restart: always

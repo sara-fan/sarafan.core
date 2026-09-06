@@ -3,6 +3,12 @@
 # This file is a part of the Sarafan application
 
 services:
+  backoffice:
+    networks:
+      default:
+      edge:
+        aliases:
+          - sarafan-backoffice
   ui:
     networks:
       edge:
