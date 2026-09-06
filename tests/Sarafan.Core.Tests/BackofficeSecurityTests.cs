@@ -138,6 +138,20 @@ public sealed class BackofficeSecurityTests
     }
 
     [Test]
+    public void PasswordAttribute_AllowsNullAndValidatesStringValues()
+    {
+        var attribute = new BackofficePasswordAttribute();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(attribute.IsValid(null), Is.True);
+            Assert.That(attribute.IsValid(13), Is.False);
+            Assert.That(attribute.IsValid("short"), Is.False);
+            Assert.That(attribute.IsValid("Password_13"), Is.True);
+        }
+    }
+
+    [Test]
     public void BackofficeOptions_ValidateOnlyEnabledBootstrapAndRequiredSigningKey()
     {
         var authentication = new BackofficeAuthenticationOptions();

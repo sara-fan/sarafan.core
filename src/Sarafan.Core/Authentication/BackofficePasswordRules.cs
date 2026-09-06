@@ -12,8 +12,26 @@ public static class BackofficePasswordRules
     public const int MaximumLength = 18;
 
     public static bool IsValid(string? password)
-        => !string.IsNullOrWhiteSpace(password)
-            && password.EnumerateRunes().Count() is >= MinimumLength and <= MaximumLength;
+    {
+        if (password is null)
+        {
+            return false;
+        }
+
+        var characterCount = 0;
+        var containsNonWhitespace = false;
+        foreach (var character in password.EnumerateRunes())
+        {
+            if (++characterCount > MaximumLength)
+            {
+                return false;
+            }
+
+            containsNonWhitespace |= !Rune.IsWhiteSpace(character);
+        }
+
+        return containsNonWhitespace && characterCount >= MinimumLength;
+    }
 
     public static void ValidateConfigurationPassword(string? password, string settingName)
     {
