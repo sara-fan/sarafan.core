@@ -10,6 +10,7 @@ Product requirements are defined in the [current specification](https://github.c
 
 [![ci](https://github.com/maxirmx/sarafan.core/actions/workflows/ci.yml/badge.svg)](https://github.com/maxirmx/sarafan.core/actions/workflows/ci.yml)
 [![publish](https://github.com/maxirmx/sarafan.core/actions/workflows/publish.yml/badge.svg)](https://github.com/maxirmx/sarafan.core/actions/workflows/publish.yml)
+[![codecov](https://codecov.io/gh/sara-fan/sarafan.core/graph/badge.svg?token=6m88MgqjbB)](https://codecov.io/gh/sara-fan/sarafan.core)
 
 ASP.NET Core identity and customer-profile service for Sarafan. It targets .NET 10 LTS, uses PostgreSQL from the first migration, and is packaged as a Linux container.
 
