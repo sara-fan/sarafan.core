@@ -105,9 +105,11 @@ Framework Warning, Error, and Critical records remain visible as the stable `fra
 
 ## Cloud deployment
 
-Use Docker Compose v2 with `up --wait` and `--wait-timeout` support for cloud and
-local overlays. Bootstrap verifies support before deployment. Each bootstrap health wait
-is bounded by `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT` seconds (default 180).
+Cloud bootstrap requires Docker Compose v2 with `up --wait` and `--wait-timeout`
+support and verifies both before deployment. Each bootstrap health wait is bounded
+by `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT` seconds (default 180). Direct local Compose
+commands using `--wait` require that option but do not inherit the bootstrap timeout;
+pass `--wait-timeout` explicitly to bound a local health wait.
 
 The cloud stack contains the customer UI, back office and Sarafan Core without
 publishing their containers directly on the host. Choose exactly one deployment overlay:
