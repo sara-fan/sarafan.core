@@ -32,6 +32,7 @@ public sealed class CbrRateClientTests
             using var http = new HttpClient(new Handler(async (request, _) =>
             {
                 Assert.That(request.Method, Is.EqualTo(HttpMethod.Post));
+                Assert.That(CbrRateClient.Endpoint, Is.EqualTo("https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx"));
                 Assert.That(request.RequestUri!.AbsoluteUri, Is.EqualTo(CbrRateClient.Endpoint));
                 Assert.That(request.Headers.GetValues("SOAPAction"), Is.EqualTo(new[] { CbrRateClient.SoapAction }));
                 Assert.That(request.Content!.Headers.ContentType!.MediaType, Is.EqualTo("text/xml"));

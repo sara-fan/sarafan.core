@@ -21,7 +21,7 @@ public interface ICbrRateClient
 
 public sealed partial class CbrRateClient(HttpClient httpClient, ILogger<CbrRateClient> logger) : ICbrRateClient
 {
-    public const string Endpoint = "https://www.cbr.ru/DailyInfoWebServ/dailyinfo.asmx";
+    public const string Endpoint = "https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx";
     public const string SoapAction = "http://web.cbr.ru/GetCursOnDateXML";
     private static readonly XNamespace Soap = "http://schemas.xmlsoap.org/soap/envelope/";
     private static readonly XNamespace Cbr = "http://web.cbr.ru/";
