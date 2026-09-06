@@ -91,10 +91,7 @@ public sealed class BackofficeUserCreateRequest
     public string? Patronymic { get; set; }
 
     [Required(ErrorMessage = "Поле обязательно для заполнения.")]
-    [StringLength(
-        BackofficePasswordRules.MaximumLength,
-        MinimumLength = BackofficePasswordRules.MinimumLength,
-        ErrorMessage = "Пароль должен содержать от {2} до {1} символов.")]
+    [BackofficePassword]
     public string Password { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Укажите хотя бы одну роль.")]
@@ -119,10 +116,7 @@ public sealed class BackofficeUserUpdateRequest
     [StringLength(100, ErrorMessage = "Длина поля не должна превышать {1} символов.")]
     public string? Patronymic { get; set; }
 
-    [StringLength(
-        BackofficePasswordRules.MaximumLength,
-        MinimumLength = BackofficePasswordRules.MinimumLength,
-        ErrorMessage = "Пароль должен содержать от {2} до {1} символов.")]
+    [BackofficePassword]
     public string? Password { get; set; }
 
     public bool IsActive { get; set; } = true;
@@ -144,9 +138,6 @@ public sealed class BackofficeSelfUpdateRequest
     [StringLength(100, ErrorMessage = "Длина поля не должна превышать {1} символов.")]
     public string? Patronymic { get; set; }
 
-    [StringLength(
-        BackofficePasswordRules.MaximumLength,
-        MinimumLength = BackofficePasswordRules.MinimumLength,
-        ErrorMessage = "Пароль должен содержать от {2} до {1} символов.")]
+    [BackofficePassword]
     public string? Password { get; set; }
 }

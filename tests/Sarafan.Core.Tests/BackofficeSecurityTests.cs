@@ -125,6 +125,8 @@ public sealed class BackofficeSecurityTests
             Assert.That(BackofficePasswordRules.IsValid(new string('a', 19)), Is.False);
             Assert.That(BackofficePasswordRules.IsValid(new string('я', 18)), Is.True);
             Assert.That(BackofficePasswordRules.IsValid(new string('я', 19)), Is.False);
+            Assert.That(BackofficePasswordRules.IsValid(string.Concat(Enumerable.Repeat("😀", 18))), Is.True);
+            Assert.That(BackofficePasswordRules.IsValid(string.Concat(Enumerable.Repeat("😀", 19))), Is.False);
             Assert.That(
                 Assert.Throws<InvalidOperationException>(() =>
                     BackofficePasswordRules.ValidateConfigurationPassword("short", "Test:Password"))?.Message,
