@@ -26,7 +26,7 @@ dotnet restore Sarafan.sln
 dotnet run --project src/Sarafan.Core/Sarafan.Core.csproj
 ```
 
-The development connection uses PostgreSQL on host port `5433`. The machine-specific Compose override stores database data in `R:/Projects/30.Projects/sarafan/.runtime/postgres`. Adminer is available only in the development compose stack at <http://localhost:8088>; use server `db` from inside Compose or `host.docker.internal:5433` when connecting through the browser-hosted Adminer container.
+The development connection uses PostgreSQL on host port `5433`. The machine-specific Compose override stores database data in `R:/Projects/30.Projects/sarafan/.pgdata`. This directory and its mapping are user-owned; agents require explicit authorization to change them or write to the database. The override requires the directory to exist rather than silently creating an empty database directory. Adminer is available only in the development compose stack at <http://localhost:8088>; use server `db` from inside Compose or `host.docker.internal:5433` when connecting through the browser-hosted Adminer container.
 
 The v1 API status endpoint is <http://localhost:5080/api/v1/status/status> when the development launch profile is used. Registration and login use the normalized phone number's last four digits as the verification code in Development, Testing, and Production. This is a demonstration mechanism, not phone-possession verification. It must be replaced and disabled before accepting real orders or integrating a real payment system, regardless of the runtime environment name; the implementation/release gate is tracked in [#5](https://github.com/sara-fan/sarafan.spec/issues/5) and [#14](https://github.com/sara-fan/sarafan.spec/issues/14).
 

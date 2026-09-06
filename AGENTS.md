@@ -17,6 +17,12 @@ This file is a part of the Sarafan application
 
 ## Code Standards and Requirements
 
+### Protected local database configuration
+
+- Treat `docker-compose.override.yml` as user-owned machine configuration. Do not edit, replace, delete, regenerate, or commit it without explicit user authorization for that action; general implementation, testing, cleanup, or deployment requests do not authorize these changes.
+- The local PostgreSQL data directory is `R:/Projects/30.Projects/sarafan/.pgdata`, mounted at `/var/lib/postgresql/data`. Do not change this mapping or modify, delete, move, reset, restore over, or change permissions on that directory without explicit user authorization. This includes database writes through SQL, migrations, bootstrap, tests, and containers. Use a separate disposable database and storage for agent verification.
+- Do not start or recreate the user's database/application stack merely to validate configuration. Validate with `docker compose config`; keep the existing services and data untouched unless the user explicitly authorizes the runtime action.
+
 ### Back-office identity boundary
 
 - Serve the back-office SPA in its independent `backoffice` container at `sb.sw.consulting`, with shared-edge alias `sarafan-backoffice`. Preserve the same-origin API proxy and forwarded HTTPS scheme so secure staff cookies work. Keep its image/tag/logging settings independent from the customer UI; the local sibling build belongs in the explicit backoffice Compose overlay.
@@ -26,6 +32,7 @@ This file is a part of the Sarafan application
 - Keep the fixed back-office role catalogue and deny-by-default action-to-role matrix in `src/Sarafan.Core/Authentication`; unknown roles and actions must never grant access.
 - Revoke back-office refresh sessions and increment the user's token version whenever email, password, active state, or roles change. Serialize administrator state/role mutations with the PostgreSQL advisory transaction lock and reject disabling or demoting the last active Administrator.
 - Mark the bootstrap Administrator as demo until its password is changed. Provision it only through the explicitly enabled, idempotent migration bootstrap; supply credentials through secure runtime configuration, never tracked files or logs. Reject bootstrap and reject startup with any active demo staff account while real orders or real payment integration are enabled, then disable and remove bootstrap credentials after the first successful run.
+- Require back-office passwords to contain 8 to 18 characters in API models, service validation, bootstrap validation, UI validation, and user-facing guidance. Do not expose byte-count rules to users; the conservative character maximum keeps passwords within BCrypt's input boundary.
 
 ### Controller Error Responses
 

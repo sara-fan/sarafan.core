@@ -113,23 +113,24 @@ public sealed class BackofficeSecurityTests
     }
 
     [Test]
-    public void PasswordRules_EnforceBcryptLengthBoundary()
+    public void PasswordRules_EnforceCharacterLengthBoundary()
     {
         using (Assert.EnterMultipleScope())
         {
             Assert.That(BackofficePasswordRules.IsValid(null), Is.False);
-            Assert.That(BackofficePasswordRules.IsValid("            "), Is.False);
-            Assert.That(BackofficePasswordRules.IsValid(new string('a', 11)), Is.False);
-            Assert.That(BackofficePasswordRules.IsValid(new string('a', 12)), Is.True);
-            Assert.That(BackofficePasswordRules.IsValid(new string('a', 72)), Is.True);
-            Assert.That(BackofficePasswordRules.IsValid(new string('a', 73)), Is.False);
-            Assert.That(BackofficePasswordRules.IsValid(new string('я', 40)), Is.False);
+            Assert.That(BackofficePasswordRules.IsValid("        "), Is.False);
+            Assert.That(BackofficePasswordRules.IsValid(new string('a', 7)), Is.False);
+            Assert.That(BackofficePasswordRules.IsValid(new string('a', 8)), Is.True);
+            Assert.That(BackofficePasswordRules.IsValid(new string('a', 18)), Is.True);
+            Assert.That(BackofficePasswordRules.IsValid(new string('a', 19)), Is.False);
+            Assert.That(BackofficePasswordRules.IsValid(new string('я', 18)), Is.True);
+            Assert.That(BackofficePasswordRules.IsValid(new string('я', 19)), Is.False);
             Assert.That(
                 Assert.Throws<InvalidOperationException>(() =>
                     BackofficePasswordRules.ValidateConfigurationPassword("short", "Test:Password"))?.Message,
                 Does.StartWith("Test:Password"));
             Assert.DoesNotThrow(() => BackofficePasswordRules.ValidateConfigurationPassword(
-                "Valid_configuration_password",
+                "Config_pass_13",
                 "Test:Password"));
         }
     }
@@ -165,7 +166,7 @@ public sealed class BackofficeSecurityTests
         bootstrap.Enabled = true;
         Assert.Throws<InvalidOperationException>(bootstrap.Validate);
         bootstrap.Email = "not-an-email";
-        bootstrap.Password = "Valid_bootstrap_password";
+        bootstrap.Password = "Bootstrap_pass_13";
         Assert.Throws<InvalidOperationException>(bootstrap.Validate);
         bootstrap.Email = "admin@sarafan.test";
         bootstrap.FirstName = " ";
@@ -185,7 +186,7 @@ public sealed class BackofficeSecurityTests
         var hasher = new BCryptBackofficePasswordHasher(
             Options.Create(new BackofficeAuthenticationOptions { BCryptWorkFactor = 10 }),
             NullLogger<BCryptBackofficePasswordHasher>.Instance);
-        const string password = "Valid_hashing_password";
+        const string password = "Hashing_pass_13";
         var hash = hasher.Hash(password);
 
         using (Assert.EnterMultipleScope())
@@ -193,7 +194,7 @@ public sealed class BackofficeSecurityTests
             Assert.That(hash, Is.Not.EqualTo(password));
             Assert.That(hash, Does.StartWith("$2"));
             Assert.That(hasher.Verify(password, hash), Is.True);
-            Assert.That(hasher.Verify("Wrong_hashing_password", hash), Is.False);
+            Assert.That(hasher.Verify("Wrong_hash_pass_13", hash), Is.False);
             Assert.Throws<BCrypt.Net.SaltParseException>(() => hasher.Verify(password, "not-a-bcrypt-hash"));
         }
     }
@@ -314,7 +315,7 @@ public sealed class BackofficeSecurityTests
                 FirstName = "Another",
                 LastName = "Administrator",
                 Email = "another-bootstrap@sarafan.test",
-                Password = "Another_bootstrap_password"
+                Password = "Bootstrap_alt_13"
             }),
             TimeProvider.System,
             NullLogger<BackofficeBootstrapService>.Instance);
@@ -391,7 +392,7 @@ public sealed class BackofficeSecurityTests
 
         var service = scope.ServiceProvider.GetRequiredService<BackofficeAuthenticationService>();
         var exception = Assert.ThrowsAsync<ServiceException>(() => service.LoginAsync(
-            new BackofficeLoginRequest { Email = email, Password = "Valid_login_password_13" },
+            new BackofficeLoginRequest { Email = email, Password = "Login_pass_13" },
             "test-origin",
             null,
             default));
@@ -414,7 +415,7 @@ public sealed class BackofficeSecurityTests
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var hasher = scope.ServiceProvider.GetRequiredService<IBackofficePasswordHasher>();
         var email = $"roleless-{Guid.NewGuid():N}@sarafan.test";
-        const string password = "Roleless_test_password_13";
+        const string password = "Roleless_pass_13";
         var now = DateTimeOffset.UtcNow;
         database.BackofficeUsers.Add(new BackofficeUser
         {
@@ -456,7 +457,7 @@ public sealed class BackofficeSecurityTests
             NormalizedEmail = email,
             FirstName = "Demo",
             LastName = "Marker",
-            PasswordHash = hasher.Hash("Original_demo_password_13"),
+            PasswordHash = hasher.Hash("Demo_pass_old_13"),
             IsDemo = true,
             CreatedAt = now,
             UpdatedAt = now,
@@ -473,7 +474,7 @@ public sealed class BackofficeSecurityTests
                 FirstName = user.FirstName,
                 LastName = user.LastName,
                 Patronymic = "Test",
-                Password = "Rotated_secure_password_13"
+                Password = "Secure_pass_13"
             },
             default);
         database.ChangeTracker.Clear();
@@ -504,7 +505,7 @@ public sealed class BackofficeSecurityTests
                     Email = $"concurrent-admin-{Guid.NewGuid():N}@sarafan.test",
                     FirstName = "Concurrent",
                     LastName = "Administrator",
-                    Password = "Concurrent_admin_password_13",
+                    Password = "Admin_concur_13",
                     Roles = [BackofficeRoles.Administrator]
                 },
                 default);
