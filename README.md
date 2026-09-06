@@ -117,7 +117,7 @@ publishing their containers directly on the host. Choose exactly one deployment 
 - `edge` attaches both frontends to the external `sw-consulting-edge` network using
   aliases `sarafan-ui` and `sarafan-backoffice`;
 - `production` starts a dedicated TLS edge on ports 80 and 443 for
-  `sarafan.sw.consulting` and `sarafan-b.sw.consulting`.
+  `sarafan.sw.consulting` and `sb.sw.consulting`.
 
 ```bash
 cp sarafan.env.example sarafan.env
@@ -143,7 +143,7 @@ the repositories do not need synchronized release numbers. Set `SARAFAN_BACKOFFI
 to the registry/repository name without a tag and `SARAFAN_BACKOFFICE_IMAGE_TAG`
 to its version. `SARAFAN_BACKOFFICE_LOGGING_ENABLED` controls staff UI logging independently.
 
-Create the DNS record for `sarafan-b.sw.consulting` pointing to the selected edge.
+Create the DNS record for `sb.sw.consulting` pointing to the selected edge.
 The shared-edge configuration must route that host to `sarafan-backoffice:8080`;
 the API and database stay on the private application network. Forward the original
 HTTPS scheme through both proxies so staff refresh cookies remain secure.
