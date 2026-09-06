@@ -87,7 +87,7 @@ public sealed class BackofficeFlowTests
             new BackofficeLoginRequest
             {
                 Email = NextEmail(),
-                Password = "Wrong_backoffice_password"
+                Password = "Wrong_pass_13"
             });
 
         var wrongProblem = await ReadProblem(wrongPassword);
@@ -248,13 +248,13 @@ public sealed class BackofficeFlowTests
         {
             using var response = await _client.PostAsJsonAsync(
                 "/api/v1/backoffice/auth/login",
-                new BackofficeLoginRequest { Email = email, Password = "Wrong_backoffice_password" });
+                new BackofficeLoginRequest { Email = email, Password = "Wrong_pass_13" });
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
         }
 
         using var limited = await _client.PostAsJsonAsync(
             "/api/v1/backoffice/auth/login",
-            new BackofficeLoginRequest { Email = email, Password = "Wrong_backoffice_password" });
+            new BackofficeLoginRequest { Email = email, Password = "Wrong_pass_13" });
         Assert.That(limited.StatusCode, Is.EqualTo(HttpStatusCode.TooManyRequests));
         Assert.That((await ReadProblem(limited)).Code, Is.EqualTo("rate_limited"));
     }
@@ -267,8 +267,8 @@ public sealed class BackofficeFlowTests
             IntegrationTestEnvironment.BackofficeEmail,
             IntegrationTestEnvironment.BackofficePassword);
         var email = NextEmail();
-        const string initialPassword = "Initial_operator_password";
-        const string selfPassword = "Self_changed_password_13";
+        const string initialPassword = "Operator_init_13";
+        const string selfPassword = "Self_pass_13";
 
         using var create = await SendAuthorized(
             _client,
@@ -415,7 +415,7 @@ public sealed class BackofficeFlowTests
         using var disabledLogin = await _client.PostAsJsonAsync(
             "/api/v1/backoffice/auth/login",
             new BackofficeLoginRequest { Email = email, Password = selfPassword });
-        const string resetPassword = "Administrator_reset_password_13";
+        const string resetPassword = "Admin_reset_13";
         using var enable = await SendAuthorized(
             _client,
             HttpMethod.Put,
@@ -486,7 +486,7 @@ public sealed class BackofficeFlowTests
                 Email = NextEmail(),
                 FirstName = "Invalid",
                 LastName = "Role",
-                Password = "Valid_test_password_13",
+                Password = "Valid_pass_13",
                 Roles = ["unknown-role"]
             }));
         using var ops = await SendAuthorized(
@@ -509,10 +509,10 @@ public sealed class BackofficeFlowTests
                 Email = NextEmail(),
                 FirstName = "Empty",
                 LastName = "Roles",
-                Password = "Valid_test_password_13",
+                Password = "Valid_pass_13",
                 Roles = []
             }));
-        using var oversizedUtf8Password = await SendAuthorized(
+        using var oversizedPassword = await SendAuthorized(
             _client,
             HttpMethod.Post,
             "/api/v1/backoffice/users",
@@ -522,7 +522,7 @@ public sealed class BackofficeFlowTests
                 Email = NextEmail(),
                 FirstName = "Invalid",
                 LastName = "Password",
-                Password = new string('я', 40),
+                Password = new string('я', 19),
                 Roles = [BackofficeRoles.Operator]
             }));
         using var missingDelete = await SendAuthorized(
@@ -536,7 +536,7 @@ public sealed class BackofficeFlowTests
             Assert.That((await ReadProblem(invalidRole)).Code, Is.EqualTo("invalid_backoffice_role"));
             Assert.That(ops.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That((await ReadProblem(emptyRoles)).Code, Is.EqualTo("invalid_backoffice_role"));
-            Assert.That((await ReadProblem(oversizedUtf8Password)).Code, Is.EqualTo("invalid_backoffice_user_data"));
+            Assert.That((await ReadProblem(oversizedPassword)).Code, Is.EqualTo("validation_failed"));
             Assert.That((await ReadProblem(missingGet)).Code, Is.EqualTo("backoffice_user_not_found"));
             Assert.That((await ReadProblem(missingDelete)).Code, Is.EqualTo("backoffice_user_not_found"));
         }
@@ -562,6 +562,19 @@ public sealed class BackofficeFlowTests
                 IsActive = true,
                 Roles = [BackofficeRoles.Operator]
             }));
+        using var deactivate = await SendAuthorized(
+            _client,
+            HttpMethod.Put,
+            $"/api/v1/backoffice/users/{administrator.User.Id}",
+            administrator.AccessToken,
+            JsonContent.Create(new BackofficeUserUpdateRequest
+            {
+                Email = administrator.User.Email,
+                FirstName = administrator.User.FirstName,
+                LastName = administrator.User.LastName,
+                IsActive = false,
+                Roles = [BackofficeRoles.Administrator]
+            }));
         using var disable = await SendAuthorized(
             _client,
             HttpMethod.Delete,
@@ -571,6 +584,7 @@ public sealed class BackofficeFlowTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That((await ReadProblem(demote)).Code, Is.EqualTo("last_backoffice_administrator"));
+            Assert.That((await ReadProblem(deactivate)).Code, Is.EqualTo("last_backoffice_administrator"));
             Assert.That((await ReadProblem(disable)).Code, Is.EqualTo("last_backoffice_administrator"));
         }
 
@@ -584,7 +598,7 @@ public sealed class BackofficeFlowTests
                 Email = NextEmail(),
                 FirstName = "Second",
                 LastName = "Administrator",
-                Password = "Second_admin_password_13",
+                Password = "Admin2_pass_13",
                 Roles = [BackofficeRoles.Administrator]
             }));
         var second = await createSecond.Content.ReadFromJsonAsync<BackofficeUserDto>();
@@ -614,7 +628,7 @@ public sealed class BackofficeFlowTests
                 Email = email,
                 FirstName = "Concurrent",
                 LastName = "First",
-                Password = "Concurrent_email_password_13",
+                Password = "Email_pass_13",
                 Roles = [BackofficeRoles.Operator]
             }));
         var second = SendAuthorized(
@@ -627,7 +641,7 @@ public sealed class BackofficeFlowTests
                 Email = email.ToUpperInvariant(),
                 FirstName = "Concurrent",
                 LastName = "Second",
-                Password = "Concurrent_email_password_13",
+                Password = "Email_pass_13",
                 Roles = [BackofficeRoles.Operator]
             }));
 

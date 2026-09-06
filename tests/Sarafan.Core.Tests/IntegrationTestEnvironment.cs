@@ -18,7 +18,7 @@ namespace Sarafan.Core.Tests;
 public sealed class IntegrationTestEnvironment
 {
     public const string BackofficeEmail = "administrator@sarafan.test";
-    public const string BackofficePassword = "Backoffice_test_password_13";
+    public const string BackofficePassword = "Backoffice_test_13";
 
     private static string _databaseName = string.Empty;
     private static string _adminConnectionString = string.Empty;

@@ -44,7 +44,12 @@ services:
       Authentication__SecureCookies: "false"
       BackofficeAuthentication__SigningKey: ${SARAFAN_BACKOFFICE_JWT_SECRET:-sarafan-backoffice-development-signing-key-change-before-deployment}
       BackofficeAuthentication__SecureCookies: "false"
-      BackofficeBootstrap__Enabled: "false"
+      BackofficeBootstrap__Enabled: false
+      # For a one-time local bootstrap 
+      # DO NOT TRACK/COMMIT
+      # BackofficeBootstrap__Enabled: true
+      # BackofficeBootstrap__Email: "The first admin e-mail"
+      # BackofficeBootstrap__Password: "The first admin password"
     depends_on:
       db:
         condition: service_healthy

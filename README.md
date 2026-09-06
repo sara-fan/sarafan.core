@@ -10,6 +10,7 @@ Product requirements are defined in the [current specification](https://github.c
 
 [![ci](https://github.com/maxirmx/sarafan.core/actions/workflows/ci.yml/badge.svg)](https://github.com/maxirmx/sarafan.core/actions/workflows/ci.yml)
 [![publish](https://github.com/maxirmx/sarafan.core/actions/workflows/publish.yml/badge.svg)](https://github.com/maxirmx/sarafan.core/actions/workflows/publish.yml)
+[![codecov](https://codecov.io/gh/sara-fan/sarafan.core/graph/badge.svg?token=6m88MgqjbB)](https://codecov.io/gh/sara-fan/sarafan.core)
 
 ASP.NET Core identity and customer-profile service for Sarafan. It targets .NET 10 LTS, uses PostgreSQL from the first migration, and is packaged as a Linux container.
 
@@ -26,7 +27,7 @@ dotnet restore Sarafan.sln
 dotnet run --project src/Sarafan.Core/Sarafan.Core.csproj
 ```
 
-The development connection uses PostgreSQL on host port `5433`. The machine-specific Compose override stores database data in `R:/Projects/30.Projects/sarafan/.runtime/postgres`. Adminer is available only in the development compose stack at <http://localhost:8088>; use server `db` from inside Compose or `host.docker.internal:5433` when connecting through the browser-hosted Adminer container.
+The development connection uses PostgreSQL on host port `5433`. The machine-specific Compose override stores database data in `R:/Projects/30.Projects/sarafan/.pgdata`. This directory and its mapping are user-owned; agents require explicit authorization to change them or write to the database. The override requires the directory to exist rather than silently creating an empty database directory. Adminer is available only in the development compose stack at <http://localhost:8088>; use server `db` from inside Compose or `host.docker.internal:5433` when connecting through the browser-hosted Adminer container.
 
 The v1 API status endpoint is <http://localhost:5080/api/v1/status/status> when the development launch profile is used. Registration and login use the normalized phone number's last four digits as the verification code in Development, Testing, and Production. This is a demonstration mechanism, not phone-possession verification. It must be replaced and disabled before accepting real orders or integrating a real payment system, regardless of the runtime environment name; the implementation/release gate is tracked in [#5](https://github.com/sara-fan/sarafan.spec/issues/5) and [#14](https://github.com/sara-fan/sarafan.spec/issues/14).
 
@@ -105,13 +106,19 @@ Framework Warning, Error, and Critical records remain visible as the stable `fra
 
 ## Cloud deployment
 
-The cloud stack contains the UI and Sarafan Core without publishing either
-container directly on the host. Choose exactly one deployment overlay:
+Cloud bootstrap requires Docker Compose v2 with `up --wait` and `--wait-timeout`
+support and verifies both before deployment. Each bootstrap health wait is bounded
+by `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT` seconds (default 180). Direct local Compose
+commands using `--wait` require that option but do not inherit the bootstrap timeout;
+pass `--wait-timeout` explicitly to bound a local health wait.
 
-- `edge` attaches the UI to the external `sw-consulting-edge` network using the
-  alias `sarafan-ui`;
+The cloud stack contains the customer UI, back office and Sarafan Core without
+publishing their containers directly on the host. Choose exactly one deployment overlay:
+
+- `edge` attaches both frontends to the external `sw-consulting-edge` network using
+  aliases `sarafan-ui` and `sarafan-backoffice`;
 - `production` starts a dedicated TLS edge on ports 80 and 443 for
-  `sarafan.sw.consulting`.
+  `sarafan.sw.consulting` and `sb.sw.consulting`.
 
 ```bash
 cp sarafan.env.example sarafan.env
@@ -127,13 +134,32 @@ scripts/bootstrap-cloud.sh production
 
 For a dedicated server, place `s.crt` and `s.key` in
 `/srv/sarafan/certificate` (or set `SARAFAN_CERTIFICATE_DIR`). The certificate
-must cover `sarafan.sw.consulting`. For the shared server, start the
+must cover both hostnames (the `*.sw.consulting` wildcard covers both). For the shared server, start the
 `sw-consulting-edge` project before Sarafan so the external Docker network
 exists.
 
 Update the selected deployment with `scripts/update-cloud.sh edge` or
 `scripts/update-cloud.sh production`. UI and Core image tags are independent so
-the two repositories do not need synchronized release numbers.
+the repositories do not need synchronized release numbers. Set `SARAFAN_BACKOFFICE_IMAGE`
+to the registry/repository name without a tag and `SARAFAN_BACKOFFICE_IMAGE_TAG`
+to its version. `SARAFAN_BACKOFFICE_LOGGING_ENABLED` controls staff UI logging independently.
+
+Create the DNS record for `sb.sw.consulting` pointing to the selected edge.
+The shared-edge configuration must route that host to `sarafan-backoffice:8080`;
+the API and database stay on the private application network. Forward the original
+HTTPS scheme through both proxies so staff refresh cookies remain secure.
+
+For local back-office development with the sibling checkout available:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.backoffice.yml up -d --build --wait
+# Back office: http://localhost:8083 (override SARAFAN_BACKOFFICE_PORT if needed)
+```
+
+The explicit overlay builds `../sarafan.back.office`; the ordinary Core Compose
+file and CI remain usable without that repository. The staff API and bootstrap
+configuration are described above; no additional identity tables or migrations
+are required for the UI integration.
 
 The production stack starts `ghcr.io/sw-consulting/db-backup:latest`, matching Logibooks' `tooling.db-backup` setup. Configure durable `SARAFAN_BACKUP_DATA_DIR` and `SARAFAN_BACKUP_LOG_DIR` host paths plus the retention period in `sarafan.env`; bootstrap validates all database and backup paths before deployment.
 

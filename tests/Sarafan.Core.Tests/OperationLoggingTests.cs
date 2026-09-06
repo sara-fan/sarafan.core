@@ -482,7 +482,7 @@ public sealed class OperationLoggingTests
         using var operations = await client.GetAsync("/api/v1/backoffice/users/ops");
         using var users = await client.GetAsync("/api/v1/backoffice/users");
         var email = $"{Guid.NewGuid():N}@sarafan.test";
-        const string password = "Operation_logging_password";
+        const string password = "Operation_log_13";
         using var create = await client.PostAsJsonAsync("/api/v1/backoffice/users", new BackofficeUserCreateRequest
         {
             Email = email,
