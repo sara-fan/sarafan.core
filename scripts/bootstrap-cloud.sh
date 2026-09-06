@@ -16,6 +16,10 @@ set -a
 source "$ENV_FILE"
 set +a
 
+export LC_ALL=C.UTF-8
+[[ "$(locale charmap 2>/dev/null)" == "UTF-8" ]] \
+  || fail "C.UTF-8 locale is required for character-count validation"
+
 readonly PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sarafan}"
 readonly CERTIFICATE_DIR="${SARAFAN_CERTIFICATE_DIR:-/srv/sarafan/certificate}"
 readonly DEPLOYMENT_WAIT_TIMEOUT="${SARAFAN_DEPLOYMENT_WAIT_TIMEOUT:-180}"
