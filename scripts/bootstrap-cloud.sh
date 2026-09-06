@@ -76,7 +76,7 @@ readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV
 "${COMPOSE[@]}" up -d backup api
 "${COMPOSE[@]}" up -d --wait ui
 if [[ "$DEPLOYMENT_TARGET" == production ]]; then
-  "${COMPOSE[@]}" up -d production-edge
+  "${COMPOSE[@]}" up -d --wait production-edge
 fi
 "${COMPOSE[@]}" up -d --wait backoffice
 "${COMPOSE[@]}" ps
