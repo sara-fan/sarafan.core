@@ -6,6 +6,28 @@ namespace Sarafan.Core.Observability;
 
 public static partial class SarafanEvents
 {
+    public const string ExchangeRateUpdateStartedName = "sarafan.core.exchange_rate.update.started";
+    public const string ExchangeRateUpdateCompletedName = "sarafan.core.exchange_rate.update.completed";
+    public const string ExchangeRateUpdateFailedName = "sarafan.core.exchange_rate.update.failed";
+
+    [LoggerMessage(EventId = 1700, EventName = ExchangeRateUpdateStartedName, Level = LogLevel.Information,
+        Message = "CBR USD/RUB synchronization started.")]
+    public static partial void ExchangeRateUpdateStarted(ILogger logger);
+
+    [LoggerMessage(EventId = 1701, EventName = ExchangeRateUpdateCompletedName, Level = LogLevel.Information,
+        Message = "CBR USD/RUB synchronization completed. New history entry: {Inserted}.")]
+    public static partial void ExchangeRateUpdateCompleted(ILogger logger, bool inserted);
+
+    public static void ExchangeRateUpdateFailed(ILogger logger, Exception exception)
+    {
+        using var scope = ErrorTypeScope(logger, exception);
+        ExchangeRateUpdateFailedMessage(logger);
+    }
+
+    [LoggerMessage(EventId = 1702, EventName = ExchangeRateUpdateFailedName, Level = LogLevel.Warning,
+        Message = "CBR USD/RUB synchronization failed; existing history was preserved. The next scheduled run will retry.")]
+    private static partial void ExchangeRateUpdateFailedMessage(ILogger logger);
+
     public const string ApplicationStartedName = "sarafan.core.application.started";
     public const string ApplicationStoppedName = "sarafan.core.application.stopped";
     public const string MigrationStartedName = "sarafan.core.database.migration.started";

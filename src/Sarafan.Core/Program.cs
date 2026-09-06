@@ -80,6 +80,17 @@ builder.Services.AddScoped<BackofficeAuthenticationService>();
 builder.Services.AddScoped<BackofficeUserService>();
 builder.Services.AddScoped<BackofficeBootstrapService>();
 builder.Services.AddScoped<BackofficeJwtBearerEvents>();
+builder.Services.AddHttpClient<ICbrRateClient, CbrRateClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.MaxResponseContentBufferSize = 1_048_576;
+});
+builder.Services.AddScoped<ExchangeRateService>();
+builder.Services.AddScoped<IExchangeRateSynchronizer>(services => services.GetRequiredService<ExchangeRateService>());
+if (builder.Configuration.GetValue("ExchangeRates:Enabled", true))
+{
+    builder.Services.AddHostedService<ExchangeRateWorker>();
+}
 
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authentication.SigningKey));
 var backofficeSigningKey = new SymmetricSecurityKey(

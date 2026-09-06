@@ -34,6 +34,12 @@ This file is a part of the Sarafan application
 - Mark the bootstrap Administrator as demo until its password is changed. Provision it only through the explicitly enabled, idempotent migration bootstrap; supply credentials through secure runtime configuration, never tracked files or logs. Reject bootstrap and reject startup with any active demo staff account while real orders or real payment integration are enabled, then disable and remove bootstrap credentials after the first successful run.
 - Require back-office passwords to contain 8 to 18 characters in API models, service validation, bootstrap validation, UI validation, and user-facing guidance. Do not expose byte-count rules to users; the conservative character maximum keeps passwords within BCrypt's input boundary.
 
+### Official exchange rates
+
+- Synchronize only the official CBR USD/RUB reference rate at startup and daily at 00:10 Europe/Moscow. Keep source-effective date separate from UTC retrieval time; use the provider/pair/date unique constraint to preserve the first observation, including across concurrent instances. Provider failures must not block startup or erase history.
+- `/api/v1/backoffice/status` is staff-authorized supplementary data, returns the latest persisted rate with its original nominal and source date, and uses `Cache-Control: no-store`. Keep public health free of FX data. Official rates are not the commercial pricing rate; do not apply spreads or alter pricing here.
+- Disable the hosted FX worker in deterministic integration tests (`ExchangeRates__Enabled=false`); never call CBR or use protected local database storage in tests.
+
 ### Controller Error Responses
 
 - Represent every in-scope API error as an RFC 9457 Problem Details document and return it as `application/problem+json`.

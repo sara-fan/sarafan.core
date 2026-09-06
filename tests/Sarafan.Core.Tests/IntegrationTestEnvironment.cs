@@ -54,6 +54,7 @@ public sealed class IntegrationTestEnvironment
         SetEnvironment("ASPNETCORE_ENVIRONMENT", "Testing");
         SetEnvironment("ConnectionStrings__DefaultConnection", applicationBuilder.ConnectionString);
         SetEnvironment("Database__ApplyMigrations", "true");
+        SetEnvironment("ExchangeRates__Enabled", "false");
         SetEnvironment("Authentication__Issuer", "sarafan.core.tests");
         SetEnvironment("Authentication__Audience", "sarafan.ui.tests");
         SetEnvironment(

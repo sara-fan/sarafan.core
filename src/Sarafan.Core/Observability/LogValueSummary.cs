@@ -47,6 +47,9 @@ internal static class LogValueSummary
         ServiceStatus status when status.Service == "Sarafan.Core" && status.Status == "ok" && status.AppVersion == VersionInfo.AppVersion
             => $"ServiceStatus(name=Sarafan.Core; status=ok; version={VersionInfo.AppVersion})",
         ServiceStatus => "ServiceStatus([redacted])",
+        BackofficeStatus => "BackofficeStatus(version/rates=[redacted])",
+        ExchangeRateDto => "ExchangeRateDto(rate/metadata=[redacted])",
+        CbrRate => "CbrRate(rate/metadata=[redacted])",
         ObjectResult result => $"status={result.StatusCode ?? StatusCodes.Status200OK}; output={Describe(result.Value)}",
         StatusCodeResult result => $"status={result.StatusCode}; no body",
         EmptyResult => "no body",
