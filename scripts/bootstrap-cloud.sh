@@ -18,6 +18,14 @@ set +a
 
 readonly PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sarafan}"
 readonly CERTIFICATE_DIR="${SARAFAN_CERTIFICATE_DIR:-/srv/sarafan/certificate}"
+readonly DEPLOYMENT_WAIT_TIMEOUT="${SARAFAN_DEPLOYMENT_WAIT_TIMEOUT:-180}"
+[[ "$DEPLOYMENT_WAIT_TIMEOUT" =~ ^[1-9][0-9]*$ ]] \
+  || fail "SARAFAN_DEPLOYMENT_WAIT_TIMEOUT must be a positive number of seconds"
+if ! compose_up_help="$(docker compose up --help)"; then
+  fail "Docker Compose v2 with up --wait and --wait-timeout support is required"
+fi
+[[ "$compose_up_help" == *"--wait-timeout"* ]] \
+  || fail "Upgrade Docker Compose: up --wait and --wait-timeout support is required"
 
 ensure_durable_directory() {
   local variable_name="$1"
@@ -74,9 +82,9 @@ readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV
 "${COMPOSE[@]}" config --quiet
 "${COMPOSE[@]}" pull
 "${COMPOSE[@]}" up -d backup api
-"${COMPOSE[@]}" up -d --wait ui
+"${COMPOSE[@]}" up -d --wait --wait-timeout "$DEPLOYMENT_WAIT_TIMEOUT" ui
 if [[ "$DEPLOYMENT_TARGET" == production ]]; then
-  "${COMPOSE[@]}" up -d --wait production-edge
+  "${COMPOSE[@]}" up -d --wait --wait-timeout "$DEPLOYMENT_WAIT_TIMEOUT" production-edge
 fi
-"${COMPOSE[@]}" up -d --wait backoffice
+"${COMPOSE[@]}" up -d --wait --wait-timeout "$DEPLOYMENT_WAIT_TIMEOUT" backoffice
 "${COMPOSE[@]}" ps
