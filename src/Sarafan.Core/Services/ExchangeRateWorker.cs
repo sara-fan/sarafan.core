@@ -8,7 +8,17 @@ namespace Sarafan.Core.Services;
 
 internal static class ExchangeRateSchedule
 {
-    private static readonly TimeZoneInfo Moscow = TimeZoneInfo.FindSystemTimeZoneById("Europe/Moscow");
+    private static readonly TimeZoneInfo Moscow = ResolveMoscow(TimeZoneInfo.FindSystemTimeZoneById);
+
+    internal static TimeZoneInfo ResolveMoscow(Func<string, TimeZoneInfo> resolve)
+    {
+        try { return resolve("Europe/Moscow"); }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            // Native Windows ID also works when IANA mapping is unavailable (for example under NLS).
+            return resolve("Russian Standard Time");
+        }
+    }
 
     internal static DateOnly MoscowDate(DateTimeOffset utcNow)
         => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utcNow, Moscow).DateTime);
@@ -27,7 +37,7 @@ public sealed class ExchangeRateWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // .NET 10 runs the entire background service asynchronously; provider failures cannot block startup.
+        // Run synchronization in the hosted worker; provider failures must not stop the host.
         while (!stoppingToken.IsCancellationRequested)
         {
             try

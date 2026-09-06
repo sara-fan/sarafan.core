@@ -169,6 +169,8 @@ Production migrations run in a dedicated one-shot `migrate` service before the A
 
 Core fetches CBR `GetCursOnDateXML` over HTTPS/SOAP 1.1 on background-service startup and at 00:10 Europe/Moscow every day. The provider timeout is 30 seconds and the response is bounded to 1 MiB. Set `ExchangeRates__Enabled=false` to disable synchronization (for example in isolated tests). A failed run is logged and the next scheduled run retries; startup and existing history remain available.
 
+Scheduling uses OS time-zone data, preferring `Europe/Moscow` with `Russian Standard Time` as the native Windows fallback (including NLS configurations). Deployments must retain the OS time-zone database; do not replace it with the server's local zone or a hardcoded UTC offset.
+
 The `ExchangeRateHistory` migration adds append-only application history keyed by provider/base/quote/source-effective date. `ValuteData@OnDate` is the source date, not the requested or retrieval date. The first successful observation wins atomically; duplicate dates do not overwrite the official amount, nominal or UTC retrieval timestamp. Weekends and holidays therefore keep the last published rate. Migration rollback removes this new table and its history, not identity tables; back up production data before rollback.
 
 `GET /api/v1/backoffice/status` requires the separate staff bearer token and the back-office access policy (all four staff roles). It returns HTTP 200 with `Cache-Control: no-store`:

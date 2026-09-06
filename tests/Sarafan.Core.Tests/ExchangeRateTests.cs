@@ -181,6 +181,29 @@ public sealed class ExchangeRateTests
         Assert.That(ExchangeRateSchedule.MoscowDate(DateTimeOffset.Parse(now)), Is.EqualTo(DateOnly.Parse(date)));
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void TimeZoneResolutionFallsBackToNativeWindowsIdentifier(bool invalidData)
+    {
+        var attempts = new List<string>();
+        var expected = TimeZoneInfo.CreateCustomTimeZone("Moscow test", TimeSpan.FromHours(3), "Moscow test", "Moscow test");
+        var actual = ExchangeRateSchedule.ResolveMoscow(id =>
+        {
+            attempts.Add(id);
+            if (id == "Europe/Moscow")
+            {
+                if (invalidData) throw new InvalidTimeZoneException();
+                throw new TimeZoneNotFoundException();
+            }
+            return expected;
+        });
+        Assert.That(actual, Is.SameAs(expected));
+        Assert.That(attempts, Is.EqualTo(new[] { "Europe/Moscow", "Russian Standard Time" }));
+        Assert.That(ExchangeRateSchedule.ResolveMoscow(_ => expected), Is.SameAs(expected));
+        Assert.Throws<TimeZoneNotFoundException>(() => ExchangeRateSchedule.ResolveMoscow(_ => throw new TimeZoneNotFoundException()));
+        Assert.Throws<InvalidOperationException>(() => ExchangeRateSchedule.ResolveMoscow(_ => throw new InvalidOperationException()));
+    }
+
     [Test]
     public async Task WorkerStartsImmediatelyRetriesNextMoscowMidnightAfterFailureAndCancelsWait()
     {
