@@ -41,7 +41,8 @@ public sealed class SarafanExceptionHandler(
             _ => (StatusCodes.Status500InternalServerError, "internal_error")
         };
 
-        await problemDetailsFactory.WriteAsync(httpContext, statusCode, code, cancellationToken);
+        await problemDetailsFactory.WriteAsync(httpContext, statusCode, code, cancellationToken,
+            (exception as ServiceException)?.RequiredDocumentId, (exception as ServiceException)?.ConsentKind);
         return true;
     }
 }

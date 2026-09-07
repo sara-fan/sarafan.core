@@ -31,12 +31,6 @@ public sealed class AuthenticationOptions
 
     public bool SecureCookies { get; set; } = true;
 
-    [Required]
-    public string TermsVersion { get; set; } = "2026-08-30";
-
-    [Required]
-    public string PersonalDataVersion { get; set; } = "2026-08-30";
-
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(SigningKey) || SigningKey.Length < 32)

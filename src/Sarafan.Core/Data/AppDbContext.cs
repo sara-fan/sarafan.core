@@ -21,9 +21,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<BackofficeUserRole> BackofficeUserRoles => Set<BackofficeUserRole>();
     public DbSet<BackofficeRefreshSession> BackofficeRefreshSessions => Set<BackofficeRefreshSession>();
     public DbSet<ExchangeRateHistory> ExchangeRateHistory => Set<ExchangeRateHistory>();
+    public DbSet<LegalDocument> LegalDocuments => Set<LegalDocument>();
+    public DbSet<ConsentEvent> ConsentEvents => Set<ConsentEvent>();
+    public DbSet<ConsentAssociation> ConsentAssociations => Set<ConsentAssociation>();
+    public DbSet<ConsentOnboarding> ConsentOnboarding => Set<ConsentOnboarding>();
+    public DbSet<ConsentRightsCase> ConsentRightsCases => Set<ConsentRightsCase>();
+    public DbSet<LegalAuditEvent> LegalAuditEvents => Set<LegalAuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        ConsentModelConfiguration.Configure(modelBuilder);
         var customer = modelBuilder.Entity<Customer>();
         customer.ToTable("customers");
         customer.HasKey(item => item.Id);

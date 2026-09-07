@@ -432,14 +432,15 @@ public sealed class OperationLoggingTests
         var phone = $"+79994{Random.Shared.Next(100000, 999999)}";
         using var status = await client.GetAsync("/api/v1/status/status");
         using var invalid = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone = "", purpose = "login" });
-        using var request = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone, purpose = "register" });
+        using var request = await client.PostAsJsonAsync("/api/v1/auth/code/request", await ConsentTestData.Request(client, phone));
+        var onboarding = (await request.Content.ReadFromJsonAsync<CodeRequestDto>())!.OnboardingToken;
         using var verify = await client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {
             phone,
             purpose = "register",
             code = phone[^4..],
             termsAccepted = true,
-            personalDataAccepted = true
+            onboardingToken = onboarding
         });
         verify.EnsureSuccessStatusCode();
         var session = (await verify.Content.ReadFromJsonAsync<AuthenticationSessionDto>())!;

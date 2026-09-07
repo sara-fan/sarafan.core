@@ -672,17 +672,11 @@ public sealed class ProblemDetailsContractTests
 
     private async Task<AuthenticationSessionDto> Register(string phone)
     {
-        using var requestCode = await _client.PostAsync(
-            "/api/v1/auth/code/request",
-            new StringContent(
-                $$"""{"phone":"{{phone}}","purpose":"register"}""",
-                Encoding.UTF8,
-                "application/json"));
-        Assert.That(requestCode.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
+        var onboarding = await ConsentTestData.Onboarding(_client, phone);
         using var verify = await _client.PostAsync(
             "/api/v1/auth/code/verify",
             new StringContent(
-                $$"""{"phone":"{{phone}}","purpose":"register","code":"{{VerificationCode(phone)}}","termsAccepted":true,"personalDataAccepted":true}""",
+                $$"""{"phone":"{{phone}}","purpose":"register","code":"{{VerificationCode(phone)}}","termsAccepted":true,"onboardingToken":"{{onboarding}}"}""",
                 Encoding.UTF8,
                 "application/json"));
         Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK));

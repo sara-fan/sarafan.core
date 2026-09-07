@@ -128,3 +128,11 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 **Last Updated:** 2026-09-06
 
 **Maintained by:** Development Team
+
+## Versioned customer consent
+
+- Spec v1.16 §4.18 / CONS-01–07 and Core #20 govern consent. Legal documents live in the database; configured legacy version strings are not current consent authority. Preserve exact source bytes and frozen canonical HTML/digests. Only Administrator publishes; no staff acceptance or evidence editing.
+- Use the consent transaction lock for publication, consent changes and protected writes. Check the current personal-data version before and immediately after a protected action, within the same transaction. Profile and photo writes use `PersonalDataConsentFilter` before model binding/multipart buffering and `WithPersonalDataAsync` in the write transaction; future quote/contact and checkout writes must do the same. Document/rights reads, limited authentication, logout and photo deletion stay available.
+- Customer consent and browser permission are independent. Browser association is evidence of observation, never proof that the authenticated customer performed the original anonymous action. Never log text, subject keys, onboarding receipts or raw consent payloads.
+- Retention runs against configured purpose-specific periods and holds open rights cases; never let removal of a denial revive an older permission. Update annual Russian working-day overrides before the next year. See `docs/customer-consents.md` for defaults and rollout.
+- Integration tests require explicit `SARAFAN_TEST_POSTGRES` pointing to disposable storage and disable exchange-rate and consent-retention workers. Migration round trips use separately created test databases, so they cannot destroy another fixture's data.

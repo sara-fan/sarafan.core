@@ -74,6 +74,15 @@ builder.Services.AddSingleton<IPhoneNormalizer, PhoneNormalizer>();
 builder.Services.AddSingleton<IVerificationCodeProvider, PhoneSuffixVerificationCodeProvider>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<AuthenticationService>();
+builder.Services.AddOptions<ConsentOptions>().Bind(builder.Configuration.GetSection(ConsentOptions.SectionName))
+    .ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddScoped<LegalDocumentService>();
+builder.Services.AddScoped<ConsentService>();
+builder.Services.AddScoped<PersonalDataConsentFilter>();
+builder.Services.AddScoped<ConsentRightsService>();
+builder.Services.AddScoped<ConsentRetentionService>();
+if (builder.Configuration.GetValue("Consents:RetentionWorkerEnabled", true))
+    builder.Services.AddHostedService<ConsentRetentionWorker>();
 builder.Services.AddScoped<IBackofficePasswordHasher, BCryptBackofficePasswordHasher>();
 builder.Services.AddScoped<BackofficeJwtTokenService>();
 builder.Services.AddScoped<BackofficeAuthenticationService>();

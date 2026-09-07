@@ -203,3 +203,7 @@ Use the [traceability template](.github/PULL_REQUEST_TEMPLATE/traceability.md) i
 To select it on GitHub, append `&template=traceability.md` to a PR creation URL that already has query parameters, or `?template=traceability.md` if it has none. You can also copy the template into the description. See [GitHub's query parameter documentation](https://docs.github.com/en/pull-requests/reference/using-query-parameters-to-create-a-pull-request).
 
 The template is opt-in, is not the default PR body, and has no CI enforcement. Applicable issue and repository requirements still apply when using a custom description.
+
+## Versioned customer consent
+
+The coordinated implementation follows [spec v1.16 §4.18](https://github.com/sara-fan/sarafan.spec/issues/30). [API, configuration and rollout](docs/customer-consents.md). Legal text must be prepared and published by an Administrator before registration can process personal data; no consent is silently granted to existing customers.

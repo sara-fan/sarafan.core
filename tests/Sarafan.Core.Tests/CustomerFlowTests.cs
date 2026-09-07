@@ -149,11 +149,7 @@ public sealed class CustomerFlowTests
         {
             for (var attempt = 0; attempt < 4; attempt++)
             {
-                responses.Add(await _client.PostAsJsonAsync("/api/v1/auth/code/request", new
-                {
-                    phone,
-                    purpose = "register"
-                }));
+                responses.Add(await _client.PostAsJsonAsync("/api/v1/auth/code/request", await ConsentTestData.Request(_client, phone)));
             }
 
             using (Assert.EnterMultipleScope())
@@ -257,12 +253,7 @@ public sealed class CustomerFlowTests
 
     private async Task<(AuthenticationSessionDto Session, string Cookie)> Register(string phone)
     {
-        using var codeRequest = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new
-        {
-            phone,
-            purpose = "register"
-        });
-        Assert.That(codeRequest.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
+        var onboarding = await ConsentTestData.Onboarding(_client, phone);
 
         using var response = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {
@@ -270,7 +261,7 @@ public sealed class CustomerFlowTests
             purpose = "register",
             code = VerificationCode(phone),
             termsAccepted = true,
-            personalDataAccepted = true
+            onboardingToken = onboarding
         });
         var session = await response.Content.ReadFromJsonAsync<AuthenticationSessionDto>();
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
