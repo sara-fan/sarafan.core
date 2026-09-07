@@ -55,19 +55,27 @@ internal static class OperationLogging
             return new OperationCompleted();
         }, cancellationToken);
 
-    internal static void Enter(ILogger logger, string operation, Func<string> inputs)
+    internal static void Enter(
+        ILogger logger,
+        string operation,
+        Func<string> inputs,
+        LogLevel logLevel = LogLevel.Debug)
     {
-        if (logger.IsEnabled(LogLevel.Debug))
+        if (logger.IsEnabled(logLevel))
         {
-            SarafanEvents.OperationEntered(logger, operation, inputs());
+            SarafanEvents.OperationEntered(logger, logLevel, operation, inputs());
         }
     }
 
-    internal static void Exit(ILogger logger, string operation, object? output)
+    internal static void Exit(
+        ILogger logger,
+        string operation,
+        object? output,
+        LogLevel logLevel = LogLevel.Debug)
     {
-        if (logger.IsEnabled(LogLevel.Debug))
+        if (logger.IsEnabled(logLevel))
         {
-            SarafanEvents.OperationExited(logger, operation, LogValueSummary.Describe(output));
+            SarafanEvents.OperationExited(logger, logLevel, operation, LogValueSummary.Describe(output));
         }
     }
 
@@ -78,7 +86,11 @@ internal static class OperationLogging
     internal static bool WasReported(Exception exception) => ReportedExceptions.TryGetValue(exception, out _);
 
     internal static void Failed(
-        ILogger logger, string operation, Exception exception, CancellationToken cancellationToken)
+        ILogger logger,
+        string operation,
+        Exception exception,
+        CancellationToken cancellationToken,
+        LogLevel logLevel = LogLevel.Debug)
     {
         if (!IsExpected(exception, cancellationToken) && logger.IsEnabled(LogLevel.Warning))
         {
@@ -86,9 +98,9 @@ internal static class OperationLogging
             ReportedExceptions.GetValue(exception, _ => new object());
         }
 
-        if (logger.IsEnabled(LogLevel.Debug))
+        if (logger.IsEnabled(logLevel))
         {
-            SarafanEvents.OperationExited(logger, operation, exception switch
+            SarafanEvents.OperationExited(logger, logLevel, operation, exception switch
             {
                 ServiceException service => $"no result; service rejection; status={service.StatusCode}",
                 BadHttpRequestException request => $"no result; request rejection; status={request.StatusCode}",

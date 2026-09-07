@@ -5,6 +5,8 @@
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 
+using Sarafan.Core.Controllers;
+
 namespace Sarafan.Core.Observability;
 
 public sealed class ControllerLoggingFilter(ILogger<ControllerLoggingFilter> logger) : IAsyncActionFilter, IOrderedFilter
@@ -16,8 +18,11 @@ public sealed class ControllerLoggingFilter(ILogger<ControllerLoggingFilter> log
     {
         var descriptor = (ControllerActionDescriptor)context.ActionDescriptor;
         var operation = $"{descriptor.ControllerTypeInfo.FullName}.{descriptor.MethodInfo.Name}";
+        var logLevel = descriptor.ControllerTypeInfo.AsType() == typeof(StatusController)
+            ? LogLevel.Trace
+            : LogLevel.Debug;
         OperationLogging.Enter(logger, operation, () => LogValueSummary.Inputs(
-            context.ActionArguments.Select(argument => (argument.Key, argument.Value)).ToArray()));
+            context.ActionArguments.Select(argument => (argument.Key, argument.Value)).ToArray()), logLevel);
 
         ActionExecutedContext executed;
         try
@@ -26,17 +31,17 @@ public sealed class ControllerLoggingFilter(ILogger<ControllerLoggingFilter> log
         }
         catch (Exception exception)
         {
-            OperationLogging.Failed(logger, operation, exception, context.HttpContext.RequestAborted);
+            OperationLogging.Failed(logger, operation, exception, context.HttpContext.RequestAborted, logLevel);
             throw;
         }
 
         if (executed.Exception is { } failure && !executed.ExceptionHandled)
         {
-            OperationLogging.Failed(logger, operation, failure, context.HttpContext.RequestAborted);
+            OperationLogging.Failed(logger, operation, failure, context.HttpContext.RequestAborted, logLevel);
         }
         else
         {
-            OperationLogging.Exit(logger, operation, executed.Result);
+            OperationLogging.Exit(logger, operation, executed.Result, logLevel);
         }
     }
 }

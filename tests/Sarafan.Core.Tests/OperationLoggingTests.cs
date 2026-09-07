@@ -241,6 +241,31 @@ public sealed class OperationLoggingTests
         AssertPrivate();
     }
 
+    [Test]
+    public async Task ControllerFilter_LogsCoreStatusAtTrace()
+    {
+        using var traceFactory = LoggerFactory.Create(builder =>
+            builder.SetMinimumLevel(LogLevel.Trace).AddProvider(_logs));
+        var filter = new ControllerLoggingFilter(traceFactory.CreateLogger<ControllerLoggingFilter>());
+        var context = ActionContext(status: true);
+
+        await filter.OnActionExecutionAsync(context, () => Task.FromResult(new ActionExecutedContext(
+            context, [], context.Controller)
+        {
+            Result = new OkObjectResult(new ServiceStatus("Sarafan.Core", "ok", VersionInfo.AppVersion))
+        }));
+
+        Assert.That(_logs.Records.Select(record => record.Event.Id), Is.EqualTo(new[] { 1600, 1601 }));
+        Assert.That(_logs.Records.Select(record => record.Event.Name), Is.EqualTo(new[]
+        {
+            SarafanEvents.OperationEnteredName, SarafanEvents.OperationExitedName
+        }));
+        Assert.That(_logs.Records.Select(record => record.Level), Is.All.EqualTo(LogLevel.Trace));
+        Assert.That(_logs.Records.Select(record => record.Attributes["code.function.name"]),
+            Is.All.EqualTo($"{typeof(StatusController).FullName}.{nameof(StatusController.Status)}"));
+        AssertPrivate();
+    }
+
     [TestCase(false)]
     [TestCase(true)]
     public async Task ControllerFilter_LogsReturnedAndThrownExceptionsWithoutHandlingThem(bool thrown)
@@ -398,7 +423,11 @@ public sealed class OperationLoggingTests
     public async Task HttpFlow_LogsEveryControllerActionAndServiceBoundaryWithSafeOutputs()
     {
         using var app = IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder =>
-            builder.ConfigureLogging(logging => logging.AddProvider(_logs).AddFilter<LogCollector>(null, LogLevel.Debug)));
+            builder.ConfigureLogging(logging => logging
+                .AddProvider(_logs)
+                .AddFilter<LogCollector>(null, LogLevel.Debug)
+                .AddFilter<LogCollector>(
+                    typeof(ControllerLoggingFilter).FullName!, LogLevel.Trace)));
         using var client = app.CreateClient();
         var phone = $"+79994{Random.Shared.Next(100000, 999999)}";
         using var status = await client.GetAsync("/api/v1/status/status");
@@ -441,6 +470,12 @@ public sealed class OperationLoggingTests
         {
             AssertBoundary($"{action.DeclaringType!.FullName}.{action.Name}");
         }
+
+        var statusOperation = $"{typeof(StatusController).FullName}.{nameof(StatusController.Status)}";
+        Assert.That(_logs.Records
+            .Where(record => record.Event.Id is 1600 or 1601)
+            .Where(record => Equals(record.Attributes["code.function.name"], statusOperation))
+            .Select(record => record.Level), Is.All.EqualTo(LogLevel.Trace));
 
         foreach (var type in new[] { typeof(AuthenticationService), typeof(JwtTokenService) })
         {
@@ -623,12 +658,14 @@ public sealed class OperationLoggingTests
 
     private static bool ThrowFromOperation(Exception failure) => throw failure;
 
-    private static ActionExecutingContext ActionContext()
+    private static ActionExecutingContext ActionContext(bool status = false)
     {
         var descriptor = new ControllerActionDescriptor
         {
-            ControllerTypeInfo = typeof(StatusController).GetTypeInfo(),
-            MethodInfo = typeof(StatusController).GetMethod(nameof(StatusController.Status))!
+            ControllerTypeInfo = status ? typeof(StatusController).GetTypeInfo() : typeof(CustomersController).GetTypeInfo(),
+            MethodInfo = status
+                ? typeof(StatusController).GetMethod(nameof(StatusController.Status))!
+                : typeof(CustomersController).GetMethod(nameof(CustomersController.Get))!
         };
         var context = new ActionContext(new DefaultHttpContext(), new RouteData(), descriptor);
         return new ActionExecutingContext(context, [], new Dictionary<string, object?> { ["input"] = Secret }, new object());

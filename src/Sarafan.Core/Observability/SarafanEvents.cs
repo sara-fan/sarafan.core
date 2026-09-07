@@ -42,23 +42,37 @@ public static partial class SarafanEvents
     public const string OperationFailedName = "sarafan.core.operation.failed";
 
     public static void OperationEntered(ILogger logger, string operation, string inputs)
+        => OperationEntered(logger, LogLevel.Debug, operation, inputs);
+
+    public static void OperationEntered(
+        ILogger logger,
+        LogLevel logLevel,
+        string operation,
+        string inputs)
     {
         using var scope = logger.BeginScope(new KeyValuePair<string, object?>[]
         {
             new("code.function.name", operation),
             new("sarafan.operation.inputs", inputs)
         });
-        OperationEnteredMessage(logger, operation, inputs);
+        OperationEnteredMessage(logger, logLevel, operation, inputs);
     }
 
     public static void OperationExited(ILogger logger, string operation, string outputs)
+        => OperationExited(logger, LogLevel.Debug, operation, outputs);
+
+    public static void OperationExited(
+        ILogger logger,
+        LogLevel logLevel,
+        string operation,
+        string outputs)
     {
         using var scope = logger.BeginScope(new KeyValuePair<string, object?>[]
         {
             new("code.function.name", operation),
             new("sarafan.operation.outputs", outputs)
         });
-        OperationExitedMessage(logger, operation, outputs);
+        OperationExitedMessage(logger, logLevel, operation, outputs);
     }
 
     public static void OperationFailed(ILogger logger, string operation, Exception exception)
@@ -72,11 +86,19 @@ public static partial class SarafanEvents
         OperationFailedMessage(logger, operation, errorType);
     }
 
-    [LoggerMessage(EventId = 1600, EventName = OperationEnteredName, Level = LogLevel.Debug, Message = "Entering {Operation}. Inputs: {Inputs}.")]
-    private static partial void OperationEnteredMessage(ILogger logger, string operation, string inputs);
+    [LoggerMessage(EventId = 1600, EventName = OperationEnteredName, Message = "Entering {Operation}. Inputs: {Inputs}.")]
+    private static partial void OperationEnteredMessage(
+        ILogger logger,
+        LogLevel logLevel,
+        string operation,
+        string inputs);
 
-    [LoggerMessage(EventId = 1601, EventName = OperationExitedName, Level = LogLevel.Debug, Message = "Exiting {Operation}. Outputs: {Outputs}.")]
-    private static partial void OperationExitedMessage(ILogger logger, string operation, string outputs);
+    [LoggerMessage(EventId = 1601, EventName = OperationExitedName, Message = "Exiting {Operation}. Outputs: {Outputs}.")]
+    private static partial void OperationExitedMessage(
+        ILogger logger,
+        LogLevel logLevel,
+        string operation,
+        string outputs);
 
     [LoggerMessage(EventId = 1602, EventName = OperationFailedName, Level = LogLevel.Warning, Message = "Unexpected exception in {Operation}. Exception type: {ErrorType}.")]
     private static partial void OperationFailedMessage(ILogger logger, string operation, string errorType);
