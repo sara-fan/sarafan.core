@@ -130,7 +130,7 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ---
 
-**Version:** 1.9
+**Version:** 1.10
 
 **Last Updated:** 2026-09-07
 
@@ -151,3 +151,5 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Return `effectiveLocalDate` and `effectiveTimeZone` (`Europe/Moscow`) alongside legal-document UTC activation instants; draft dates remain null. Registration request quotas must pass before persisting onboarding evidence. Retention evaluates evidence holds/latest decisions set-wise in bounded pages, never with per-event database round trips. Worker failures include only safe `error.type`; tests freeze the numeric ID, dotted name, severity and message.
 
 - Artifact retention selects eligible IDs in bounded pages, excludes current/future/referenced documents set-wise, and records disposal audit in the same transaction as bulk updates. Bulk retention must be verified with fresh/no-tracking reads. Apply the 200-record history limit after merging customer and observed-browser evidence. Preserve UTF-8 text when editing through Windows shell pipelines.
+
+- Retention must preserve the latest decision for every consent kind while older same-kind evidence remains retained, including after changing CookieDays/EvidenceDays; cookie denial or expiry must never revive an older grant. Service-level access-token failures must retain the Bearer challenge contract (customer and staff), without adding it to refresh-token errors.

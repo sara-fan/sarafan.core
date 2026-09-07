@@ -346,6 +346,22 @@ public sealed class ProblemDetailsContractTests
         }
     }
 
+    [TestCase("invalid_access_token", null, "Bearer")]
+    [TestCase("invalid_access_token", "Bearer private-token", "Bearer error=\"invalid_token\"")]
+    [TestCase("invalid_backoffice_access_token", "Bearer private-token", "Bearer error=\"invalid_token\"")]
+    [TestCase("invalid_refresh_token", "Bearer private-token", "")]
+    [TestCase("invalid_backoffice_refresh_token", "Bearer private-token", "")]
+    public async Task ServiceTokenProblemsUseBearerChallengeOnlyForAccessTokens(string code, string? authorization, string challenge)
+    {
+        var handler = new SarafanExceptionHandler(new SarafanProblemDetailsFactory(), NullLogger<SarafanExceptionHandler>.Instance);
+        var context = Context("/token");
+        if (authorization is not null) context.Request.Headers.Authorization = authorization;
+        await handler.TryHandleAsync(context, new ServiceException(401, code), default);
+        Assert.That(context.Response.Headers.WWWAuthenticate.ToString(), Is.EqualTo(challenge));
+        Assert.That(await Body(context), Does.Not.Contain("private-token"));
+        Assert.That(context.Response.StatusCode, Is.EqualTo(401));
+    }
+
     [Test]
     public async Task ExceptionHandler_MapsBadHttpRequestStatus()
     {

@@ -37,11 +37,10 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
                 removed += await database.ConsentEvents.Where(item => candidates.Contains(item.Id)
                     && !(item.CustomerId.HasValue && heldCustomers.Contains(item.CustomerId.Value))
                     && !database.ConsentAssociations.Any(x => x.ConsentEventId == item.Id && heldCustomers.Contains(x.CustomerId))
-                    && !(item.Kind == ConsentKinds.PersonalData
-                        && !database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Kind == item.Kind && x.Id > item.Id)
-                        && (item.Decision == "grant" && item.DocumentId == currentId
+                    && !(!database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Kind == item.Kind && x.Id > item.Id)
+                        && (item.Kind == ConsentKinds.PersonalData && item.Decision == "grant" && item.DocumentId == currentId
                             && database.Customers.Any(x => x.Id == item.CustomerId && x.State != CustomerState.Disabled)
-                            || database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Id < item.Id && x.RetainUntil > now))))
+                            || database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Kind == item.Kind && x.Id < item.Id && x.RetainUntil > now))))
                     .ExecuteDeleteAsync(token);
             }
             var activeIds = await database.LegalDocuments.Where(x => x.State == "published" && x.EffectiveAt <= now)

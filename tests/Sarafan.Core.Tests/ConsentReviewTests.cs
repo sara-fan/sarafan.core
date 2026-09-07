@@ -415,6 +415,33 @@ public sealed class ConsentReviewTests
         Assert.That(history.Last().At, Is.EqualTo(_clock.Now.AddSeconds(202 - 500)).Within(TimeSpan.FromMicroseconds(1)));
     }
 
+    [TestCase("refuse")]
+    [TestCase("withdraw")]
+    [TestCase("grant")]
+    public async Task CookieRetentionCannotReviveAnOlderUnexpiredGrantAfterConfigurationChanges(string denial)
+    {
+        await using var database = Database();
+        var settings = new ConsentOptions { CookieDays = 365, EvidenceDays = 1095 };
+        Assert.That(Validator.TryValidateObject(settings, new ValidationContext(settings), [], true), Is.True);
+        var longRetention = new ConsentService(database, _clock, Options.Create(settings), _auth, NullLogger<ConsentService>.Instance);
+        await longRetention.DecideCookiesAsync(Browser, Decision(ConsentKinds.Cookies), default);
+        _clock.Now = _clock.Now.AddDays(10);
+        var shorterRetention = new ConsentService(database, _clock, Options.Create(new ConsentOptions { CookieDays = 180, EvidenceDays = 180 }), _auth, NullLogger<ConsentService>.Instance);
+        var request = Decision(ConsentKinds.Cookies); request.Decision = denial; request.Categories = [];
+        await shorterRetention.DecideCookiesAsync(Browser, request, default);
+        _clock.Now = _clock.Now.AddDays(181);
+        var retention = new ConsentRetentionService(database, _clock, Options.Create(new ConsentOptions { CookieDays = 180, EvidenceDays = 180 }), NullLogger<ConsentRetentionService>.Instance);
+        await retention.SweepAsync(default);
+        Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(2));
+        var status = await shorterRetention.CookieStatusAsync(Browser, default);
+        Assert.That(status.Status, Is.Not.EqualTo("current"));
+        Assert.That(status.Categories, Is.Empty);
+        _clock.Now = _clock.Now.AddDays(1100);
+        await retention.SweepAsync(default);
+        Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);
+        Assert.That((await shorterRetention.CookieStatusAsync(Browser, default)).Categories, Is.Empty);
+    }
+
     private sealed class CountCommands : DbCommandInterceptor
     {
         public int Count { get; private set; }

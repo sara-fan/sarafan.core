@@ -31,7 +31,7 @@ public sealed class SarafanProblemDetailsFactory(
     private static readonly IReadOnlyDictionary<string, ProblemDefinition> Definitions =
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
-            ["invalid_legal_document"] = new(400, "Некорректный документ", "Загрузите UTF-8 Markdown до 256 КиБ: заголовки, списки, выделение, ссылки и таблицы; без HTML, изображений и встроенных ресурсов."),
+            ["invalid_legal_document"] = new(400, "Некорректный документ", "Проверьте вид документа, язык ru, непустое название до 200 символов и обозначение версии до 64 символов. Категории analytics/marketing без повторов допустимы только для cookie-consent. Загрузите файл .md в UTF-8 до 256 КиБ: заголовки, списки, выделение, безопасные ссылки и таблицы; без HTML, изображений и встроенных ресурсов."),
             ["legal_document_not_found"] = new(404, "Документ не найден", "Документ отсутствует или ещё не опубликован."),
             ["legal_document_disposed"] = new(410, "Срок хранения документа истёк", "Содержимое удалено по правилам хранения; сведения о версии сохранены."),
             ["invalid_effective_date"] = new(400, "Некорректная дата публикации", "Выберите публикацию сейчас либо будущую дату по московскому времени."),

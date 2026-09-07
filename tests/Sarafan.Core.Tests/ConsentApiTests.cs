@@ -95,6 +95,10 @@ public sealed class ConsentApiTests
         Authorize(new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(jwt));
         using var response = await _client.PostAsync("/api/v1/consents/me/browser", null);
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        var challenge = response.Headers.WwwAuthenticate.Single();
+        Assert.That(challenge.Scheme, Is.EqualTo("Bearer"));
+        Assert.That(challenge.Parameter, Is.EqualTo("error=\"invalid_token\""));
+        Assert.That((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_access_token"));
     }
 
     [Test]
