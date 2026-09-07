@@ -323,7 +323,7 @@ public sealed class ConsentReviewTests
         var service = new ConsentRetentionService(database, _clock, Options.Create(new ConsentOptions()), NullLogger<ConsentRetentionService>.Instance);
         var result = await service.SweepAsync(default);
         Assert.That(result.Events, Is.EqualTo(2001));
-        Assert.That(commands.Count, Is.LessThanOrEqualTo(15), "Each page must use set-based queries, not per-event lookups.");
+        Assert.That(commands.Count, Is.LessThanOrEqualTo(25), "Each page must use set-based queries, not per-event lookups.");
         Assert.That(await setup.ConsentEvents.CountAsync(), Is.Zero);
     }
 
@@ -440,6 +440,78 @@ public sealed class ConsentReviewTests
         await retention.SweepAsync(default);
         Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);
         Assert.That((await shorterRetention.CookieStatusAsync(Browser, default)).Categories, Is.Empty);
+    }
+
+    [TestCase(ConsentKinds.Cookies)]
+    [TestCase(ConsentKinds.PersonalData)]
+    public async Task DisposedEvidenceCannotBeReplayedAndMarkersExpireWithTheirDocument(string kind)
+    {
+        await using var database = Database();
+        var request = Decision(kind);
+        var service = Consents(database);
+        if (kind == ConsentKinds.Cookies)
+        {
+            await service.DecideCookiesAsync(Browser, request, default);
+            var error = Assert.ThrowsAsync<ServiceException>(() => service.DecideCookiesAsync("different-browser-with-at-least-32-characters", request, default));
+            Assert.That(error!.Code, Is.EqualTo("consent_conflict"));
+        }
+        else
+        {
+            await service.DecidePersonalDataAsync(_customer, request, default);
+            var refusal = Decision(kind); refusal.Decision = "refuse";
+            await service.DecidePersonalDataAsync(_customer, refusal, default);
+        }
+        _clock.Now = _clock.Now.AddDays(1100);
+        var retention = new ConsentRetentionService(database, _clock, Options.Create(new ConsentOptions()), NullLogger<ConsentRetentionService>.Instance);
+        await retention.SweepAsync(default);
+        Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);
+        Assert.That(await database.ConsentReplayTombstones.CountAsync(), Is.EqualTo(kind == ConsentKinds.Cookies ? 1 : 2));
+        var replay = Assert.ThrowsAsync<ServiceException>(async () =>
+        {
+            if (kind == ConsentKinds.Cookies) await service.DecideCookiesAsync(Browser, request, default);
+            else await service.DecidePersonalDataAsync(_customer, request, default);
+        });
+        Assert.That(replay!.Code, Is.EqualTo("consent_conflict"));
+        if (kind == ConsentKinds.Cookies)
+        {
+            Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.DecideCookiesAsync("different-browser-with-at-least-32-characters", request, default))!.Code, Is.EqualTo("consent_conflict"));
+            Assert.That((await service.CookieStatusAsync(Browser, default)).Categories, Is.Empty);
+            await service.DecideCookiesAsync(Browser, Decision(kind), default);
+        }
+        else await service.DecidePersonalDataAsync(_customer, Decision(kind), default);
+        Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(1));
+        var replacement = await Draft(database, kind);
+        await Documents(database).PublishAsync(replacement.Id, new() { Revision = replacement.Revision, Now = true }, 1, default);
+        await retention.SweepAsync(default);
+        Assert.That(await database.ConsentReplayTombstones.CountAsync(), Is.Zero);
+        var stale = Assert.ThrowsAsync<ServiceException>(async () =>
+        {
+            if (kind == ConsentKinds.Cookies) await service.DecideCookiesAsync(Browser, request, default);
+            else await service.DecidePersonalDataAsync(_customer, request, default);
+        });
+        Assert.That(stale!.Code, Is.EqualTo("consent_version_changed"));
+        Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task RightsExtensionAndCompletionRequireSeparateAuditedTransitions()
+    {
+        await using var database = Database();
+        var service = new ConsentRightsService(database, _clock, Options.Create(new ConsentOptions()), NullLogger<ConsentRightsService>.Instance);
+        var item = await service.CreateAsync(_customer, new() { Kind = "stop-processing", IdempotencyKey = Guid.NewGuid() }, default);
+        var error = Assert.ThrowsAsync<ServiceException>(() => service.UpdateAsync(item.Id, new()
+        { Revision = item.Revision, Extend = true, ExtensionReason = "test reason", State = "completed", CompletionEvidence = "test evidence" }, 1, default));
+        Assert.That(error!.Code, Is.EqualTo("invalid_rights_request"));
+        var unchanged = await database.ConsentRightsCases.AsNoTracking().SingleAsync();
+        Assert.That(unchanged.DueAt, Is.EqualTo(item.DueAt).Within(TimeSpan.FromMicroseconds(1)));
+        Assert.That(unchanged.Revision, Is.EqualTo(item.Revision));
+        Assert.That(unchanged.Extended, Is.False);
+        Assert.That(unchanged.CompletedAt, Is.Null);
+        Assert.That(await database.LegalAuditEvents.AnyAsync(x => x.RightsCaseId == item.Id), Is.False);
+        var extended = await service.UpdateAsync(item.Id, new() { Revision = item.Revision, Extend = true, ExtensionReason = "test reason", State = "in-progress" }, 1, default);
+        await service.UpdateAsync(item.Id, new() { Revision = extended.Revision, State = "completed", CompletionEvidence = "test evidence" }, 1, default);
+        Assert.That(await database.LegalAuditEvents.Where(x => x.RightsCaseId == item.Id).OrderBy(x => x.Id).Select(x => x.Action).ToArrayAsync(),
+            Is.EqualTo(new[] { "rights-extended", "rights-updated" }));
     }
 
     private sealed class CountCommands : DbCommandInterceptor

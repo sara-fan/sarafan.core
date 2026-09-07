@@ -32,6 +32,7 @@ internal sealed class ConsentEventConfiguration : IEntityTypeConfiguration<Conse
         builder.Property(item => item.RetainUntil).HasColumnName("retain_until");
 
         builder.HasIndex(item => new { item.SubjectKey, item.IdempotencyKey }).IsUnique();
+        builder.HasIndex(item => item.IdempotencyKey).IsUnique().HasFilter("kind = 'cookie-consent'");
         builder.HasIndex(item => new { item.CustomerId, item.Kind, item.Id });
 
         builder.HasOne(item => item.Document)

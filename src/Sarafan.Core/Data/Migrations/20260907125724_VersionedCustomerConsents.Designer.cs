@@ -332,6 +332,10 @@ namespace Sarafan.Core.Data.Migrations
 
                     b.HasIndex("DocumentId");
 
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("kind = 'cookie-consent'");
+
                     b.HasIndex("SubjectKey", "IdempotencyKey")
                         .IsUnique();
 
@@ -388,6 +392,22 @@ namespace Sarafan.Core.Data.Migrations
                     b.HasIndex("TermsDocumentId");
 
                     b.ToTable("consent_onboarding", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentReplayTombstone", b =>
+                {
+                    b.Property<string>("KeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("key_hash");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("document_id");
+
+                    b.HasKey("KeyHash");
+                    b.HasIndex("DocumentId");
+                    b.ToTable("consent_replay_tombstones", (string)null);
                 });
 
             modelBuilder.Entity("Sarafan.Core.Models.ConsentRightsCase", b =>
@@ -959,6 +979,15 @@ namespace Sarafan.Core.Data.Migrations
                     b.HasOne("Sarafan.Core.Models.LegalDocument", null)
                         .WithMany()
                         .HasForeignKey("TermsDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentReplayTombstone", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.LegalDocument", null)
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

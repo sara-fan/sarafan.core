@@ -132,6 +132,24 @@ namespace Sarafan.Core.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "consent_replay_tombstones",
+                columns: table => new
+                {
+                    key_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    document_id = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_consent_replay_tombstones", x => x.key_hash);
+                    table.ForeignKey(
+                        name: "FK_consent_replay_tombstones_legal_documents_document_id",
+                        column: x => x.document_id,
+                        principalTable: "legal_documents",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "consent_onboarding",
                 columns: table => new
                 {
@@ -217,6 +235,18 @@ namespace Sarafan.Core.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_consent_replay_tombstones_document_id",
+                table: "consent_replay_tombstones",
+                column: "document_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_consent_events_idempotency_key",
+                table: "consent_events",
+                column: "idempotency_key",
+                unique: true,
+                filter: "kind = 'cookie-consent'");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_consent_onboarding_expires_at",
                 table: "consent_onboarding",
                 column: "expires_at");
@@ -252,6 +282,8 @@ namespace Sarafan.Core.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(name: "consent_replay_tombstones");
+
             migrationBuilder.DropTable(
                 name: "consent_associations");
 

@@ -90,7 +90,7 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             await ConsentTransaction.Run(database, async () =>
             {
                 var subject = BrowserKey(raw) ?? throw new ServiceException(400, "invalid_consent_decision");
-                var existing = await FindRetry(subject, request, token);
+                var existing = await FindRetry(subject, request, ConsentKinds.Cookies, token);
                 if (existing is not null) return true;
                 var document = request.Decision == "withdraw"
                     ? await WithdrawalDocument(subject, ConsentKinds.Cookies, request, token)
@@ -112,7 +112,7 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
                 await RequireCustomer(customerId, token);
                 if (request.Decision is not ("grant" or "refuse")) throw new ServiceException(400, "invalid_consent_decision");
                 var subject = CustomerKey(customerId);
-                if (await FindRetry(subject, request, token) is not null) return true;
+                if (await FindRetry(subject, request, ConsentKinds.PersonalData, token) is not null) return true;
                 var document = await ValidateDecision(ConsentKinds.PersonalData, request, token);
                 wroteDecision = true;
                 database.ConsentEvents.Add(NewEvent(subject, customerId, document, request.Decision, [], "customer-consents",
@@ -231,15 +231,22 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             throw new ServiceException(400, "invalid_consent_decision");
         return last.Document;
     }
-    private async Task<ConsentEvent?> FindRetry(string subject, ConsentDecisionRequest request, CancellationToken token)
+    private async Task<ConsentEvent?> FindRetry(string subject, ConsentDecisionRequest request, string kind, CancellationToken token)
     {
         ValidateShape(request);
-        var found = await database.ConsentEvents.AsNoTracking().SingleOrDefaultAsync(x => x.SubjectKey == subject && x.IdempotencyKey == request.IdempotencyKey, token);
-        if (found is not null && (found.DocumentId != request.DocumentId || found.ContentHash != request.ContentHash
+        var query = database.ConsentEvents.AsNoTracking().Where(x => x.IdempotencyKey == request.IdempotencyKey);
+        query = kind == ConsentKinds.Cookies ? query.Where(x => x.Kind == ConsentKinds.Cookies) : query.Where(x => x.SubjectKey == subject);
+        var found = await query.SingleOrDefaultAsync(token);
+        if (found is null && await database.ConsentReplayTombstones.AnyAsync(x => x.KeyHash == ReplayKey(subject, request.IdempotencyKey, kind), token))
+            throw new ServiceException(409, "consent_conflict");
+        if (found is not null && (found.SubjectKey != subject || found.DocumentId != request.DocumentId || found.ContentHash != request.ContentHash
             || found.Decision != request.Decision || !found.Categories.SequenceEqual(request.Categories.Order())))
             throw new ServiceException(409, "consent_conflict");
         return found;
     }
+    internal static string ReplayKey(string subject, Guid key, string kind) => Convert.ToHexStringLower(SHA256.HashData(
+        Encoding.UTF8.GetBytes($"{(kind == ConsentKinds.Cookies ? "browser" : subject)}:{key:D}")));
+
     private static ServiceException Changed(LegalDocument document) => new(409, "consent_version_changed")
     { RequiredDocumentId = document.Id, ConsentKind = document.Kind };
     private static void ValidateShape(ConsentDecisionRequest request)

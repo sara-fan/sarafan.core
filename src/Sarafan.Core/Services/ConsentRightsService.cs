@@ -79,7 +79,7 @@ public sealed class ConsentRightsService(AppDbContext database, TimeProvider clo
                 throw new ServiceException(400, "invalid_rights_request");
             if (request.Extend)
             {
-                if (item.Kind != "stop-processing" || item.Extended || clock.GetUtcNow() >= item.DueAt || string.IsNullOrWhiteSpace(request.ExtensionReason))
+                if (request.State == "completed" || item.Kind != "stop-processing" || item.Extended || clock.GetUtcNow() >= item.DueAt || string.IsNullOrWhiteSpace(request.ExtensionReason))
                     throw new ServiceException(400, "invalid_rights_request");
                 item.DueAt = ConsentCalendar.WorkingDeadline(item.DueAt, 5, options.Value);
                 item.ExtensionReason = request.ExtensionReason.Trim();

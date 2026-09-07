@@ -130,7 +130,7 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ---
 
-**Version:** 1.10
+**Version:** 1.11
 
 **Last Updated:** 2026-09-07
 
@@ -153,3 +153,5 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Artifact retention selects eligible IDs in bounded pages, excludes current/future/referenced documents set-wise, and records disposal audit in the same transaction as bulk updates. Bulk retention must be verified with fresh/no-tracking reads. Apply the 200-record history limit after merging customer and observed-browser evidence. Preserve UTF-8 text when editing through Windows shell pipelines.
 
 - Retention must preserve the latest decision for every consent kind while older same-kind evidence remains retained, including after changing CookieDays/EvidenceDays; cookie denial or expiry must never revive an older grant. Service-level access-token failures must retain the Bearer challenge contract (customer and staff), without adding it to refresh-token errors.
+
+- Disposing consent evidence must atomically retain a compact replay-key digest for documents that are still current; remove these tombstones after supersession, when stale-version validation rejects old grants. Tombstones contain no decision, categories, customer ID or browser receipt. Cookie idempotency keys are unique across browser subjects to prevent replay after storage loss; customer keys remain subject-scoped. Never combine rights-case extension and completion in one transition.

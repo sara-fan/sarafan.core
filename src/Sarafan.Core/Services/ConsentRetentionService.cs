@@ -24,6 +24,11 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
             var onboarding = await database.ConsentOnboarding.Where(x => x.ExpiresAt <= now).ExecuteDeleteAsync(token);
             var heldCustomers = database.ConsentRightsCases.Where(x => x.State != "completed").Select(x => x.CustomerId);
             var currentId = (await LegalDocumentService.CurrentEntity(database, ConsentKinds.PersonalData, now, token))?.Id;
+            var activeIds = await database.LegalDocuments.Where(x => x.State == "published" && x.EffectiveAt <= now)
+                .GroupBy(x => new { x.Kind, x.Locale })
+                .Select(group => group.OrderByDescending(x => x.EffectiveAt).ThenByDescending(x => x.PublishedAt).First().Id)
+                .ToArrayAsync(token);
+            await database.ConsentReplayTombstones.Where(x => !activeIds.Contains(x.DocumentId)).ExecuteDeleteAsync(token);
             var removed = 0;
             long afterId = 0;
             while (true)
@@ -32,21 +37,23 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
                     .OrderBy(x => x.Id).Select(x => x.Id).Take(1000).ToArrayAsync(token);
                 if (candidates.Length == 0) break;
                 afterId = candidates[^1];
-                // Evaluate holds and latest decisions in the database, with two round trips per page.
+                // Evaluate holds and latest decisions in SQL with bounded round trips per page.
                 // Keep the lock across the sweep so publication/decisions cannot race disposal.
-                removed += await database.ConsentEvents.Where(item => candidates.Contains(item.Id)
+                var expired = await database.ConsentEvents.Where(item => candidates.Contains(item.Id)
                     && !(item.CustomerId.HasValue && heldCustomers.Contains(item.CustomerId.Value))
                     && !database.ConsentAssociations.Any(x => x.ConsentEventId == item.Id && heldCustomers.Contains(x.CustomerId))
                     && !(!database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Kind == item.Kind && x.Id > item.Id)
                         && (item.Kind == ConsentKinds.PersonalData && item.Decision == "grant" && item.DocumentId == currentId
                             && database.Customers.Any(x => x.Id == item.CustomerId && x.State != CustomerState.Disabled)
                             || database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Kind == item.Kind && x.Id < item.Id && x.RetainUntil > now))))
-                    .ExecuteDeleteAsync(token);
+                    .Select(item => new { item.Id, item.SubjectKey, item.IdempotencyKey, item.Kind, item.DocumentId }).ToArrayAsync(token);
+                if (expired.Length == 0) continue;
+                database.ConsentReplayTombstones.AddRange(expired.Where(x => activeIds.Contains(x.DocumentId)).Select(x => new ConsentReplayTombstone
+                { KeyHash = ConsentService.ReplayKey(x.SubjectKey, x.IdempotencyKey, x.Kind), DocumentId = x.DocumentId }));
+                await database.SaveChangesAsync(token);
+                var ids = expired.Select(x => x.Id).ToArray();
+                removed += await database.ConsentEvents.Where(x => ids.Contains(x.Id)).ExecuteDeleteAsync(token);
             }
-            var activeIds = await database.LegalDocuments.Where(x => x.State == "published" && x.EffectiveAt <= now)
-                .GroupBy(x => new { x.Kind, x.Locale })
-                .Select(group => group.OrderByDescending(x => x.EffectiveAt).ThenByDescending(x => x.PublishedAt).First().Id)
-                .ToArrayAsync(token);
             var disposed = 0;
             while (true)
             {
