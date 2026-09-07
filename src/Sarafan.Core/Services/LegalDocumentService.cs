@@ -155,5 +155,6 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
         row.Id, row.Kind, row.Locale, row.Title, row.DisplayVersion, row.Html, row.SourceHash, row.ContentHash,
         row.RendererVersion, row.CookieCategories, row.DisposedAt is not null ? "disposed" : row.State == "published"
             ? row.EffectiveAt > now ? "scheduled" : row.Id == currentId ? "effective" : "superseded" : row.State,
-        row.EffectiveAt, row.Revision, row.CreatedAt, admin ? row.CreatedBy : null);
+        row.EffectiveAt, row.Revision, row.CreatedAt, admin ? row.CreatedBy : null,
+        row.EffectiveAt is { } effectiveAt ? ConsentCalendar.LocalDate(effectiveAt) : null, ConsentCalendar.TimeZoneId);
 }

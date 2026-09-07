@@ -225,9 +225,17 @@ public static partial class SarafanEvents
     [LoggerMessage(EventId = 1400, EventName = UnhandledExceptionName, Level = LogLevel.Warning, Message = "An unhandled exception reached the centralized exception handler.")]
     private static partial void UnhandledExceptionMessage(ILogger logger);
 
-    [LoggerMessage(EventId = 1800, EventName = "sarafan.core.consent.retention.failed", Level = LogLevel.Warning,
+    public const string ConsentRetentionFailedName = "sarafan.core.consent.retention.failed";
+
+    public static void ConsentRetentionFailed(ILogger logger, Exception exception)
+    {
+        using var scope = ErrorTypeScope(logger, exception);
+        ConsentRetentionFailedMessage(logger);
+    }
+
+    [LoggerMessage(EventId = 1800, EventName = ConsentRetentionFailedName, Level = LogLevel.Warning,
         Message = "Consent retention processing failed; the next scheduled run will retry.")]
-    public static partial void ConsentRetentionFailed(ILogger logger);
+    private static partial void ConsentRetentionFailedMessage(ILogger logger);
 
     private static IDisposable? ErrorTypeScope(ILogger logger, Exception exception)
         => logger.BeginScope(new KeyValuePair<string, object?>[]

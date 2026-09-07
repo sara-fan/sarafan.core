@@ -22,31 +22,27 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
             var cutoff = now.AddDays(-options.Value.EvidenceDays);
             var draftCutoff = now.AddDays(-options.Value.DraftDays);
             var onboarding = await database.ConsentOnboarding.Where(x => x.ExpiresAt <= now).ExecuteDeleteAsync(token);
-            var heldCustomers = await database.ConsentRightsCases.Where(x => x.State != "completed").Select(x => x.CustomerId).Distinct().ToArrayAsync(token);
-            var current = await LegalDocumentService.CurrentEntity(database, ConsentKinds.PersonalData, now, token);
+            var heldCustomers = database.ConsentRightsCases.Where(x => x.State != "completed").Select(x => x.CustomerId);
+            var currentId = (await LegalDocumentService.CurrentEntity(database, ConsentKinds.PersonalData, now, token))?.Id;
             var removed = 0;
             long afterId = 0;
             while (true)
             {
-                var candidates = await database.ConsentEvents.Where(x => x.RetainUntil <= now && x.Id > afterId).OrderBy(x => x.Id).Take(1000).ToArrayAsync(token);
+                var candidates = await database.ConsentEvents.Where(x => x.RetainUntil <= now && x.Id > afterId)
+                    .OrderBy(x => x.Id).Select(x => x.Id).Take(1000).ToArrayAsync(token);
                 if (candidates.Length == 0) break;
-                afterId = candidates[^1].Id;
-                foreach (var item in candidates)
-                {
-                    if (item.CustomerId is { } customer && heldCustomers.Contains(customer)
-                        || await database.ConsentAssociations.AnyAsync(x => x.ConsentEventId == item.Id && heldCustomers.Contains(x.CustomerId), token)) continue;
-                    var latest = await database.ConsentEvents.AsNoTracking().Where(x => x.SubjectKey == item.SubjectKey && x.Kind == item.Kind)
-                        .OrderByDescending(x => x.Id).FirstAsync(token);
-                    // An operational current grant remains necessary while it authorizes active processing.
-                    // Never remove a later denial while any older evidence could become the latest grant.
-                    if (item.Id == latest.Id && item.Kind == ConsentKinds.PersonalData
-                        && (item.Decision == "grant" && item.DocumentId == current?.Id
-                            && await database.Customers.AnyAsync(x => x.Id == item.CustomerId && x.State != CustomerState.Disabled, token)
-                            || await database.ConsentEvents.AnyAsync(x => x.SubjectKey == item.SubjectKey && x.Id < item.Id && x.RetainUntil > now, token))) continue;
-                    database.ConsentEvents.Remove(item);
-                    removed++;
-                }
-                await database.SaveChangesAsync(token);
+                afterId = candidates[^1];
+                // Evaluate holds and latest decisions in the database, with two round trips per page.
+                // Keep the lock across the sweep so publication/decisions cannot race disposal.
+                removed += await database.ConsentEvents.Where(item => candidates.Contains(item.Id)
+                    && !(item.CustomerId.HasValue && heldCustomers.Contains(item.CustomerId.Value))
+                    && !database.ConsentAssociations.Any(x => x.ConsentEventId == item.Id && heldCustomers.Contains(x.CustomerId))
+                    && !(item.Kind == ConsentKinds.PersonalData
+                        && !database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Kind == item.Kind && x.Id > item.Id)
+                        && (item.Decision == "grant" && item.DocumentId == currentId
+                            && database.Customers.Any(x => x.Id == item.CustomerId && x.State != CustomerState.Disabled)
+                            || database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Id < item.Id && x.RetainUntil > now))))
+                    .ExecuteDeleteAsync(token);
             }
             var documents = await database.LegalDocuments.Where(x => x.DisposedAt == null
                 && (x.State == "draft" ? x.UpdatedAt < draftCutoff : x.UpdatedAt < cutoff)).ToArrayAsync(token);
@@ -83,9 +79,9 @@ public sealed class ConsentRetentionWorker(IServiceScopeFactory scopes, TimeProv
                 await scope.ServiceProvider.GetRequiredService<ConsentRetentionService>().SweepAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-            catch (Exception)
+            catch (Exception exception)
             {
-                SarafanEvents.ConsentRetentionFailed(logger);
+                SarafanEvents.ConsentRetentionFailed(logger, exception);
             }
             try { await Task.Delay(TimeSpan.FromHours(24), clock, stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }

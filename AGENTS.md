@@ -130,7 +130,7 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ---
 
-**Version:** 1.7
+**Version:** 1.8
 
 **Last Updated:** 2026-09-07
 
@@ -138,7 +138,7 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ## Versioned customer consent
 
-- Spec v1.16 §4.18 / CONS-01–07 and Core #20 govern consent. Legal documents live in the database; the obsolete `CustomerConsent`/`ConsentType` models and `customer_consents` rows are removed by the amended `20260907125724_VersionedCustomerConsents` migration. Do not retain, import or fabricate legacy evidence; customers without versioned events have missing consent. Every history event identifies its document and content digest. Preserve exact source bytes and frozen canonical HTML/digests. Only Administrator publishes; no staff acceptance or evidence editing.
+- Spec v1.16 В§4.18 / CONS-01вЂ“07 and Core #20 govern consent. Legal documents live in the database; the obsolete `CustomerConsent`/`ConsentType` models and `customer_consents` rows are removed by the amended `20260907125724_VersionedCustomerConsents` migration. Do not retain, import or fabricate legacy evidence; customers without versioned events have missing consent. Every history event identifies its document and content digest. Preserve exact source bytes and frozen canonical HTML/digests. Only Administrator publishes; no staff acceptance or evidence editing.
 - Use the consent transaction lock for publication, consent changes and protected writes. Check the current personal-data version before and immediately after a protected action, within the same transaction. Profile and photo writes use `PersonalDataConsentFilter` before model binding/multipart buffering and `WithPersonalDataAsync` in the write transaction; future quote/contact and checkout writes must do the same. Document/rights reads, limited authentication, logout and photo deletion stay available.
 - Customer consent and browser permission are independent. Browser association is evidence of observation, never proof that the authenticated customer performed the original anonymous action. Never log text, subject keys, onboarding receipts or raw consent payloads.
 - Retention runs against configured purpose-specific periods and holds open rights cases; never let removal of a denial revive an older permission. Update annual Russian working-day overrides before the next year. See `docs/customer-consents.md` for defaults and rollout.
@@ -147,3 +147,5 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Consent decisions must be explicit; missing `decision` never defaults to grant. Validate registration document versions/receipts before phone normalization or verification, and revalidate affected versions after persistence before committing consent/onboarding transactions. Agreement mismatches identify the agreement artifact. Map only customer-insert conflicts to `account_exists`; consent persistence failures retain server-error semantics.
 - Browser association provenance is the validated customer JWT `jti` (`AuthenticationTokenId`), identifying the exact authenticated access session that first observed a receipt. It is not an authentication credential, never comes from a request body, is not logged or exposed by normal customer/staff history DTOs, and is retained with the association independently of token expiry. Preserve the first observation on retries.
 - Require `EvidenceDays >= CookieDays`. Verify duplicate decisions, single-use onboarding and competing schedules with concurrent operations in separate DbContexts on disposable databases; sequential retry tests alone do not prove the locking policy.
+
+- Return `effectiveLocalDate` and `effectiveTimeZone` (`Europe/Moscow`) alongside legal-document UTC activation instants; draft dates remain null. Registration request quotas must pass before persisting onboarding evidence. Retention evaluates evidence holds/latest decisions set-wise in bounded pages, never with per-event database round trips. Worker failures include only safe `error.type`; tests freeze the numeric ID, dotted name, severity and message.

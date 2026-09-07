@@ -3,6 +3,7 @@
 // This file is a part of the Sarafan application
 
 using System.ComponentModel.DataAnnotations;
+using System.Data.Common;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -75,7 +76,7 @@ public sealed class ConsentReviewTests
     private ConsentService Consents(AppDbContext database) => new(database, _clock, Options.Create(new ConsentOptions()), _auth, NullLogger<ConsentService>.Instance);
     private LegalDocumentService Documents(AppDbContext database) => new(database, _clock, NullLogger<LegalDocumentService>.Instance);
     private Task<LegalDocumentDto> Draft(AppDbContext database, string kind) => Documents(database).SaveAsync(null,
-        new() { Kind = kind, Title = "Тест", DisplayVersion = Guid.NewGuid().ToString(), FileName = "test.md", Source = Encoding.UTF8.GetBytes("# Текст"), CookieCategories = kind == ConsentKinds.Cookies ? ["analytics"] : [] }, 1, default);
+        new() { Kind = kind, Title = "РўРµСЃС‚", DisplayVersion = Guid.NewGuid().ToString(), FileName = "test.md", Source = Encoding.UTF8.GetBytes("# РўРµРєСЃС‚"), CookieCategories = kind == ConsentKinds.Cookies ? ["analytics"] : [] }, 1, default);
     private ConsentDecisionRequest Decision(string kind) => new()
     { DocumentId = _documents[kind].Id, ContentHash = _documents[kind].ContentHash, Decision = "grant", IdempotencyKey = Guid.NewGuid(), Categories = kind == ConsentKinds.Cookies ? ["analytics"] : [] };
     private Task<string> Onboarding(AppDbContext database) => Consents(database).BeginOnboardingAsync(Phone, _documents[ConsentKinds.Agreement].Id, Decision(ConsentKinds.PersonalData), default);
@@ -255,6 +256,86 @@ public sealed class ConsentReviewTests
         await using var check = Database();
         Assert.That(await check.ConsentEvents.CountAsync(), Is.Zero);
         Assert.That((await check.ConsentOnboarding.SingleAsync()).UsedAt, Is.Null);
+    }
+
+    [Test]
+    public async Task PublicationReturnsExplicitMoscowDateForDraftScheduledAndImmediateDocuments()
+    {
+        await using var database = Database();
+        var draft = await Draft(database, ConsentKinds.Cookies);
+        Assert.That(draft.EffectiveAt, Is.Null);
+        Assert.That(draft.EffectiveLocalDate, Is.Null);
+        Assert.That(draft.EffectiveTimeZone, Is.EqualTo("Europe/Moscow"));
+        var date = ConsentCalendar.LocalDate(_clock.Now).AddDays(2);
+        var scheduled = await Documents(database).PublishAsync(draft.Id, new() { Revision = draft.Revision, EffectiveDate = date }, 1, default);
+        Assert.That(scheduled.EffectiveLocalDate, Is.EqualTo(date));
+        Assert.That(scheduled.EffectiveAt, Is.EqualTo(ConsentCalendar.Midnight(date)));
+        Assert.That(scheduled.EffectiveTimeZone, Is.EqualTo("Europe/Moscow"));
+        _clock.Now = ConsentCalendar.Midnight(date.AddDays(1)).AddMinutes(30);
+        var immediateDraft = await Draft(database, ConsentKinds.PersonalData);
+        var immediate = await Documents(database).PublishAsync(immediateDraft.Id, new() { Revision = immediateDraft.Revision, Now = true }, 1, default);
+        Assert.That(immediate.EffectiveAt, Is.EqualTo(_clock.Now));
+        Assert.That(immediate.EffectiveLocalDate, Is.EqualTo(date.AddDays(1)));
+        Assert.That(immediate.EffectiveLocalDate, Is.Not.EqualTo(DateOnly.FromDateTime(_clock.Now.UtcDateTime)));
+        Assert.That(immediate.EffectiveTimeZone, Is.EqualTo("Europe/Moscow"));
+    }
+
+    [Test]
+    public async Task RateLimitedRegistrationDoesNotPersistAnotherOnboardingReceipt()
+    {
+        await using var database = Database();
+        var service = new AuthenticationService(database, new PhoneNormalizer(), new PhoneSuffixVerificationCodeProvider(),
+            new VerificationAttemptStore(_clock), new JwtTokenService(_auth, _clock, NullLogger<JwtTokenService>.Instance),
+            _auth, _clock, Consents(database), NullLogger<AuthenticationService>.Instance);
+        var request = new RequestCodeRequest
+        {
+            Phone = Phone,
+            Purpose = "register",
+            TermsAccepted = true,
+            TermsDocumentId = _documents[ConsentKinds.Agreement].Id,
+            PersonalDataConsent = Decision(ConsentKinds.PersonalData)
+        };
+        for (var attempt = 0; attempt < 3; attempt++) await service.RequestCodeAsync(request, "test", default);
+        var error = Assert.ThrowsAsync<ServiceException>(() => service.RequestCodeAsync(request, "test", default));
+        Assert.That(error!.StatusCode, Is.EqualTo(429));
+        Assert.That(await database.ConsentOnboarding.CountAsync(), Is.EqualTo(3));
+    }
+
+    [Test]
+    public async Task RetentionDeletesFullEvidencePagesWithBoundedDatabaseRoundTrips()
+    {
+        await using var setup = Database();
+        var document = _documents[ConsentKinds.Cookies];
+        setup.ConsentEvents.AddRange(Enumerable.Range(0, 2001).Select(index => new ConsentEvent
+        {
+            SubjectKey = $"expired-browser-{index}",
+            DocumentId = document.Id,
+            ContentHash = document.ContentHash,
+            Kind = ConsentKinds.Cookies,
+            Decision = "grant",
+            IdempotencyKey = Guid.NewGuid(),
+            At = _clock.Now.AddDays(-1100),
+            RetainUntil = _clock.Now.AddDays(-1)
+        }));
+        await setup.SaveChangesAsync();
+        var commands = new CountCommands();
+        await using var database = Database(commands);
+        var service = new ConsentRetentionService(database, _clock, Options.Create(new ConsentOptions()), NullLogger<ConsentRetentionService>.Instance);
+        var result = await service.SweepAsync(default);
+        Assert.That(result.Events, Is.EqualTo(2001));
+        Assert.That(commands.Count, Is.LessThanOrEqualTo(15), "Each page must use set-based queries, not per-event lookups.");
+        Assert.That(await setup.ConsentEvents.CountAsync(), Is.Zero);
+    }
+
+    private sealed class CountCommands : DbCommandInterceptor
+    {
+        public int Count { get; private set; }
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        { Count++; return ValueTask.FromResult(result); }
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        { Count++; return ValueTask.FromResult(result); }
     }
 
     private sealed class FailEvidenceSave : SaveChangesInterceptor

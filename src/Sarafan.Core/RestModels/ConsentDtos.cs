@@ -20,7 +20,8 @@ public sealed class LegalDocumentRequest
 
 public sealed record LegalDocumentDto(Guid Id, string Kind, string Locale, string Title, string DisplayVersion,
     string Html, string SourceHash, string ContentHash, string RendererVersion, string[] CookieCategories,
-    string State, DateTimeOffset? EffectiveAt, int Revision, DateTimeOffset CreatedAt, int? CreatedBy);
+    string State, DateTimeOffset? EffectiveAt, int Revision, DateTimeOffset CreatedAt, int? CreatedBy,
+    DateOnly? EffectiveLocalDate, string EffectiveTimeZone);
 public sealed record CurrentDocumentDto(LegalDocumentDto? Document, DateTimeOffset ServerNow, DateTimeOffset? NextChangeAt);
 public sealed class PublishDocumentRequest
 {

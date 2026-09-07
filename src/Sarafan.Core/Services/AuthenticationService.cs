@@ -64,8 +64,8 @@ public sealed class AuthenticationService(
         }
         var phone = NormalizePhone(request.Phone);
         CheckAttemptLimit($"request:ip:{remoteAddress}", 20);
-        var onboarding = purpose == "register" ? await consents.BeginOnboardingAsync(phone, request.TermsDocumentId, request.PersonalDataConsent!, cancellationToken) : null;
         CheckAttemptLimit($"request:phone:{phone}", 3);
+        var onboarding = purpose == "register" ? await consents.BeginOnboardingAsync(phone, request.TermsDocumentId, request.PersonalDataConsent!, cancellationToken) : null;
         await codeProvider.RequestCodeAsync(phone, cancellationToken);
         return onboarding;
     }
