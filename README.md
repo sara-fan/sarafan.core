@@ -165,6 +165,37 @@ The production stack starts `ghcr.io/sw-consulting/db-backup:latest`, matching L
 
 Production migrations run in a dedicated one-shot `migrate` service before the API starts. The long-running API has startup migration disabled. Core defaults to the framework's restrictive loopback proxy trust; the cloud Compose stack explicitly trusts private Docker network ranges and processes the two proxy hops (`edge` and `ui`) used by both deployment modes. Docker assigns container addresses dynamically, so the stack does not require a custom IPAM subnet. Other deployments must configure `ForwardedHeaders__KnownNetworks__N` or `ForwardedHeaders__KnownProxies__N` for their own trusted proxy boundary.
 
+## Official USD/RUB reference rates
+
+Core fetches CBR `GetCursOnDateXML` over HTTPS/SOAP 1.1 on background-service startup and at 00:10 Europe/Moscow every day. The provider timeout is 30 seconds and the response is bounded to 1 MiB. Set `ExchangeRates__Enabled=false` to disable synchronization (for example in isolated tests). A failed run is logged and the next scheduled run retries; startup and existing history remain available.
+
+Scheduling uses OS time-zone data, preferring `Europe/Moscow` with `Russian Standard Time` as the native Windows fallback (including NLS configurations). Deployments must retain the OS time-zone database; do not replace it with the server's local zone or a hardcoded UTC offset.
+
+The `ExchangeRateHistory` migration adds append-only application history keyed by provider/base/quote/source-effective date. `ValuteData@OnDate` is the source date, not the requested or retrieval date. The first successful observation wins atomically; duplicate dates do not overwrite the official amount, nominal or UTC retrieval timestamp. Weekends and holidays therefore keep the last published rate. Migration rollback removes this new table and its history, not identity tables; back up production data before rollback.
+
+`GET /api/v1/backoffice/status` requires the separate staff bearer token and the back-office access policy (all four staff roles). It returns HTTP 200 with `Cache-Control: no-store`:
+
+```json
+{
+  "service": "Sarafan.Core",
+  "status": "ok",
+  "appVersion": "0.0.7",
+  "exchangeRates": [{
+    "provider": "CBR",
+    "baseCurrency": "USD",
+    "quoteCurrency": "RUB",
+    "nominal": 1,
+    "officialRate": 81.1234,
+    "sourceEffectiveDate": "2026-09-05",
+    "retrievedAt": "2026-09-06T21:10:00+00:00"
+  }]
+}
+```
+
+The example amount is illustrative, not a live quote. `exchangeRates` is empty when no usable record exists. `officialRate` is RUB per `nominal` units of USD, exactly as supplied by CBR. The endpoint reads persisted data and never calls the provider. Authentication and server failures use the existing RFC 9457 contract. The anonymous `/api/v1/status/status` health response is unchanged. Deploy the Core migration/API before the coordinated back-office display; the UI shows an unavailable placeholder until compatible data is available.
+
+This is an official reference-rate history and internal display, not commercial pricing. Configurable pricing rates, spreads, commission and delivery rules remain separate (Product Spec §4.2.2; Core #16; back.office #3).
+
 ## Optional pull request template
 
 Use the [traceability template](.github/PULL_REQUEST_TEMPLATE/traceability.md) if helpful, or write your own PR description. It provides prompts for the planning issue, specification version and sections, relevant scenarios and design frames, and verification results.

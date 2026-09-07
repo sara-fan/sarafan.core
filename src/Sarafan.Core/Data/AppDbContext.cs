@@ -20,6 +20,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<BackofficeRole> BackofficeRoles => Set<BackofficeRole>();
     public DbSet<BackofficeUserRole> BackofficeUserRoles => Set<BackofficeUserRole>();
     public DbSet<BackofficeRefreshSession> BackofficeRefreshSessions => Set<BackofficeRefreshSession>();
+    public DbSet<ExchangeRateHistory> ExchangeRateHistory => Set<ExchangeRateHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -104,6 +105,24 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .OnDelete(DeleteBehavior.Cascade);
 
         ConfigureBackoffice(modelBuilder);
+        var rate = modelBuilder.Entity<ExchangeRateHistory>();
+        rate.ToTable("exchange_rate_history", table =>
+        {
+            table.HasCheckConstraint("CK_exchange_rate_nominal", "nominal BETWEEN 1 AND 1000000");
+            table.HasCheckConstraint("CK_exchange_rate_positive", "official_rate > 0");
+        });
+        rate.HasKey(item => item.Id);
+        rate.Property(item => item.Id).HasColumnName("id");
+        rate.Property(item => item.Provider).HasColumnName("provider").HasMaxLength(16);
+        rate.Property(item => item.Source).HasColumnName("source").HasMaxLength(256);
+        rate.Property(item => item.BaseCurrency).HasColumnName("base_currency").HasMaxLength(3);
+        rate.Property(item => item.QuoteCurrency).HasColumnName("quote_currency").HasMaxLength(3);
+        rate.Property(item => item.Nominal).HasColumnName("nominal");
+        rate.Property(item => item.OfficialRate).HasColumnName("official_rate").HasPrecision(18, 6);
+        rate.Property(item => item.SourceEffectiveDate).HasColumnName("source_effective_date").HasColumnType("date");
+        rate.Property(item => item.RetrievedAt).HasColumnName("retrieved_at");
+        rate.HasIndex(item => new { item.Provider, item.BaseCurrency, item.QuoteCurrency, item.SourceEffectiveDate })
+            .IsUnique();
     }
 
     private static void ConfigureBackoffice(ModelBuilder modelBuilder)
