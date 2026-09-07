@@ -4,8 +4,8 @@
 
 namespace Sarafan.Core.Models;
 
-public enum ConsentType
+public sealed class ConsentReplayTombstone
 {
-    Terms = 0,
-    PersonalData = 1
+    public string KeyHash { get; set; } = "";
+    public Guid DocumentId { get; set; }
 }

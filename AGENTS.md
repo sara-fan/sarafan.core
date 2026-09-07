@@ -17,6 +17,13 @@ This file is a part of the Sarafan application
 
 ## Code Standards and Requirements
 
+### Entity Framework model configuration
+
+- Keep `AppDbContext.OnModelCreating` as the single `ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly)` registration point. Do not add inline entity mappings, feature-specific registration helpers, partial context mapping methods, or a growing manual configuration list.
+- Put each mapped entity's complete persistence configuration in one internal sealed `<Entity>Configuration : IEntityTypeConfiguration<Entity>` class, in its own file under `Data/Configurations/<Feature>/`. New entities follow this policy immediately; entity model classes remain free of persistence-mapping attributes.
+- Use explicit table and column names, keys, lengths/types/conversions, indexes, concurrency tokens and seed data in the owning entity's configuration. Declare each relationship once, on its dependent/foreign-key entity. Avoid configuration-order dependencies and passes that silently rewrite another entity's metadata; there is no feature-specific naming convention.
+- `AppDbContextModelTests` enforce one discoverable configuration per mapped entity, order independence and equivalence with the committed migration snapshot. Their `Sarafan.Core.ModelTests` namespace keeps them outside the integration fixture's database setup. Configuration-only refactors must not create schema migrations or edit snapshots; intentional schema changes require their normal migration and verification on disposable storage.
+
 ### Protected local database configuration
 
 - Treat `docker-compose.override.yml` as user-owned machine configuration. Do not edit, replace, delete, regenerate, or commit it without explicit user authorization for that action; general implementation, testing, cleanup, or deployment requests do not authorize these changes.
@@ -123,8 +130,30 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ---
 
-**Version:** 1.4
+**Version:** 1.12
 
-**Last Updated:** 2026-09-06
+**Last Updated:** 2026-09-07
 
 **Maintained by:** Development Team
+
+## Versioned customer consent
+
+- Spec v1.16 §4.18 / CONS-01–07 and Core #20 govern consent. Legal documents live in the database; the obsolete `CustomerConsent`/`ConsentType` models and `customer_consents` rows are removed by the amended `20260907125724_VersionedCustomerConsents` migration. Do not retain, import or fabricate legacy evidence; customers without versioned events have missing consent. Every history event identifies its document and content digest. Preserve exact source bytes and frozen canonical HTML/digests. Only Administrator publishes; no staff acceptance or evidence editing.
+- Use the consent transaction lock for publication, consent changes and protected writes. Check the current personal-data version before and immediately after a protected action, within the same transaction. Profile and photo writes use `PersonalDataConsentFilter` before model binding/multipart buffering and `WithPersonalDataAsync` in the write transaction; future quote/contact and checkout writes must do the same. Document/rights reads, limited authentication, logout and photo deletion stay available.
+- Customer consent and browser permission are independent. Browser association is evidence of observation, never proof that the authenticated customer performed the original anonymous action. Never log text, subject keys, onboarding receipts or raw consent payloads.
+- Retention runs against configured purpose-specific periods and holds open rights cases; never let removal of a denial revive an older permission. Update annual Russian working-day overrides before the next year. See `docs/customer-consents.md` for defaults and rollout.
+- Integration tests require explicit `SARAFAN_TEST_POSTGRES` pointing to disposable storage and disable exchange-rate and consent-retention workers. Migration round trips use separately created test databases, so they cannot destroy another fixture's data.
+
+- Consent decisions must be explicit; missing `decision` never defaults to grant. Validate registration document versions/receipts before phone normalization or verification, and revalidate affected versions after persistence before committing consent/onboarding transactions. Agreement mismatches identify the agreement artifact. Map only customer-insert conflicts to `account_exists`; consent persistence failures retain server-error semantics.
+- Browser association provenance is the validated customer JWT `jti` (`AuthenticationTokenId`), identifying the exact authenticated access session that first observed a receipt. It is not an authentication credential, never comes from a request body, is not logged or exposed by normal customer/staff history DTOs, and is retained with the association independently of token expiry. Preserve the first observation on retries.
+- Require `EvidenceDays >= CookieDays`. Verify duplicate decisions, single-use onboarding and competing schedules with concurrent operations in separate DbContexts on disposable databases; sequential retry tests alone do not prove the locking policy.
+
+- Return `effectiveLocalDate` and `effectiveTimeZone` (`Europe/Moscow`) alongside legal-document UTC activation instants; draft dates remain null. Registration request quotas must pass before persisting onboarding evidence. Retention evaluates evidence holds/latest decisions set-wise in bounded pages, never with per-event database round trips. Worker failures include only safe `error.type`; tests freeze the numeric ID, dotted name, severity and message.
+
+- Artifact retention selects eligible IDs in bounded pages, excludes current/future/referenced documents set-wise, and records disposal audit in the same transaction as bulk updates. Bulk retention must be verified with fresh/no-tracking reads. Apply the 200-record history limit after merging customer and observed-browser evidence. Preserve UTF-8 text when editing through Windows shell pipelines.
+
+- Retention must preserve the latest decision for every consent kind while older same-kind evidence remains retained, including after changing CookieDays/EvidenceDays; cookie denial or expiry must never revive an older grant. Service-level access-token failures must retain the Bearer challenge contract (customer and staff), without adding it to refresh-token errors.
+
+- Disposing consent evidence must atomically retain a compact replay-key digest for documents that are still current; remove these tombstones after supersession, when stale-version validation rejects old grants. Tombstones contain no decision, categories, customer ID or browser receipt. Cookie idempotency keys are unique across browser subjects to prevent replay after storage loss; customer keys remain subject-scoped. Never combine rights-case extension and completion in one transition.
+
+- Consume the public authentication IP quota before consent/receipt database lookups or phone normalization. Keep consent validation before phone processing, and phone quotas before onboarding persistence. Verify grant -> withdrawal -> explicit regrant through the API: protected writes recover while grant/withdrawal history and the independently handled rights case remain.

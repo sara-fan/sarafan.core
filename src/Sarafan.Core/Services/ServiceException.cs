@@ -7,5 +7,7 @@ namespace Sarafan.Core.Services;
 public sealed class ServiceException(int statusCode, string code) : Exception(code)
 {
     public int StatusCode { get; } = statusCode;
+    public Guid? RequiredDocumentId { get; init; }
+    public string? ConsentKind { get; init; }
     public string Code { get; } = code;
 }

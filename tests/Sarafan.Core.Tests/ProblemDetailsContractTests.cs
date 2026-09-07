@@ -204,7 +204,7 @@ public sealed class ProblemDetailsContractTests
     public async Task DomainFailure_ReturnsCatalogProblemWithoutExceptionMessage()
     {
         using var content = new StringContent(
-            """{"phone":"+79990009999","purpose":"register","code":"2222","termsAccepted":true,"personalDataAccepted":true}""",
+            """{"phone":"+79990009999","purpose":"login","code":"2222"}""",
             Encoding.UTF8,
             "application/json");
         using var response = await _client.PostAsync("/api/v1/auth/code/verify", content);
@@ -243,7 +243,7 @@ public sealed class ProblemDetailsContractTests
         using var invalidPhone = await _client.PostAsync(
             "/api/v1/auth/code/request",
             new StringContent(
-                """{"phone":"not-a-phone","purpose":"register"}""",
+                """{"phone":"not-a-phone","purpose":"login"}""",
                 Encoding.UTF8,
                 "application/json"));
         using var failedLogin = await _client.PostAsync(
@@ -344,6 +344,22 @@ public sealed class ProblemDetailsContractTests
             Assert.That(problem.Code, Is.EqualTo("account_exists"));
             Assert.That(problem.Status, Is.EqualTo(409));
         }
+    }
+
+    [TestCase("invalid_access_token", null, "Bearer")]
+    [TestCase("invalid_access_token", "Bearer private-token", "Bearer error=\"invalid_token\"")]
+    [TestCase("invalid_backoffice_access_token", "Bearer private-token", "Bearer error=\"invalid_token\"")]
+    [TestCase("invalid_refresh_token", "Bearer private-token", "")]
+    [TestCase("invalid_backoffice_refresh_token", "Bearer private-token", "")]
+    public async Task ServiceTokenProblemsUseBearerChallengeOnlyForAccessTokens(string code, string? authorization, string challenge)
+    {
+        var handler = new SarafanExceptionHandler(new SarafanProblemDetailsFactory(), NullLogger<SarafanExceptionHandler>.Instance);
+        var context = Context("/token");
+        if (authorization is not null) context.Request.Headers.Authorization = authorization;
+        await handler.TryHandleAsync(context, new ServiceException(401, code), default);
+        Assert.That(context.Response.Headers.WWWAuthenticate.ToString(), Is.EqualTo(challenge));
+        Assert.That(await Body(context), Does.Not.Contain("private-token"));
+        Assert.That(context.Response.StatusCode, Is.EqualTo(401));
     }
 
     [Test]
@@ -672,17 +688,11 @@ public sealed class ProblemDetailsContractTests
 
     private async Task<AuthenticationSessionDto> Register(string phone)
     {
-        using var requestCode = await _client.PostAsync(
-            "/api/v1/auth/code/request",
-            new StringContent(
-                $$"""{"phone":"{{phone}}","purpose":"register"}""",
-                Encoding.UTF8,
-                "application/json"));
-        Assert.That(requestCode.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
+        var onboarding = await ConsentTestData.Onboarding(_client, phone);
         using var verify = await _client.PostAsync(
             "/api/v1/auth/code/verify",
             new StringContent(
-                $$"""{"phone":"{{phone}}","purpose":"register","code":"{{VerificationCode(phone)}}","termsAccepted":true,"personalDataAccepted":true}""",
+                $$"""{"phone":"{{phone}}","purpose":"register","code":"{{VerificationCode(phone)}}","termsAccepted":true,"onboardingToken":"{{onboarding}}"}""",
                 Encoding.UTF8,
                 "application/json"));
         Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK));

@@ -126,17 +126,35 @@ public sealed class ExchangeRateTests
     public async Task MigrationRoundTripLeavesExistingIdentityDataIntact()
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        var database = Database(scope);
-        var identities = await database.BackofficeUsers.CountAsync();
-        var migrations = database.Database.GetMigrations().ToArray();
-        Assert.That(migrations[^1], Does.EndWith("_ExchangeRateHistory"));
-        var migrator = database.GetService<IMigrator>();
-        await migrator.MigrateAsync(migrations[^2]);
-        await migrator.MigrateAsync();
-        Assert.That(await database.BackofficeUsers.CountAsync(), Is.EqualTo(identities));
-        Assert.That(await database.ExchangeRateHistory.CountAsync(), Is.Zero);
-        await Service(database).SynchronizeAsync(default);
-        Assert.That(await database.ExchangeRateHistory.CountAsync(), Is.EqualTo(1));
+        var parent = Database(scope);
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(parent.Database.GetConnectionString())
+        { Database = $"sarafan_fx_test_{Guid.NewGuid():N}", Pooling = false };
+        await using var admin = new Npgsql.NpgsqlConnection(parent.Database.GetConnectionString());
+        await admin.OpenAsync();
+        await using var create = new Npgsql.NpgsqlCommand($"CREATE DATABASE \"{builder.Database}\"", admin);
+        await create.ExecuteNonQueryAsync();
+        try
+        {
+            await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(builder.ConnectionString).Options);
+            await database.Database.MigrateAsync();
+            var customer = new Customer { Phone = "+78889999999", Profile = new() };
+            database.Customers.Add(customer); await database.SaveChangesAsync();
+            var migrations = database.Database.GetMigrations().ToArray();
+            var fxIndex = Array.FindIndex(migrations, x => x.EndsWith("_ExchangeRateHistory", StringComparison.Ordinal));
+            Assert.That(fxIndex, Is.GreaterThan(0));
+            var migrator = database.GetService<IMigrator>();
+            await migrator.MigrateAsync(migrations[fxIndex - 1]);
+            await migrator.MigrateAsync();
+            Assert.That(await database.Customers.CountAsync(), Is.EqualTo(1));
+            Assert.That(await database.ExchangeRateHistory.CountAsync(), Is.Zero);
+            await Service(database).SynchronizeAsync(default);
+            Assert.That(await database.ExchangeRateHistory.CountAsync(), Is.EqualTo(1));
+        }
+        finally
+        {
+            await using var drop = new Npgsql.NpgsqlCommand($"DROP DATABASE \"{builder.Database}\" WITH (FORCE)", admin);
+            await drop.ExecuteNonQueryAsync();
+        }
     }
 
     [Test]

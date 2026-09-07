@@ -30,7 +30,7 @@ public sealed class IntegrationTestEnvironment
     public async Task SetUp()
     {
         _adminConnectionString = Environment.GetEnvironmentVariable("SARAFAN_TEST_POSTGRES")
-            ?? "Host=localhost;Port=5433;Database=postgres;Username=postgres;Password=postgres";
+            ?? throw new InvalidOperationException("Set SARAFAN_TEST_POSTGRES to an explicitly disposable PostgreSQL instance.");
         _databaseName = $"sarafan_test_{Guid.NewGuid():N}";
 
         var adminBuilder = new NpgsqlConnectionStringBuilder(_adminConnectionString)
@@ -55,6 +55,7 @@ public sealed class IntegrationTestEnvironment
         SetEnvironment("ConnectionStrings__DefaultConnection", applicationBuilder.ConnectionString);
         SetEnvironment("Database__ApplyMigrations", "true");
         SetEnvironment("ExchangeRates__Enabled", "false");
+        SetEnvironment("Consents__RetentionWorkerEnabled", "false");
         SetEnvironment("Authentication__Issuer", "sarafan.core.tests");
         SetEnvironment("Authentication__Audience", "sarafan.ui.tests");
         SetEnvironment(
@@ -64,8 +65,6 @@ public sealed class IntegrationTestEnvironment
         SetEnvironment("Authentication__RefreshTokenDays", "30");
         SetEnvironment("Authentication__RefreshCookieName", "sarafan.refresh");
         SetEnvironment("Authentication__SecureCookies", "false");
-        SetEnvironment("Authentication__TermsVersion", "test-terms");
-        SetEnvironment("Authentication__PersonalDataVersion", "test-personal-data");
         SetEnvironment("BackofficeAuthentication__Issuer", "sarafan.core.backoffice.tests");
         SetEnvironment("BackofficeAuthentication__Audience", "sarafan.backoffice.tests");
         SetEnvironment(
@@ -91,6 +90,13 @@ public sealed class IntegrationTestEnvironment
             .AsNoTracking()
             .Include(item => item.UserRoles)
             .ToListAsync();
+        var documents = scope.ServiceProvider.GetRequiredService<Sarafan.Core.Services.LegalDocumentService>();
+        foreach (var kind in Sarafan.Core.Services.ConsentKinds.All)
+        {
+            var draft = await documents.SaveAsync(null, new Sarafan.Core.RestModels.LegalDocumentRequest
+            { Kind = kind, Title = "Тестовый документ", DisplayVersion = "test-v1", FileName = "test.md", Source = System.Text.Encoding.UTF8.GetBytes("# Только для тестов\n\nОтдельный текст документа."), CookieCategories = kind == "cookie-consent" ? ["analytics", "marketing"] : [] }, initialUsers[0].Id, default);
+            await documents.PublishAsync(draft.Id, new() { Revision = draft.Revision, Now = true }, initialUsers[0].Id, default);
+        }
         using (Assert.EnterMultipleScope())
         {
             Assert.That(initialUsers, Has.Count.EqualTo(1));

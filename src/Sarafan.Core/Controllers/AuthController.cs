@@ -27,11 +27,11 @@ public sealed class AuthController(
         RequestCodeRequest request,
         CancellationToken cancellationToken)
     {
-        await authenticationService.RequestCodeAsync(
+        var onboarding = await authenticationService.RequestCodeAsync(
             request,
             RemoteAddress(),
             cancellationToken);
-        return Accepted(new { message = "If the request is valid, a verification code is available" });
+        return Accepted(new CodeRequestDto(onboarding));
     }
 
     [AllowAnonymous]

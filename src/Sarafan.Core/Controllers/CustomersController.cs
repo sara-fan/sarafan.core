@@ -18,6 +18,7 @@ namespace Sarafan.Core.Controllers;
 public sealed class CustomersController(
     AppDbContext database,
     TimeProvider timeProvider,
+    ConsentService consents,
     SarafanProblemDetailsFactory problemDetailsFactory) : SarafanControllerBase(problemDetailsFactory)
 {
     private const int MaxPhotoSize = 5 * 1024 * 1024;
@@ -54,6 +55,7 @@ public sealed class CustomersController(
     }
 
     [HttpPut]
+    [ServiceFilter(typeof(PersonalDataConsentFilter))]
     [ProducesResponseType<CustomerDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<CustomerDto>> Update(
         CustomerProfileUpdateRequest request,
@@ -68,16 +70,19 @@ public sealed class CustomersController(
             return CustomerNotFoundProblem();
         }
 
-        Apply(customer.Profile, request);
-        customer.State = IsComplete(customer.Profile)
-            ? CustomerState.Complete
-            : CustomerState.Preliminary;
-        customer.UpdatedAt = timeProvider.GetUtcNow();
-        await database.SaveChangesAsync(cancellationToken);
-        var hasPhoto = await database.CustomerPhotos
-            .AsNoTracking()
-            .AnyAsync(item => item.CustomerId == customerId, cancellationToken);
-        return Ok(CustomerDto.From(customer, hasPhoto));
+        return await consents.WithPersonalDataAsync<ActionResult<CustomerDto>>(customerId, async () =>
+        {
+            Apply(customer.Profile, request);
+            customer.State = IsComplete(customer.Profile)
+                ? CustomerState.Complete
+                : CustomerState.Preliminary;
+            customer.UpdatedAt = timeProvider.GetUtcNow();
+            await database.SaveChangesAsync(cancellationToken);
+            var hasPhoto = await database.CustomerPhotos
+                .AsNoTracking()
+                .AnyAsync(item => item.CustomerId == customerId, cancellationToken);
+            return Ok(CustomerDto.From(customer, hasPhoto));
+        }, cancellationToken);
     }
 
     [HttpGet("photo")]
@@ -94,62 +99,66 @@ public sealed class CustomersController(
     }
 
     [HttpPut("photo")]
+    [ServiceFilter(typeof(PersonalDataConsentFilter))]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxPhotoSize + 64 * 1024)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> PutPhoto(IFormFile file, CancellationToken cancellationToken)
     {
         var customerId = CurrentCustomerId();
-        if (file.Length is <= 0 or > MaxPhotoSize)
+        return await consents.WithPersonalDataAsync<ActionResult>(customerId, async () =>
         {
-            return InvalidPhotoSizeProblem();
-        }
-
-        if (!PhotoSignatures.TryGetValue(file.ContentType, out var signatureValidator))
-        {
-            return InvalidPhotoTypeProblem();
-        }
-
-        await using var stream = file.OpenReadStream();
-        await using var buffer = new MemoryStream((int)file.Length);
-        await stream.CopyToAsync(buffer, cancellationToken);
-        var content = buffer.ToArray();
-        if (!signatureValidator(content))
-        {
-            return InvalidPhotoContentProblem();
-        }
-
-        if (!await database.Customers.AnyAsync(item => item.Id == customerId, cancellationToken))
-        {
-            return CustomerNotFoundProblem();
-        }
-
-        var photo = await database.CustomerPhotos
-            .SingleOrDefaultAsync(item => item.CustomerId == customerId, cancellationToken);
-        if (photo is null)
-        {
-            photo = new CustomerPhoto
+            if (file.Length is <= 0 or > MaxPhotoSize)
             {
-                CustomerId = customerId,
-                FileName = SafeFileName(file.FileName),
-                ContentType = file.ContentType,
-                Content = content,
-                Size = content.Length,
-                UpdatedAt = timeProvider.GetUtcNow()
-            };
-            database.CustomerPhotos.Add(photo);
-        }
-        else
-        {
-            photo.FileName = SafeFileName(file.FileName);
-            photo.ContentType = file.ContentType;
-            photo.Content = content;
-            photo.Size = content.Length;
-            photo.UpdatedAt = timeProvider.GetUtcNow();
-        }
+                return InvalidPhotoSizeProblem();
+            }
 
-        await database.SaveChangesAsync(cancellationToken);
-        return NoContent();
+            if (!PhotoSignatures.TryGetValue(file.ContentType, out var signatureValidator))
+            {
+                return InvalidPhotoTypeProblem();
+            }
+
+            await using var stream = file.OpenReadStream();
+            await using var buffer = new MemoryStream((int)file.Length);
+            await stream.CopyToAsync(buffer, cancellationToken);
+            var content = buffer.ToArray();
+            if (!signatureValidator(content))
+            {
+                return InvalidPhotoContentProblem();
+            }
+
+            if (!await database.Customers.AnyAsync(item => item.Id == customerId, cancellationToken))
+            {
+                return CustomerNotFoundProblem();
+            }
+
+            var photo = await database.CustomerPhotos
+                .SingleOrDefaultAsync(item => item.CustomerId == customerId, cancellationToken);
+            if (photo is null)
+            {
+                photo = new CustomerPhoto
+                {
+                    CustomerId = customerId,
+                    FileName = SafeFileName(file.FileName),
+                    ContentType = file.ContentType,
+                    Content = content,
+                    Size = content.Length,
+                    UpdatedAt = timeProvider.GetUtcNow()
+                };
+                database.CustomerPhotos.Add(photo);
+            }
+            else
+            {
+                photo.FileName = SafeFileName(file.FileName);
+                photo.ContentType = file.ContentType;
+                photo.Content = content;
+                photo.Size = content.Length;
+                photo.UpdatedAt = timeProvider.GetUtcNow();
+            }
+
+            await database.SaveChangesAsync(cancellationToken);
+            return NoContent();
+        }, cancellationToken);
     }
 
     [HttpDelete("photo")]

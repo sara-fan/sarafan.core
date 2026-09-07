@@ -222,6 +222,269 @@ namespace Sarafan.Core.Data.Migrations
                     b.ToTable("backoffice_user_roles", (string)null);
                 });
 
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentAssociation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("AssociatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("associated_at");
+
+                    b.Property<Guid>("AuthenticationTokenId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("authentication_token_id");
+
+                    b.Property<long>("ConsentEventId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("consent_event_id");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("integer")
+                        .HasColumnName("customer_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsentEventId");
+
+                    b.HasIndex("CustomerId", "ConsentEventId")
+                        .IsUnique();
+
+                    b.ToTable("consent_associations", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.PrimitiveCollection<string[]>("Categories")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("categories");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_hash");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("integer")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("decision");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("document_id");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uuid")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("RetainUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("retain_until");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SubjectKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("subject_key");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("kind = 'cookie-consent'");
+
+                    b.HasIndex("SubjectKey", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("CustomerId", "Kind", "Id");
+
+                    b.ToTable("consent_events", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentOnboarding", b =>
+                {
+                    b.Property<string>("TokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("PersonalDataDocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("personal_data_document_id");
+
+                    b.Property<string>("PersonalDataHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("personal_data_hash");
+
+                    b.Property<string>("PhoneHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("phone_hash");
+
+                    b.Property<Guid>("TermsDocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("terms_document_id");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.HasKey("TokenHash");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("PersonalDataDocumentId");
+
+                    b.HasIndex("TermsDocumentId");
+
+                    b.ToTable("consent_onboarding", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentReplayTombstone", b =>
+                {
+                    b.Property<string>("KeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("key_hash");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("document_id");
+
+                    b.HasKey("KeyHash");
+                    b.HasIndex("DocumentId");
+                    b.ToTable("consent_replay_tombstones", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentRightsCase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<string>("CompletionEvidence")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("completion_evidence");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("integer")
+                        .HasColumnName("customer_id");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at");
+
+                    b.Property<bool>("Extended")
+                        .HasColumnType("boolean")
+                        .HasColumnName("extended");
+
+                    b.Property<string>("ExtensionReason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("extension_reason");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uuid")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<int?>("ResponsibleStaffId")
+                        .HasColumnType("integer")
+                        .HasColumnName("responsible_staff_id");
+
+                    b.Property<string>("RetentionBasis")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("retention_basis");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("state");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("consent_rights_cases", (string)null);
+                });
+
             modelBuilder.Entity("Sarafan.Core.Models.Customer", b =>
                 {
                     b.Property<int>("Id")
@@ -257,43 +520,6 @@ namespace Sarafan.Core.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("customers", (string)null);
-                });
-
-            modelBuilder.Entity("Sarafan.Core.Models.CustomerConsent", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTimeOffset>("AcceptedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("accepted_at");
-
-                    b.Property<int>("CustomerId")
-                        .HasColumnType("integer")
-                        .HasColumnName("customer_id");
-
-                    b.Property<string>("DocumentVersion")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("document_version");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("type");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomerId", "Type", "DocumentVersion")
-                        .IsUnique();
-
-                    b.ToTable("customer_consents", (string)null);
                 });
 
             modelBuilder.Entity("Sarafan.Core.Models.CustomerPhoto", b =>
@@ -465,6 +691,151 @@ namespace Sarafan.Core.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Sarafan.Core.Models.LegalAuditEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("action");
+
+                    b.Property<int>("ActorId")
+                        .HasColumnType("integer")
+                        .HasColumnName("actor_id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<Guid?>("DocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("document_id");
+
+                    b.Property<Guid?>("RightsCaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rights_case_id");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("legal_audit_events", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.LegalDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_hash");
+
+                    b.PrimitiveCollection<string[]>("CookieCategories")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("cookie_categories");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("integer")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("DisplayVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("display_version");
+
+                    b.Property<DateTimeOffset?>("DisposedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disposed_at");
+
+                    b.Property<DateTimeOffset?>("EffectiveAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_at");
+
+                    b.Property<string>("Html")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("html");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("locale");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("RendererVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("renderer_version");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<byte[]>("Source")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source_hash");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("state");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind", "Locale", "DisplayVersion")
+                        .IsUnique();
+
+                    b.HasIndex("Kind", "Locale", "EffectiveAt");
+
+                    b.ToTable("legal_documents", (string)null);
+                });
+
             modelBuilder.Entity("Sarafan.Core.Models.RefreshSession", b =>
                 {
                     b.Property<long>("Id")
@@ -561,15 +932,70 @@ namespace Sarafan.Core.Data.Migrations
                     b.Navigation("Role");
                 });
 
-            modelBuilder.Entity("Sarafan.Core.Models.CustomerConsent", b =>
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentAssociation", b =>
                 {
-                    b.HasOne("Sarafan.Core.Models.Customer", "Customer")
-                        .WithMany("Consents")
+                    b.HasOne("Sarafan.Core.Models.ConsentEvent", "Event")
+                        .WithMany()
+                        .HasForeignKey("ConsentEventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Sarafan.Core.Models.Customer", null)
+                        .WithMany()
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Customer");
+                    b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentEvent", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.Customer", null)
+                        .WithMany("ConsentEvents")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Sarafan.Core.Models.LegalDocument", "Document")
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Document");
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentOnboarding", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.LegalDocument", null)
+                        .WithMany()
+                        .HasForeignKey("PersonalDataDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Sarafan.Core.Models.LegalDocument", null)
+                        .WithMany()
+                        .HasForeignKey("TermsDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentReplayTombstone", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.LegalDocument", null)
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.ConsentRightsCase", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Sarafan.Core.Models.CustomerPhoto", b =>
@@ -619,7 +1045,7 @@ namespace Sarafan.Core.Data.Migrations
 
             modelBuilder.Entity("Sarafan.Core.Models.Customer", b =>
                 {
-                    b.Navigation("Consents");
+                    b.Navigation("ConsentEvents");
 
                     b.Navigation("Photo");
 

@@ -2,6 +2,7 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
+using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Diagnostics;
 
 using Sarafan.Core.Observability;
@@ -41,7 +42,15 @@ public sealed class SarafanExceptionHandler(
             _ => (StatusCodes.Status500InternalServerError, "internal_error")
         };
 
-        await problemDetailsFactory.WriteAsync(httpContext, statusCode, code, cancellationToken);
+        if (code is "invalid_access_token" or "invalid_backoffice_access_token")
+        {
+            var supplied = AuthenticationHeaderValue.TryParse(httpContext.Request.Headers.Authorization, out var authorization)
+                && authorization.Scheme.Equals("Bearer", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(authorization.Parameter);
+            httpContext.Response.Headers.WWWAuthenticate = supplied ? "Bearer error=\"invalid_token\"" : "Bearer";
+        }
+
+        await problemDetailsFactory.WriteAsync(httpContext, statusCode, code, cancellationToken,
+            (exception as ServiceException)?.RequiredDocumentId, (exception as ServiceException)?.ConsentKind);
         return true;
     }
 }
