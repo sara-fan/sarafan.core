@@ -208,6 +208,27 @@ public sealed class ConsentApiTests
         using var customerApiDenied = await _client.GetAsync("/api/v1/consents/me");
         Assert.That(customerApiDenied.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
+    [Test]
+    public async Task ReacceptanceAfterWithdrawalRestoresProtectedWritesAndPreservesEvidence()
+    {
+        Authorize(_customerToken);
+        var document = await Current("personal-data-consent");
+        using var initial = await _client.PostAsJsonAsync("/api/v1/consents/me/personal-data", Decision(document));
+        initial.EnsureSuccessStatusCode();
+        using var withdrawal = await _client.PostAsJsonAsync("/api/v1/consents/me/rights", new RightsRequest { IdempotencyKey = Guid.NewGuid() });
+        withdrawal.EnsureSuccessStatusCode();
+        using var denied = await _client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = "Recovered" });
+        Assert.That(denied.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        using var renewed = await _client.PostAsJsonAsync("/api/v1/consents/me/personal-data", Decision(document));
+        var consents = await Read<CustomerConsentsDto>(renewed);
+        Assert.That(consents.Statuses.Single().Status, Is.EqualTo("current"));
+        Assert.That(consents.History.Count(x => x.Kind == "personal-data-consent" && x.Decision == "grant"), Is.EqualTo(2));
+        Assert.That(consents.History.Count(x => x.Kind == "personal-data-consent" && x.Decision == "withdraw"), Is.EqualTo(1));
+        Assert.That(consents.RightsCases.Single().State, Is.EqualTo("open"));
+        using var allowed = await _client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = "Recovered" });
+        Assert.That(allowed.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+    }
+
     [TestCase(BackofficeRoles.Operator)]
     [TestCase(BackofficeRoles.SeniorOperator)]
     [TestCase(BackofficeRoles.ShiftManager)]

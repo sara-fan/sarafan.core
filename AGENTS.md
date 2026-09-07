@@ -130,7 +130,7 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ---
 
-**Version:** 1.11
+**Version:** 1.12
 
 **Last Updated:** 2026-09-07
 
@@ -155,3 +155,5 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Retention must preserve the latest decision for every consent kind while older same-kind evidence remains retained, including after changing CookieDays/EvidenceDays; cookie denial or expiry must never revive an older grant. Service-level access-token failures must retain the Bearer challenge contract (customer and staff), without adding it to refresh-token errors.
 
 - Disposing consent evidence must atomically retain a compact replay-key digest for documents that are still current; remove these tombstones after supersession, when stale-version validation rejects old grants. Tombstones contain no decision, categories, customer ID or browser receipt. Cookie idempotency keys are unique across browser subjects to prevent replay after storage loss; customer keys remain subject-scoped. Never combine rights-case extension and completion in one transition.
+
+- Consume the public authentication IP quota before consent/receipt database lookups or phone normalization. Keep consent validation before phone processing, and phone quotas before onboarding persistence. Verify grant -> withdrawal -> explicit regrant through the API: protected writes recover while grant/withdrawal history and the independently handled rights case remain.

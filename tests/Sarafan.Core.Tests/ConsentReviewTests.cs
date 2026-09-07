@@ -514,6 +514,36 @@ public sealed class ConsentReviewTests
             Is.EqualTo(new[] { "rights-extended", "rights-updated" }));
     }
 
+    [TestCase("request", "register", 20, "invalid_phone")]
+    [TestCase("verify", "register", 30, "onboarding_consent_expired")]
+    [TestCase("verify", "login", 30, "invalid_phone")]
+    public async Task AuthenticationIpQuotaBoundsConsentLookupsAndMalformedPhoneAttempts(string operation, string purpose, int limit, string expected)
+    {
+        var commands = new CountCommands();
+        await using var database = Database(commands);
+        var service = new AuthenticationService(database, new PhoneNormalizer(), new PhoneSuffixVerificationCodeProvider(),
+            new VerificationAttemptStore(_clock), new JwtTokenService(_auth, _clock, NullLogger<JwtTokenService>.Instance),
+            _auth, _clock, Consents(database), NullLogger<AuthenticationService>.Instance);
+        async Task Attempt()
+        {
+            if (operation == "request") await service.RequestCodeAsync(new()
+            {
+                Phone = "malformed",
+                Purpose = purpose,
+                TermsAccepted = true,
+                TermsDocumentId = _documents[ConsentKinds.Agreement].Id,
+                PersonalDataConsent = Decision(ConsentKinds.PersonalData)
+            }, "throttle-test", default);
+            else await service.VerifyCodeAsync(new()
+            { Phone = "malformed", Purpose = purpose, OnboardingToken = Guid.NewGuid().ToString("N"), Code = "0000" }, "throttle-test", null, default);
+        }
+        for (var attempt = 0; attempt < limit; attempt++) Assert.That(Assert.ThrowsAsync<ServiceException>(Attempt)!.Code, Is.EqualTo(expected));
+        var before = commands.Count;
+        Assert.That(Assert.ThrowsAsync<ServiceException>(Attempt)!.Code, Is.EqualTo("rate_limited"));
+        Assert.That(commands.Count, Is.EqualTo(before), "An exhausted IP quota must reject before any consent database lookup.");
+        Assert.That(await database.ConsentOnboarding.CountAsync(), Is.Zero);
+    }
+
     private sealed class CountCommands : DbCommandInterceptor
     {
         public int Count { get; private set; }

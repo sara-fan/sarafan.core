@@ -56,6 +56,7 @@ public sealed class AuthenticationService(
         string remoteAddress,
         CancellationToken cancellationToken)
     {
+        CheckAttemptLimit($"request:ip:{remoteAddress}", 20);
         var purpose = ValidatePurpose(request.Purpose);
         if (purpose == "register")
         {
@@ -63,7 +64,6 @@ public sealed class AuthenticationService(
             await consents.ValidateOnboardingDocumentsAsync(request.TermsDocumentId, request.PersonalDataConsent, cancellationToken);
         }
         var phone = NormalizePhone(request.Phone);
-        CheckAttemptLimit($"request:ip:{remoteAddress}", 20);
         CheckAttemptLimit($"request:phone:{phone}", 3);
         var onboarding = purpose == "register" ? await consents.BeginOnboardingAsync(phone, request.TermsDocumentId, request.PersonalDataConsent!, cancellationToken) : null;
         await codeProvider.RequestCodeAsync(phone, cancellationToken);
@@ -76,11 +76,11 @@ public sealed class AuthenticationService(
         string? userAgent,
         CancellationToken cancellationToken)
     {
+        CheckAttemptLimit($"verify:ip:{remoteAddress}", 30);
         var purpose = ValidatePurpose(request.Purpose);
         if (purpose == "register") await consents.ValidateOnboardingReceiptAsync(request.OnboardingToken, cancellationToken);
         var phone = NormalizePhone(request.Phone);
         CheckAttemptLimit($"verify:phone:{phone}", 5);
-        CheckAttemptLimit($"verify:ip:{remoteAddress}", 30);
 
         if (!await codeProvider.VerifyCodeAsync(phone, request.Code, cancellationToken))
         {
