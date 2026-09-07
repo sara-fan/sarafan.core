@@ -18,6 +18,8 @@ public sealed class ConsentOptions : IValidatableObject
     public bool RetentionWorkerEnabled { get; set; } = true;
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        if (EvidenceDays < CookieDays)
+            yield return new ValidationResult("Consents evidence retention must cover the full cookie validity period.", [nameof(EvidenceDays), nameof(CookieDays)]);
         if (NonWorkingDates is null || WorkingDates is null
             || NonWorkingDates.Concat(WorkingDates).Any(x => !DateOnly.TryParseExact(x, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
             || NonWorkingDates.Intersect(WorkingDates).Any())

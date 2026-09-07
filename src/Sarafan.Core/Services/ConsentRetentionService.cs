@@ -65,10 +65,9 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
                 database.LegalAuditEvents.Add(new LegalAuditEvent { DocumentId = document.Id, Action = "artifact-disposed", At = now });
                 disposed++;
             }
-            var legacy = await database.CustomerConsents.Where(x => x.AcceptedAt < cutoff && !heldCustomers.Contains(x.CustomerId)).ExecuteDeleteAsync(token);
             var cases = await database.ConsentRightsCases.Where(x => x.CompletedAt < cutoff).ExecuteDeleteAsync(token);
             var audit = await database.LegalAuditEvents.Where(x => x.At < cutoff).ExecuteDeleteAsync(token);
-            return new ConsentRetentionDto(onboarding, removed, disposed, cases, audit, legacy);
+            return new ConsentRetentionDto(onboarding, removed, disposed, cases, audit);
         }, token), token);
 }
 

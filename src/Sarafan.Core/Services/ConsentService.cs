@@ -19,6 +19,24 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
 {
     private ConsentOptions Settings => options.Value;
 
+    public Task ValidateOnboardingDocumentsAsync(Guid termsId, ConsentDecisionRequest request, CancellationToken token)
+        => Run(nameof(ValidateOnboardingDocumentsAsync), async () =>
+        {
+            await ValidateDecision(ConsentKinds.PersonalData, request, token);
+            if (request.Decision != "grant") throw new ServiceException(400, "consent_required");
+            var agreement = await RequireDocument(ConsentKinds.Agreement, token);
+            if (agreement.Id != termsId) throw Changed(agreement);
+            return true;
+        }, token, request);
+
+    public Task ValidateOnboardingReceiptAsync(string? raw, CancellationToken token)
+        => Run(nameof(ValidateOnboardingReceiptAsync), async () =>
+        {
+            var row = await ReadOnboarding(raw, token);
+            await ValidateOnboardingVersions(row, token);
+            return true;
+        }, token, null);
+
     public Task<string> BeginOnboardingAsync(string phone, Guid termsId, ConsentDecisionRequest request, CancellationToken token)
         => Run(nameof(BeginOnboardingAsync), () => ConsentTransaction.Run(database, async () =>
         {
@@ -39,25 +57,19 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
                 ExpiresAt = now.AddMinutes(Settings.OnboardingMinutes)
             });
             return raw;
-        }, token), token, request);
+        }, token, () => ValidateOnboardingDocumentsAsync(termsId, request, token)), token, request);
 
     public Task CompleteOnboardingAsync(Customer customer, string? raw, CancellationToken token)
         => Run(nameof(CompleteOnboardingAsync), () => ConsentTransaction.Run(database, async () =>
         {
-            if (string.IsNullOrWhiteSpace(raw)) throw new ServiceException(400, "consent_required");
-            var hash = JwtTokenService.HashRefreshToken(raw);
-            var row = await database.ConsentOnboarding.SingleOrDefaultAsync(x => x.TokenHash == hash, token);
-            if (row is null || row.UsedAt is not null || row.ExpiresAt <= clock.GetUtcNow() || row.PhoneHash != PhoneHash(customer.Phone))
-                throw new ServiceException(400, "onboarding_consent_expired");
-            var current = await RequireDocument(ConsentKinds.PersonalData, token);
-            var terms = await RequireDocument(ConsentKinds.Agreement, token);
-            if (current.Id != row.PersonalDataDocumentId || current.ContentHash != row.PersonalDataHash || terms.Id != row.TermsDocumentId)
-                throw Changed(current);
+            var row = await ReadOnboarding(raw, token);
+            var (current, terms) = await ValidateOnboardingVersions(row, token);
+            if (row.PhoneHash != PhoneHash(customer.Phone)) throw new ServiceException(400, "onboarding_consent_expired");
             row.UsedAt = clock.GetUtcNow();
             database.ConsentEvents.Add(NewEvent(CustomerKey(customer.Id), customer.Id, current, "grant", [], "registration", Guid.NewGuid(), row.At));
             database.ConsentEvents.Add(NewEvent(CustomerKey(customer.Id), customer.Id, terms, "grant", [], "registration", Guid.NewGuid(), row.At));
             return true;
-        }, token), token, customer);
+        }, token, () => ValidateOnboardingAtCommitAsync(raw!, token)), token, customer);
 
     public Task<CookieConsentDto> CookieStatusAsync(string? raw, CancellationToken token) => Run(nameof(CookieStatusAsync), async () =>
     {
@@ -74,6 +86,7 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
     public Task<CookieConsentDto> DecideCookiesAsync(string raw, ConsentDecisionRequest request, CancellationToken token) => Run(nameof(DecideCookiesAsync),
         async () =>
         {
+            var wroteDecision = false;
             await ConsentTransaction.Run(database, async () =>
             {
                 var subject = BrowserKey(raw) ?? throw new ServiceException(400, "invalid_consent_decision");
@@ -82,16 +95,18 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
                 var document = request.Decision == "withdraw"
                     ? await WithdrawalDocument(subject, ConsentKinds.Cookies, request, token)
                     : await ValidateDecision(ConsentKinds.Cookies, request, token);
+                wroteDecision = true;
                 database.ConsentEvents.Add(NewEvent(subject, null, document, request.Decision, request.Categories,
                     "cookie-settings", request.IdempotencyKey, clock.GetUtcNow()));
                 return true;
-            }, token);
+            }, token, () => wroteDecision && request.Decision != "withdraw" ? ValidateDecision(ConsentKinds.Cookies, request, token) : Task.CompletedTask);
             return await CookieStatusAsync(raw, token);
         }, token, request);
 
     public Task<CustomerConsentsDto> DecidePersonalDataAsync(int customerId, ConsentDecisionRequest request, CancellationToken token) => Run(nameof(DecidePersonalDataAsync),
         async () =>
         {
+            var wroteDecision = false;
             await ConsentTransaction.Run(database, async () =>
             {
                 await RequireCustomer(customerId, token);
@@ -99,24 +114,26 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
                 var subject = CustomerKey(customerId);
                 if (await FindRetry(subject, request, token) is not null) return true;
                 var document = await ValidateDecision(ConsentKinds.PersonalData, request, token);
+                wroteDecision = true;
                 database.ConsentEvents.Add(NewEvent(subject, customerId, document, request.Decision, [], "customer-consents",
                     request.IdempotencyKey, clock.GetUtcNow()));
                 return true;
-            }, token);
+            }, token, () => wroteDecision ? ValidateDecision(ConsentKinds.PersonalData, request, token) : Task.CompletedTask);
             return await CustomerAsync(customerId, token);
         }, token, request);
 
-    public Task AssociateBrowserAsync(int customerId, string? raw, CancellationToken token) => Run(nameof(AssociateBrowserAsync),
+    public Task AssociateBrowserAsync(int customerId, string? raw, Guid authenticationTokenId, CancellationToken token) => Run(nameof(AssociateBrowserAsync),
         () => ConsentTransaction.Run(database, async () =>
         {
             await RequireCustomer(customerId, token);
+            if (authenticationTokenId == Guid.Empty) throw new ServiceException(401, "invalid_access_token");
             var subject = BrowserKey(raw);
             if (subject is null) return false;
             var last = await database.ConsentEvents.AsNoTracking().Where(x => x.SubjectKey == subject)
                 .OrderByDescending(x => x.Id).FirstOrDefaultAsync(token);
             if (last is not null && !await database.ConsentAssociations.AnyAsync(x => x.CustomerId == customerId && x.ConsentEventId == last.Id, token))
                 database.ConsentAssociations.Add(new ConsentAssociation
-                { CustomerId = customerId, ConsentEventId = last.Id, AssociatedAt = clock.GetUtcNow() });
+                { CustomerId = customerId, ConsentEventId = last.Id, AssociatedAt = clock.GetUtcNow(), AuthenticationTokenId = authenticationTokenId });
             return true;
         }, token), token, null);
 
@@ -128,15 +145,11 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             .Where(x => x.CustomerId == customerId).OrderByDescending(x => x.Id).Take(200).ToArrayAsync(token);
         var observed = await database.ConsentAssociations.AsNoTracking().Include(x => x.Event).ThenInclude(x => x.Document)
             .Where(x => x.CustomerId == customerId).OrderByDescending(x => x.Id).Take(200).ToArrayAsync(token);
-        var legacy = await database.CustomerConsents.AsNoTracking().Where(x => x.CustomerId == customerId).ToArrayAsync(token);
         var document = await LegalDocumentService.CurrentEntity(database, ConsentKinds.PersonalData, now, token);
         var last = events.FirstOrDefault(x => x.Kind == ConsentKinds.PersonalData);
         var status = Status(last, document, now);
-        if (last is null && legacy.Any(x => x.Type == ConsentType.PersonalData)) status = "renewal-required";
         var history = events.Select(x => History(x, "customer", null))
             .Concat(observed.Select(x => History(x.Event, "observed-browser", x.AssociatedAt)))
-            .Concat(legacy.Select(x => new ConsentHistoryDto($"legacy-{x.Id}", x.Type == ConsentType.PersonalData ? ConsentKinds.PersonalData : ConsentKinds.Agreement,
-                "legacy", null, x.DocumentVersion, null, [], x.AcceptedAt, "legacy", "customer", null)))
             .OrderByDescending(x => x.At).ToArray();
         var cases = await database.ConsentRightsCases.AsNoTracking().Where(x => x.CustomerId == customerId)
             .OrderByDescending(x => x.ReceivedAt).Take(200).ToArrayAsync(token);
@@ -160,6 +173,33 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             if (atCommit.Id != current.Id) throw Changed(atCommit);
             return result;
         }, token), token, customerId);
+
+    private async Task<ConsentOnboarding> ReadOnboarding(string? raw, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) throw new ServiceException(400, "consent_required");
+        var hash = JwtTokenService.HashRefreshToken(raw);
+        var row = await database.ConsentOnboarding.SingleOrDefaultAsync(x => x.TokenHash == hash, token);
+        if (row is null || row.UsedAt is not null || row.ExpiresAt <= clock.GetUtcNow())
+            throw new ServiceException(400, "onboarding_consent_expired");
+        return row;
+    }
+
+    private async Task<(LegalDocument PersonalData, LegalDocument Agreement)> ValidateOnboardingVersions(ConsentOnboarding row, CancellationToken token)
+    {
+        var current = await RequireDocument(ConsentKinds.PersonalData, token);
+        if (current.Id != row.PersonalDataDocumentId || current.ContentHash != row.PersonalDataHash) throw Changed(current);
+        var terms = await RequireDocument(ConsentKinds.Agreement, token);
+        if (terms.Id != row.TermsDocumentId) throw Changed(terms);
+        return (current, terms);
+    }
+
+    internal async Task ValidateOnboardingAtCommitAsync(string raw, CancellationToken token)
+    {
+        var hash = JwtTokenService.HashRefreshToken(raw);
+        var row = await database.ConsentOnboarding.SingleAsync(x => x.TokenHash == hash, token);
+        if (row.ExpiresAt <= clock.GetUtcNow()) throw new ServiceException(400, "onboarding_consent_expired");
+        await ValidateOnboardingVersions(row, token);
+    }
 
     private Task<T> Run<T>(string name, Func<Task<T>> action, CancellationToken token, object? input) => OperationLogging.RunAsync(logger,
         $"{typeof(ConsentService).FullName}.{name}", () => LogValueSummary.Inputs(("request", input)), action, token);

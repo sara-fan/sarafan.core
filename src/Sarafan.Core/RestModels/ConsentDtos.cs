@@ -34,7 +34,7 @@ public sealed class ConsentDecisionRequest
 {
     public Guid DocumentId { get; set; }
     [Required, StringLength(64)] public string ContentHash { get; set; } = "";
-    [Required, StringLength(16)] public string Decision { get; set; } = "grant";
+    [Required, StringLength(16)] public string Decision { get; set; } = "";
     [MaxLength(2)] public string[] Categories { get; set; } = [];
     public Guid IdempotencyKey { get; set; }
 }
@@ -42,8 +42,8 @@ public sealed record CookieConsentDto(string Status, string[] Categories, Guid? 
     DateTimeOffset? DecidedAt, DateTimeOffset? ExpiresAt, DateTimeOffset ServerNow, DateTimeOffset? NextChangeAt);
 public sealed record ConsentStatusDto(string Kind, string Status, Guid? RequiredVersion,
     Guid? AcceptedVersion, DateTimeOffset? DecidedAt);
-public sealed record ConsentHistoryDto(string Id, string Kind, string Decision, Guid? DocumentId,
-    string DisplayVersion, string? ContentHash, string[] Categories, DateTimeOffset At,
+public sealed record ConsentHistoryDto(string Id, string Kind, string Decision, Guid DocumentId,
+    string DisplayVersion, string ContentHash, string[] Categories, DateTimeOffset At,
     string Source, string Scope, DateTimeOffset? AssociatedAt);
 public sealed record CustomerConsentsDto(int CustomerId, DateTimeOffset ServerNow,
     ConsentStatusDto[] Statuses, ConsentHistoryDto[] History, RightsCaseDto[] RightsCases, DateTimeOffset? NextChangeAt = null);
@@ -67,4 +67,4 @@ public sealed record RightsCaseDto(Guid Id, int CustomerId, string Kind, string 
     DateTimeOffset ReceivedAt, DateTimeOffset DueAt, int? ResponsibleStaffId, string RetentionBasis,
     string CompletionEvidence, string ExtensionReason, bool Extended, DateTimeOffset? CompletedAt, int Revision);
 public sealed record LegalAuditDto(long Id, int ActorId, string Action, DateTimeOffset At);
-public sealed record ConsentRetentionDto(int Onboarding, int Events, int Artifacts, int Cases, int AuditEvents, int LegacyEvents);
+public sealed record ConsentRetentionDto(int Onboarding, int Events, int Artifacts, int Cases, int AuditEvents);

@@ -29,6 +29,7 @@ public sealed class ConsentAssociation
     public ConsentEvent Event { get; set; } = null!;
     public int CustomerId { get; set; }
     public DateTimeOffset AssociatedAt { get; set; }
+    public Guid AuthenticationTokenId { get; set; }
 }
 
 public sealed class ConsentOnboarding

@@ -159,9 +159,9 @@ public sealed class ConsentPolicyTests
         Reject(() => _consents.DecideCookiesAsync(Browser, Decision(doc, "grant", "analytics", "analytics"), default), "invalid_consent_decision");
         var invalid = Decision(doc); invalid.IdempotencyKey = Guid.Empty;
         Reject(() => _consents.DecideCookiesAsync(Browser, invalid, default), "invalid_consent_decision");
-        await _consents.AssociateBrowserAsync(_customer, null, default);
-        await _consents.AssociateBrowserAsync(_customer, Browser, default); await _db.SaveChangesAsync();
-        await _consents.AssociateBrowserAsync(_customer, Browser, default); await _db.SaveChangesAsync();
+        await _consents.AssociateBrowserAsync(_customer, null, Guid.NewGuid(), default);
+        await _consents.AssociateBrowserAsync(_customer, Browser, Guid.NewGuid(), default); await _db.SaveChangesAsync();
+        await _consents.AssociateBrowserAsync(_customer, Browser, Guid.NewGuid(), default); await _db.SaveChangesAsync();
         var mine = await _consents.CustomerAsync(_customer, default);
         Assert.That(mine.History.Single().Scope, Is.EqualTo("observed-browser"));
         Assert.That(mine.Statuses[0].Status, Is.EqualTo("missing"));
@@ -194,11 +194,12 @@ public sealed class ConsentPolicyTests
     }
 
     [Test]
-    public async Task LegacyMissingRefusedAndWithdrawn_RestrictWrites_AndKeepRightsAccessible()
+    public async Task MissingRefusedAndWithdrawn_RestrictWrites_AndKeepRightsAccessible()
     {
         var document = await Publish();
-        _db.CustomerConsents.Add(new() { CustomerId = _customer, Type = ConsentType.PersonalData, DocumentVersion = "old", AcceptedAt = _clock.Now.AddDays(-1) }); await _db.SaveChangesAsync();
-        Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses[0].Status, Is.EqualTo("renewal-required"));
+        var missing = await _consents.CustomerAsync(_customer, default);
+        Assert.That(missing.Statuses[0].Status, Is.EqualTo("missing"));
+        Assert.That(missing.History, Is.Empty);
         Reject(() => _consents.WithPersonalDataAsync(_customer, () => Task.FromResult(true), default), "personal_data_consent_required");
         await _consents.DecidePersonalDataAsync(_customer, Decision(document, "refuse"), default); await _db.SaveChangesAsync();
         Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses[0].Status, Is.EqualTo("refused"));
@@ -293,18 +294,16 @@ public sealed class ConsentPolicyTests
     }
 
     [Test]
-    public async Task Retention_DisposesExpiredDecisionsAndLegacyEvidenceWithoutRevivingPermission()
+    public async Task Retention_DisposesExpiredDecisionsWithoutRevivingPermission()
     {
         var pd = await Publish();
         await _consents.DecidePersonalDataAsync(_customer, Decision(pd), default); await _db.SaveChangesAsync();
         await _consents.DecidePersonalDataAsync(_customer, Decision(pd, "refuse"), default); await _db.SaveChangesAsync();
-        _db.CustomerConsents.Add(new() { CustomerId = _customer, Type = ConsentType.PersonalData, DocumentVersion = "legacy", AcceptedAt = _clock.Now });
-        await _db.SaveChangesAsync();
         _clock.Now = _clock.Now.AddDays(1100);
         var older = await _db.ConsentEvents.FirstAsync(x => x.CustomerId == _customer && x.Decision == "grant");
         older.RetainUntil = _clock.Now.AddDays(1); await _db.SaveChangesAsync();
-        var first = await _retention.SweepAsync(default); await _db.SaveChangesAsync();
-        Assert.That(first.LegacyEvents, Is.EqualTo(1));
+        await _retention.SweepAsync(default); await _db.SaveChangesAsync();
+        Assert.That(await _db.ConsentEvents.CountAsync(x => x.CustomerId == _customer), Is.EqualTo(2));
         Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses.Single().Status, Is.EqualTo("refused"));
         _clock.Now = _clock.Now.AddDays(2);
         var next = await _retention.SweepAsync(default); await _db.SaveChangesAsync();

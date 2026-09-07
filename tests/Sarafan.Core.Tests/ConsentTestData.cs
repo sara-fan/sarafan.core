@@ -18,7 +18,7 @@ internal static class ConsentTestData
             Purpose = "register",
             TermsAccepted = true,
             TermsDocumentId = terms.Id,
-            PersonalDataConsent = new() { DocumentId = pd.Id, ContentHash = pd.ContentHash, IdempotencyKey = Guid.NewGuid() }
+            PersonalDataConsent = new() { Decision = "grant", DocumentId = pd.Id, ContentHash = pd.ContentHash, IdempotencyKey = Guid.NewGuid() }
         };
     }
     internal static async Task<string> Onboarding(HttpClient client, string phone)

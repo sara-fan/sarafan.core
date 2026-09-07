@@ -14,7 +14,6 @@ public sealed class Customer
 
     public CustomerProfile Profile { get; set; } = null!;
     public CustomerPhoto? Photo { get; set; }
-    public ICollection<CustomerConsent> Consents { get; set; } = [];
     public ICollection<ConsentEvent> ConsentEvents { get; set; } = [];
     public ICollection<RefreshSession> RefreshSessions { get; set; } = [];
 }

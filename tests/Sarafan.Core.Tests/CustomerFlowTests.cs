@@ -116,13 +116,14 @@ public sealed class CustomerFlowTests
     public async Task Verification_RejectsWrongCodeAndMissingConsents()
     {
         var phone = NextPhone();
+        var onboarding = await ConsentTestData.Onboarding(_client, phone);
         using var wrongCode = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {
             phone,
             purpose = "register",
             code = WrongVerificationCode(phone),
             termsAccepted = true,
-            personalDataAccepted = true
+            onboardingToken = onboarding
         });
         using var missingConsents = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {

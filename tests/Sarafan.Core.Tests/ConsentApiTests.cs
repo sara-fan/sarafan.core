@@ -44,6 +44,59 @@ public sealed class ConsentApiTests
     private static ConsentDecisionRequest Decision(LegalDocumentDto doc, string decision = "grant") => new()
     { DocumentId = doc.Id, ContentHash = doc.ContentHash, Decision = decision, IdempotencyKey = Guid.NewGuid() };
 
+    [TestCase("personal-data-consent", "/api/v1/consents/me/personal-data")]
+    [TestCase("cookie-consent", "/api/v1/consents/cookies")]
+    public async Task OmittedDecisionCannotCreateConsent(string kind, string path)
+    {
+        Authorize(_customerToken);
+        var document = await Current(kind);
+        var key = Guid.NewGuid();
+        using var response = await _client.PostAsJsonAsync(path, new { documentId = document.Id, contentHash = document.ContentHash, idempotencyKey = key, categories = Array.Empty<string>() });
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        Assert.That(await scope.ServiceProvider.GetRequiredService<AppDbContext>().ConsentEvents.AnyAsync(x => x.IdempotencyKey == key), Is.False);
+    }
+
+    [Test]
+    public async Task RegistrationValidatesConsentBeforePhoneNormalizationOrVerification()
+    {
+        var request = await ConsentTestData.Request(_client, "not-a-phone");
+        var pd = request.PersonalDataConsent!;
+        using var omitted = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new
+        {
+            request.Phone,
+            request.Purpose,
+            request.TermsAccepted,
+            request.TermsDocumentId,
+            personalDataConsent = new { pd.DocumentId, pd.ContentHash, pd.IdempotencyKey }
+        });
+        Assert.That(omitted.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        request.PersonalDataConsent!.DocumentId = Guid.NewGuid();
+        using var stale = await _client.PostAsJsonAsync("/api/v1/auth/code/request", request);
+        Assert.That((await stale.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("consent_version_changed"));
+        request.PersonalDataConsent.DocumentId = (await Current("personal-data-consent")).Id;
+        using var invalidPhone = await _client.PostAsJsonAsync("/api/v1/auth/code/request", request);
+        Assert.That((await invalidPhone.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_phone"));
+        using var invalidReceipt = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new { phone = "not-a-phone", purpose = "register", code = "0000", onboardingToken = "unknown" });
+        Assert.That((await invalidReceipt.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("onboarding_consent_expired"));
+    }
+
+    [TestCase(null)]
+    [TestCase("invalid")]
+    [TestCase("00000000-0000-0000-0000-000000000000")]
+    public async Task BrowserAssociationRejectsMissingOrInvalidAuthenticatedTokenId(string? tokenId)
+    {
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var options = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationOptions>>().Value;
+        var claims = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(_customerToken).Claims.Where(x => x.Type != "jti").ToList();
+        if (tokenId is not null) claims.Add(new System.Security.Claims.Claim("jti", tokenId));
+        var jwt = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(options.Issuer, options.Audience, claims, DateTime.UtcNow.AddMinutes(-1), DateTime.UtcNow.AddMinutes(5),
+            new Microsoft.IdentityModel.Tokens.SigningCredentials(new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey)), Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256));
+        Authorize(new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(jwt));
+        using var response = await _client.PostAsync("/api/v1/consents/me/browser", null);
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+    }
+
     [Test]
     public async Task AdministratorDocumentLifecycle_IsVersionedAndPublicOnlyAfterActivation()
     {
@@ -118,6 +171,12 @@ public sealed class ConsentApiTests
         Assert.That((await Read<CustomerConsentsDto>(mineBefore)).Statuses.Single().Status, Is.EqualTo("missing"));
         using var link = await _client.PostAsync("/api/v1/consents/me/browser", null);
         Assert.That(link.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var association = await scope.ServiceProvider.GetRequiredService<AppDbContext>().ConsentAssociations.SingleAsync(x => x.CustomerId == _customer);
+            var tokenId = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(_customerToken).Id;
+            Assert.That(association.AuthenticationTokenId, Is.EqualTo(Guid.Parse(tokenId)));
+        }
         var stale = Decision(pd); stale.DocumentId = Guid.NewGuid();
         using var conflict = await _client.PostAsJsonAsync("/api/v1/consents/me/personal-data", stale);
         Assert.That(conflict.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));

@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 using Sarafan.Core.Authentication;
 using Sarafan.Core.RestModels;
@@ -48,7 +50,9 @@ public sealed class ConsentsController(ConsentService consents, ConsentRightsSer
     [Authorize, HttpPost("me/browser")]
     public async Task<ActionResult> Associate(CancellationToken token)
     {
-        await consents.AssociateBrowserAsync(CurrentCustomerId(), Request.Cookies[BrowserCookie], token);
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Jti), out var authenticationTokenId) || authenticationTokenId == Guid.Empty)
+            throw new ServiceException(401, "invalid_access_token");
+        await consents.AssociateBrowserAsync(CurrentCustomerId(), Request.Cookies[BrowserCookie], authenticationTokenId, token);
         return NoContent();
     }
     [Authorize, HttpPost("me/rights")]

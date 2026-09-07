@@ -238,6 +238,10 @@ namespace Sarafan.Core.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("associated_at");
 
+                    b.Property<Guid>("AuthenticationTokenId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("authentication_token_id");
+
                     b.Property<long>("ConsentEventId")
                         .HasColumnType("bigint")
                         .HasColumnName("consent_event_id");
@@ -499,43 +503,6 @@ namespace Sarafan.Core.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("customers", (string)null);
-                });
-
-            modelBuilder.Entity("Sarafan.Core.Models.CustomerConsent", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTimeOffset>("AcceptedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("accepted_at");
-
-                    b.Property<int>("CustomerId")
-                        .HasColumnType("integer")
-                        .HasColumnName("customer_id");
-
-                    b.Property<string>("DocumentVersion")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("document_version");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("type");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomerId", "Type", "DocumentVersion")
-                        .IsUnique();
-
-                    b.ToTable("customer_consents", (string)null);
                 });
 
             modelBuilder.Entity("Sarafan.Core.Models.CustomerPhoto", b =>
@@ -1005,17 +972,6 @@ namespace Sarafan.Core.Data.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Sarafan.Core.Models.CustomerConsent", b =>
-                {
-                    b.HasOne("Sarafan.Core.Models.Customer", "Customer")
-                        .WithMany("Consents")
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Customer");
-                });
-
             modelBuilder.Entity("Sarafan.Core.Models.CustomerPhoto", b =>
                 {
                     b.HasOne("Sarafan.Core.Models.Customer", "Customer")
@@ -1064,8 +1020,6 @@ namespace Sarafan.Core.Data.Migrations
             modelBuilder.Entity("Sarafan.Core.Models.Customer", b =>
                 {
                     b.Navigation("ConsentEvents");
-
-                    b.Navigation("Consents");
 
                     b.Navigation("Photo");
 

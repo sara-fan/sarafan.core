@@ -56,10 +56,13 @@ public sealed class AuthenticationService(
         string remoteAddress,
         CancellationToken cancellationToken)
     {
-        var phone = NormalizePhone(request.Phone);
         var purpose = ValidatePurpose(request.Purpose);
-        if (purpose == "register" && (!request.TermsAccepted || request.PersonalDataConsent is null))
-            throw new ServiceException(400, "consent_required");
+        if (purpose == "register")
+        {
+            if (!request.TermsAccepted || request.PersonalDataConsent is null) throw new ServiceException(400, "consent_required");
+            await consents.ValidateOnboardingDocumentsAsync(request.TermsDocumentId, request.PersonalDataConsent, cancellationToken);
+        }
+        var phone = NormalizePhone(request.Phone);
         CheckAttemptLimit($"request:ip:{remoteAddress}", 20);
         var onboarding = purpose == "register" ? await consents.BeginOnboardingAsync(phone, request.TermsDocumentId, request.PersonalDataConsent!, cancellationToken) : null;
         CheckAttemptLimit($"request:phone:{phone}", 3);
@@ -73,8 +76,9 @@ public sealed class AuthenticationService(
         string? userAgent,
         CancellationToken cancellationToken)
     {
-        var phone = NormalizePhone(request.Phone);
         var purpose = ValidatePurpose(request.Purpose);
+        if (purpose == "register") await consents.ValidateOnboardingReceiptAsync(request.OnboardingToken, cancellationToken);
+        var phone = NormalizePhone(request.Phone);
         CheckAttemptLimit($"verify:phone:{phone}", 5);
         CheckAttemptLimit($"verify:ip:{remoteAddress}", 30);
 
@@ -189,6 +193,7 @@ public sealed class AuthenticationService(
         }
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await ConsentTransaction.Lock(database, cancellationToken);
         if (await database.Customers.AnyAsync(item => item.Phone == phone, cancellationToken))
         {
             throw new ServiceException(
@@ -217,9 +222,6 @@ public sealed class AuthenticationService(
         try
         {
             await database.SaveChangesAsync(cancellationToken);
-            await consents.CompleteOnboardingAsync(customer, request.OnboardingToken, cancellationToken);
-            await database.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {
@@ -228,6 +230,10 @@ public sealed class AuthenticationService(
                 "account_exists");
         }
 
+        await consents.CompleteOnboardingAsync(customer, request.OnboardingToken, cancellationToken);
+        await database.SaveChangesAsync(cancellationToken);
+        await consents.ValidateOnboardingAtCommitAsync(request.OnboardingToken, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return CreateSession(customer, false, rawRefreshToken);
     }
 

@@ -204,7 +204,7 @@ public sealed class ProblemDetailsContractTests
     public async Task DomainFailure_ReturnsCatalogProblemWithoutExceptionMessage()
     {
         using var content = new StringContent(
-            """{"phone":"+79990009999","purpose":"register","code":"2222","termsAccepted":true,"personalDataAccepted":true}""",
+            """{"phone":"+79990009999","purpose":"login","code":"2222"}""",
             Encoding.UTF8,
             "application/json");
         using var response = await _client.PostAsync("/api/v1/auth/code/verify", content);
@@ -243,7 +243,7 @@ public sealed class ProblemDetailsContractTests
         using var invalidPhone = await _client.PostAsync(
             "/api/v1/auth/code/request",
             new StringContent(
-                """{"phone":"not-a-phone","purpose":"register"}""",
+                """{"phone":"not-a-phone","purpose":"login"}""",
                 Encoding.UTF8,
                 "application/json"));
         using var failedLogin = await _client.PostAsync(

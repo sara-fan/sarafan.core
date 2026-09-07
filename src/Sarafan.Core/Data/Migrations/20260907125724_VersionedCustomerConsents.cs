@@ -16,6 +16,9 @@ namespace Sarafan.Core.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "customer_consents");
+
             migrationBuilder.CreateTable(
                 name: "consent_rights_cases",
                 columns: table => new
@@ -166,7 +169,8 @@ namespace Sarafan.Core.Data.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     consent_event_id = table.Column<long>(type: "bigint", nullable: false),
                     customer_id = table.Column<int>(type: "integer", nullable: false),
-                    associated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                    associated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    authentication_token_id = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -265,6 +269,34 @@ namespace Sarafan.Core.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "legal_documents");
+
+            migrationBuilder.CreateTable(
+                name: "customer_consents",
+                columns: table => new
+                {
+                    id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    customer_id = table.Column<int>(type: "integer", nullable: false),
+                    type = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    document_version = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_customer_consents", x => x.id);
+                    table.ForeignKey(
+                        name: "FK_customer_consents_customers_customer_id",
+                        column: x => x.customer_id,
+                        principalTable: "customers",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_customer_consents_customer_id_type_document_version",
+                table: "customer_consents",
+                columns: new[] { "customer_id", "type", "document_version" },
+                unique: true);
         }
     }
 }

@@ -9,12 +9,14 @@ namespace Sarafan.Core.Services;
 
 internal static class ConsentTransaction
 {
-    internal static async Task<T> Run<T>(AppDbContext database, Func<Task<T>> action, CancellationToken token)
+    internal static async Task<T> Run<T>(AppDbContext database, Func<Task<T>> action, CancellationToken token, Func<Task>? beforeCommit = null)
     {
         if (database.Database.CurrentTransaction is not null)
         {
             await Lock(database, token);
-            return await action();
+            var result = await action();
+            if (beforeCommit is not null) await beforeCommit();
+            return result;
         }
         await using var transaction = await database.Database.BeginTransactionAsync(token);
         await Lock(database, token);
@@ -22,6 +24,7 @@ internal static class ConsentTransaction
         {
             var result = await action();
             await database.SaveChangesAsync(token);
+            if (beforeCommit is not null) await beforeCommit();
             await transaction.CommitAsync(token);
             return result;
         }
