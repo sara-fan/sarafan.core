@@ -44,22 +44,30 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
                             || database.ConsentEvents.Any(x => x.SubjectKey == item.SubjectKey && x.Id < item.Id && x.RetainUntil > now))))
                     .ExecuteDeleteAsync(token);
             }
-            var documents = await database.LegalDocuments.Where(x => x.DisposedAt == null
-                && (x.State == "draft" ? x.UpdatedAt < draftCutoff : x.UpdatedAt < cutoff)).ToArrayAsync(token);
+            var activeIds = await database.LegalDocuments.Where(x => x.State == "published" && x.EffectiveAt <= now)
+                .GroupBy(x => new { x.Kind, x.Locale })
+                .Select(group => group.OrderByDescending(x => x.EffectiveAt).ThenByDescending(x => x.PublishedAt).First().Id)
+                .ToArrayAsync(token);
             var disposed = 0;
-            foreach (var document in documents)
+            while (true)
             {
-                var active = await LegalDocumentService.CurrentEntity(database, document.Kind, now, token);
-                if (active?.Id == document.Id || document.EffectiveAt > now
-                    || await database.ConsentEvents.AnyAsync(x => x.DocumentId == document.Id, token)
-                    || await database.ConsentOnboarding.AnyAsync(x => x.PersonalDataDocumentId == document.Id || x.TermsDocumentId == document.Id, token)) continue;
-                document.CreatedBy = 0;
-                document.Source = [];
-                document.Html = "";
-                document.DisposedAt = now;
-                document.Revision++;
-                database.LegalAuditEvents.Add(new LegalAuditEvent { DocumentId = document.Id, Action = "artifact-disposed", At = now });
-                disposed++;
+                // Filter all reference holds in SQL and fetch IDs only; source content can be large.
+                var documents = await database.LegalDocuments.Where(x => x.DisposedAt == null
+                    && (x.State == "draft" ? x.UpdatedAt < draftCutoff : x.UpdatedAt < cutoff)
+                    && !activeIds.Contains(x.Id) && (x.EffectiveAt == null || x.EffectiveAt <= now)
+                    && !database.ConsentEvents.Any(e => e.DocumentId == x.Id)
+                    && !database.ConsentOnboarding.Any(o => o.PersonalDataDocumentId == x.Id || o.TermsDocumentId == x.Id))
+                    .OrderBy(x => x.Id).Select(x => x.Id).Take(1000).ToArrayAsync(token);
+                if (documents.Length == 0) break;
+                disposed += await database.LegalDocuments.Where(x => documents.Contains(x.Id)).ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.CreatedBy, 0)
+                    .SetProperty(x => x.Source, Array.Empty<byte>())
+                    .SetProperty(x => x.Html, "")
+                    .SetProperty(x => x.DisposedAt, now)
+                    .SetProperty(x => x.Revision, x => x.Revision + 1), token);
+                database.LegalAuditEvents.AddRange(documents.Select(id => new LegalAuditEvent
+                { DocumentId = id, Action = "artifact-disposed", At = now }));
+                await database.SaveChangesAsync(token);
             }
             var cases = await database.ConsentRightsCases.Where(x => x.CompletedAt < cutoff).ExecuteDeleteAsync(token);
             var audit = await database.LegalAuditEvents.Where(x => x.At < cutoff).ExecuteDeleteAsync(token);

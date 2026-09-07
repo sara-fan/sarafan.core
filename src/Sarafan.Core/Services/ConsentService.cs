@@ -150,7 +150,7 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
         var status = Status(last, document, now);
         var history = events.Select(x => History(x, "customer", null))
             .Concat(observed.Select(x => History(x.Event, "observed-browser", x.AssociatedAt)))
-            .OrderByDescending(x => x.At).ToArray();
+            .OrderByDescending(x => x.At).Take(200).ToArray();
         var cases = await database.ConsentRightsCases.AsNoTracking().Where(x => x.CustomerId == customerId)
             .OrderByDescending(x => x.ReceivedAt).Take(200).ToArrayAsync(token);
         var nextChangeAt = await database.LegalDocuments.Where(x => x.Kind == ConsentKinds.PersonalData && x.Locale == "ru"

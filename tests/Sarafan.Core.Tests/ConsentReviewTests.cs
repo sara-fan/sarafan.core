@@ -76,7 +76,7 @@ public sealed class ConsentReviewTests
     private ConsentService Consents(AppDbContext database) => new(database, _clock, Options.Create(new ConsentOptions()), _auth, NullLogger<ConsentService>.Instance);
     private LegalDocumentService Documents(AppDbContext database) => new(database, _clock, NullLogger<LegalDocumentService>.Instance);
     private Task<LegalDocumentDto> Draft(AppDbContext database, string kind) => Documents(database).SaveAsync(null,
-        new() { Kind = kind, Title = "РўРµСЃС‚", DisplayVersion = Guid.NewGuid().ToString(), FileName = "test.md", Source = Encoding.UTF8.GetBytes("# РўРµРєСЃС‚"), CookieCategories = kind == ConsentKinds.Cookies ? ["analytics"] : [] }, 1, default);
+        new() { Kind = kind, Title = "Тест", DisplayVersion = Guid.NewGuid().ToString(), FileName = "test.md", Source = Encoding.UTF8.GetBytes("# Текст"), CookieCategories = kind == ConsentKinds.Cookies ? ["analytics"] : [] }, 1, default);
     private ConsentDecisionRequest Decision(string kind) => new()
     { DocumentId = _documents[kind].Id, ContentHash = _documents[kind].ContentHash, Decision = "grant", IdempotencyKey = Guid.NewGuid(), Categories = kind == ConsentKinds.Cookies ? ["analytics"] : [] };
     private Task<string> Onboarding(AppDbContext database) => Consents(database).BeginOnboardingAsync(Phone, _documents[ConsentKinds.Agreement].Id, Decision(ConsentKinds.PersonalData), default);
@@ -325,6 +325,94 @@ public sealed class ConsentReviewTests
         Assert.That(result.Events, Is.EqualTo(2001));
         Assert.That(commands.Count, Is.LessThanOrEqualTo(15), "Each page must use set-based queries, not per-event lookups.");
         Assert.That(await setup.ConsentEvents.CountAsync(), Is.Zero);
+    }
+
+    [Test]
+    public async Task RetentionPagesArtifactsAndPreservesCurrentFutureAndReferencedDocuments()
+    {
+        await using var setup = Database();
+        var old = _clock.Now.AddDays(-1100);
+        LegalDocument Artifact(string version, string state = "published") => new()
+        {
+            Kind = ConsentKinds.Cookies,
+            DisplayVersion = version,
+            Source = [1, 2, 3],
+            Html = "artifact",
+            ContentHash = new string('a', 64),
+            SourceHash = new string('b', 64),
+            CreatedBy = 1,
+            CreatedAt = old,
+            UpdatedAt = old,
+            PublishedAt = state == "published" ? old : null,
+            EffectiveAt = state == "published" ? old : null,
+            State = state
+        };
+        setup.LegalDocuments.AddRange(Enumerable.Range(0, 2001).Select(i => Artifact($"expired-{i}", i % 2 == 0 ? "draft" : "published")));
+        var future = Artifact("future"); future.EffectiveAt = _clock.Now.AddDays(1);
+        var evidenceHeld = Artifact("evidence-held");
+        var onboardingHeld = Artifact("onboarding-held");
+        setup.LegalDocuments.AddRange(future, evidenceHeld, onboardingHeld);
+        foreach (var current in await setup.LegalDocuments.Where(x => x.EffectiveAt == _clock.Now).ToArrayAsync()) current.UpdatedAt = old;
+        setup.ConsentEvents.Add(new ConsentEvent
+        {
+            SubjectKey = "held-browser",
+            Document = evidenceHeld,
+            Kind = ConsentKinds.Cookies,
+            Decision = "refuse",
+            ContentHash = evidenceHeld.ContentHash,
+            IdempotencyKey = Guid.NewGuid(),
+            At = old,
+            RetainUntil = _clock.Now.AddDays(1)
+        });
+        setup.ConsentOnboarding.Add(new ConsentOnboarding
+        {
+            TokenHash = new string('c', 64),
+            PhoneHash = new string('d', 64),
+            PersonalDataDocumentId = onboardingHeld.Id,
+            TermsDocumentId = _documents[ConsentKinds.Agreement].Id,
+            At = _clock.Now,
+            ExpiresAt = _clock.Now.AddMinutes(10)
+        });
+        await setup.SaveChangesAsync();
+        var commands = new CountCommands();
+        await using var database = Database(commands);
+        var result = await new ConsentRetentionService(database, _clock, Options.Create(new ConsentOptions()), NullLogger<ConsentRetentionService>.Instance).SweepAsync(default);
+        Assert.That(result.Artifacts, Is.EqualTo(2001));
+        Assert.That(commands.Count, Is.LessThanOrEqualTo(20), "Artifact disposal must not query each document.");
+        Assert.That(await setup.LegalDocuments.CountAsync(x => x.DisposedAt != null && x.Source.Length == 0 && x.Html == "" && x.CreatedBy == 0 && x.Revision == 2), Is.EqualTo(2001));
+        Assert.That(await setup.LegalAuditEvents.CountAsync(x => x.Action == "artifact-disposed"), Is.EqualTo(2001));
+        Assert.That(await setup.LegalDocuments.CountAsync(x => x.DisposedAt == null), Is.EqualTo(6));
+    }
+
+    [Test]
+    public async Task CombinedCustomerAndBrowserHistoryReturnsOnlyTheLatest200Records()
+    {
+        await using var database = Database();
+        for (var index = 0; index < 201; index++)
+        {
+            ConsentEvent Evidence(string kind, int offset) => new()
+            {
+                CustomerId = kind == ConsentKinds.PersonalData ? _customer : null,
+                SubjectKey = kind == ConsentKinds.PersonalData ? $"customer:{_customer}" : "history-browser",
+                DocumentId = _documents[kind].Id,
+                ContentHash = _documents[kind].ContentHash,
+                Kind = kind,
+                Decision = "grant",
+                IdempotencyKey = Guid.NewGuid(),
+                At = _clock.Now.AddSeconds(index * 2 + offset - 500),
+                RetainUntil = _clock.Now.AddDays(1000)
+            };
+            database.ConsentEvents.Add(Evidence(ConsentKinds.PersonalData, 0));
+            database.ConsentAssociations.Add(new ConsentAssociation
+            { Event = Evidence(ConsentKinds.Cookies, 1), CustomerId = _customer, AssociatedAt = _clock.Now, AuthenticationTokenId = Guid.NewGuid() });
+        }
+        await database.SaveChangesAsync();
+        var history = (await Consents(database).CustomerAsync(_customer, default)).History;
+        Assert.That(history, Has.Length.EqualTo(200));
+        Assert.That(history.Count(x => x.Scope == "customer"), Is.EqualTo(100));
+        Assert.That(history.Count(x => x.Scope == "observed-browser"), Is.EqualTo(100));
+        Assert.That(history.Select(x => x.At), Is.Ordered.Descending);
+        Assert.That(history.Last().At, Is.EqualTo(_clock.Now.AddSeconds(202 - 500)).Within(TimeSpan.FromMicroseconds(1)));
     }
 
     private sealed class CountCommands : DbCommandInterceptor

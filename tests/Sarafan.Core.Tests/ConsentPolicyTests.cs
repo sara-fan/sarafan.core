@@ -274,7 +274,7 @@ public sealed class ConsentPolicyTests
         var result = await _retention.SweepAsync(default); await _db.SaveChangesAsync();
         Assert.That(result.Onboarding, Is.GreaterThanOrEqualTo(1));
         Assert.That(result.Artifacts, Is.GreaterThanOrEqualTo(1));
-        Assert.That((await _db.LegalDocuments.SingleAsync(x => x.Id == orphan.Id)).Source, Is.Empty);
+        Assert.That((await _db.LegalDocuments.AsNoTracking().SingleAsync(x => x.Id == orphan.Id)).Source, Is.Empty);
         Assert.That(await _db.ConsentEvents.AnyAsync(x => x.CustomerId == _customer && x.Decision == "grant"), Is.True);
         await _rights.CreateAsync(_customer, new() { IdempotencyKey = Guid.NewGuid() }, default); await _db.SaveChangesAsync();
         _clock.Now = _clock.Now.AddDays(1100);
