@@ -15,8 +15,15 @@ namespace Sarafan.Core.Controllers;
 public sealed class BackofficeConsentsController(ConsentWithdrawalRequestService withdrawalRequests, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet("withdrawal-requests")]
-    public async Task<ActionResult> Requests(CancellationToken token)
-        => Ok(await withdrawalRequests.ListAsync(token));
+    public async Task<ActionResult> Requests(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string sortBy = "processed",
+        [FromQuery] string sortOrder = "asc",
+        [FromQuery] string? search = null,
+        [FromQuery] bool? processed = null,
+        CancellationToken token = default)
+        => Ok(await withdrawalRequests.ListAsync(page, pageSize, sortBy, sortOrder, search, processed, token));
 
     [HttpPut("withdrawal-requests/processed")]
     public async Task<ActionResult> Process(ProcessConsentWithdrawalRequest request, CancellationToken token)

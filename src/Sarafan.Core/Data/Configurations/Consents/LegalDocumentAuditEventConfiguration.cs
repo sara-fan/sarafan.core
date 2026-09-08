@@ -36,7 +36,7 @@ internal sealed class LegalDocumentAuditEventConfiguration : IEntityTypeConfigur
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(item => item.DocumentId);
-        builder.HasIndex(item => item.At);
+        builder.HasIndex(item => new { item.At, item.Id });
     }
 }
 

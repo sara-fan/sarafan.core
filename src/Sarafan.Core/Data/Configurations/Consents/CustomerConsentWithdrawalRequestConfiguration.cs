@@ -24,6 +24,9 @@ internal sealed class CustomerConsentWithdrawalRequestConfiguration : IEntityTyp
         builder.HasIndex(item => item.CustomerId)
             .IsUnique()
             .HasFilter("processed = FALSE");
+        builder.HasIndex(item => new { item.Processed, item.RequestedAt, item.CustomerId })
+            .IsDescending(false, true, false)
+            .HasDatabaseName("IX_customer_consent_withdrawal_requests_queue");
 
         builder.HasOne<Customer>()
             .WithMany()

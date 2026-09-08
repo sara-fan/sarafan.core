@@ -187,9 +187,13 @@ public sealed class ConsentApiTests
     {
         using var denied = await _client.GetAsync("/api/v1/backoffice/legal-documents");
         Assert.That(denied.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        using var deniedAudit = await _client.GetAsync("/api/v1/backoffice/legal-documents/audit");
+        Assert.That(deniedAudit.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
         Authorize(_customerToken);
         using var wrongPrincipal = await _client.GetAsync("/api/v1/backoffice/legal-documents");
         Assert.That(wrongPrincipal.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        using var wrongAuditPrincipal = await _client.GetAsync("/api/v1/backoffice/legal-documents/audit");
+        Assert.That(wrongAuditPrincipal.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
         Authorize(_adminToken);
         var payload = new LegalDocumentRequest
         {
@@ -239,8 +243,29 @@ public sealed class ConsentApiTests
         var createdAudit = await Read<LegalDocumentAuditPageDto>(auditBeforeDelete);
         Assert.That(createdAudit.Items.Single().Action, Is.EqualTo("created"));
         Assert.That(createdAudit.Items.Single().ContentHash, Is.EqualTo(document.ContentHash));
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(createdAudit.Pagination.CurrentPage, Is.EqualTo(1));
+            Assert.That(createdAudit.Pagination.PageSize, Is.EqualTo(50));
+            Assert.That(createdAudit.Pagination.TotalCount, Is.EqualTo(1));
+            Assert.That(createdAudit.Pagination.TotalPages, Is.EqualTo(1));
+            Assert.That(createdAudit.Pagination.HasNextPage, Is.False);
+            Assert.That(createdAudit.Pagination.HasPreviousPage, Is.False);
+            Assert.That(createdAudit.Sorting.SortBy, Is.EqualTo("at"));
+            Assert.That(createdAudit.Sorting.SortOrder, Is.EqualTo("desc"));
+            Assert.That(createdAudit.Search, Is.Null);
+        }
         using var searchedAudit = await _client.GetAsync($"/api/v1/backoffice/legal-documents/audit?search={Uri.EscapeDataString(payload.DisplayVersion)}&action=created&page=1&pageSize=1");
-        Assert.That((await Read<LegalDocumentAuditPageDto>(searchedAudit)).Items.Single().DocumentId, Is.EqualTo(document.Id));
+        var searchedAuditPage = await Read<LegalDocumentAuditPageDto>(searchedAudit);
+        Assert.That(searchedAuditPage.Items.Single().DocumentId, Is.EqualTo(document.Id));
+        Assert.That(searchedAuditPage.Search, Is.EqualTo(payload.DisplayVersion));
+        using var sortedAudit = await _client.GetAsync($"/api/v1/backoffice/legal-documents/audit?documentId={document.Id}&sortBy=title&sortOrder=asc");
+        var sortedAuditPage = await Read<LegalDocumentAuditPageDto>(sortedAudit);
+        Assert.That(sortedAuditPage.Sorting.SortBy, Is.EqualTo("title"));
+        Assert.That(sortedAuditPage.Sorting.SortOrder, Is.EqualTo("asc"));
+        using var invalidAudit = await _client.GetAsync("/api/v1/backoffice/legal-documents/audit?pageSize=101");
+        Assert.That((await invalidAudit.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(),
+            Is.EqualTo("invalid_legal_document_audit_filter"));
         using var deleted = await _client.DeleteAsync($"/api/v1/backoffice/legal-documents/{document.Id}");
         Assert.That(deleted.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
         using var auditAfterDelete = await _client.GetAsync($"/api/v1/backoffice/legal-documents/audit?documentId={document.Id}");
@@ -332,7 +357,27 @@ public sealed class ConsentApiTests
         Assert.That(customerQueue.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
         Authorize(_adminToken);
         using var queue = await _client.GetAsync("/api/v1/backoffice/consents/withdrawal-requests");
-        Assert.That((await Read<CustomerConsentWithdrawalRequestDto[]>(queue)).Any(item => item == request), Is.True);
+        var queuePage = await Read<CustomerConsentWithdrawalRequestPageDto>(queue);
+        Assert.That(queuePage.Items.Any(item => item == request), Is.True);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(queuePage.Pagination.CurrentPage, Is.EqualTo(1));
+            Assert.That(queuePage.Pagination.PageSize, Is.EqualTo(10));
+            Assert.That(queuePage.Pagination.TotalCount, Is.GreaterThanOrEqualTo(1));
+            Assert.That(queuePage.Sorting.SortBy, Is.EqualTo("processed"));
+            Assert.That(queuePage.Sorting.SortOrder, Is.EqualTo("asc"));
+            Assert.That(queuePage.Search, Is.Null);
+        }
+        var customerSearch = request.CustomerId.ToString()[^1].ToString();
+        using var filteredQueue = await _client.GetAsync($"/api/v1/backoffice/consents/withdrawal-requests?page=1&pageSize=10&sortBy=customerId&sortOrder=desc&processed=false&search={customerSearch}");
+        var filteredQueuePage = await Read<CustomerConsentWithdrawalRequestPageDto>(filteredQueue);
+        Assert.That(filteredQueuePage.Items, Has.Some.EqualTo(request));
+        Assert.That(filteredQueuePage.Items, Has.All.Property(nameof(CustomerConsentWithdrawalRequestDto.Processed)).False);
+        Assert.That(filteredQueuePage.Sorting.SortBy, Is.EqualTo("customerId"));
+        Assert.That(filteredQueuePage.Search, Is.EqualTo(customerSearch));
+        using var invalidQueue = await _client.GetAsync("/api/v1/backoffice/consents/withdrawal-requests?search=customer");
+        Assert.That((await invalidQueue.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(),
+            Is.EqualTo("invalid_consent_withdrawal_request_filter"));
         using var completed = await _client.PutAsJsonAsync("/api/v1/backoffice/consents/withdrawal-requests/processed",
             new ProcessConsentWithdrawalRequest { CustomerId = request.CustomerId, RequestedAt = request.RequestedAt });
         Assert.That((await Read<CustomerConsentWithdrawalRequestDto>(completed)).Processed, Is.True);

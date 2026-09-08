@@ -63,6 +63,7 @@ public sealed class SarafanProblemDetailsFactory(
             ["cookie_consent_required"] = new(403, "Требуется согласие на куки", "Чтобы использовать сервис, примите действующую версию согласия на обязательные куки."),
             ["onboarding_consent_expired"] = new(400, "Подтверждение согласия истекло", "Вернитесь к вводу телефона и подтвердите актуальный текст согласия."),
             ["consent_withdrawal_request_not_found"] = new(404, "Запрос не найден", "Обновите очередь: выбранный запрос отсутствует."),
+            ["invalid_consent_withdrawal_request_filter"] = new(400, "Некорректные параметры очереди", "Проверьте страницу, размер страницы, поиск, статус и сортировку."),
             ["validation_failed"] = new(
                 StatusCodes.Status400BadRequest,
                 "Ошибка проверки данных",

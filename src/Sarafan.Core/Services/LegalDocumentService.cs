@@ -92,16 +92,19 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
         }, token), token, id);
 
     public Task<LegalDocumentAuditPageDto> AuditAsync(LegalDocumentKind? kind, string? action, string? search, Guid? documentId,
-        int page, int pageSize, CancellationToken token) => Run(nameof(AuditAsync), async () =>
+        int page, int pageSize, string sortBy, string sortOrder, CancellationToken token) => Run(nameof(AuditAsync), async () =>
     {
         if (kind is { } value) ValidateKind(value);
         if (action is not null && action is not (CreatedAction or DeletedAction))
             throw new ServiceException(400, "invalid_legal_document_audit_filter");
         search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
-        if (search?.Length > 200) throw new ServiceException(400, "invalid_legal_document_audit_filter");
+        var sortByKey = sortBy?.Trim().ToLowerInvariant();
+        var sortOrderKey = sortOrder?.Trim().ToLowerInvariant();
+        if (page < 1 || pageSize is < 1 or > 100 || search?.Length > 200
+            || sortByKey is not ("at" or "action" or "title" or "displayversion" or "effectiveat" or "actorname")
+            || sortOrderKey is not ("asc" or "desc"))
+            throw new ServiceException(400, "invalid_legal_document_audit_filter");
         var searchedId = Guid.TryParse(search, out var parsedDocumentId) ? parsedDocumentId : (Guid?)null;
-        page = Math.Max(page, 1);
-        pageSize = Math.Clamp(pageSize, 1, 100);
         var query = database.LegalDocumentAuditEvents.AsNoTracking().Where(x =>
             (kind == null || x.Kind == kind) && (action == null || x.Action == action)
             && (documentId == null || x.DocumentId == documentId)
@@ -109,19 +112,78 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
                 || EF.Functions.ILike(x.DisplayVersion, $"%{search}%")
                 || searchedId != null && x.DocumentId == searchedId));
         var total = await query.CountAsync(token);
-        var rows = await query.OrderByDescending(x => x.At).ThenByDescending(x => x.Id)
-            .Skip((page - 1) * pageSize).Take(pageSize).ToArrayAsync(token);
-        var actorIds = rows.Select(x => x.ActorId).Distinct().ToArray();
-        var actors = await database.BackofficeUsers.AsNoTracking().Where(x => actorIds.Contains(x.Id))
-            .Select(x => new { x.Id, x.FirstName, x.LastName, x.Patronymic }).ToDictionaryAsync(x => x.Id, token);
+        var descending = sortOrderKey == "desc";
+        var ordered = (sortByKey, descending) switch
+        {
+            ("at", false) => query.OrderBy(x => x.At).ThenBy(x => x.Id),
+            ("at", true) => query.OrderByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("action", false) => query.OrderBy(x => x.Action).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("action", true) => query.OrderByDescending(x => x.Action).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("title", false) => query.OrderBy(x => x.Title).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("title", true) => query.OrderByDescending(x => x.Title).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("displayversion", false) => query.OrderBy(x => x.DisplayVersion).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("displayversion", true) => query.OrderByDescending(x => x.DisplayVersion).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("effectiveat", false) => query.OrderBy(x => x.EffectiveAt).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("effectiveat", true) => query.OrderByDescending(x => x.EffectiveAt).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            ("actorname", false) => query.OrderBy(x => x.BackofficeUser.LastName).ThenBy(x => x.BackofficeUser.FirstName)
+                .ThenBy(x => x.BackofficeUser.Patronymic).ThenBy(x => x.ActorId).ThenByDescending(x => x.At).ThenByDescending(x => x.Id),
+            _ => query.OrderByDescending(x => x.BackofficeUser.LastName).ThenByDescending(x => x.BackofficeUser.FirstName)
+                .ThenByDescending(x => x.BackofficeUser.Patronymic).ThenByDescending(x => x.ActorId)
+                .ThenByDescending(x => x.At).ThenByDescending(x => x.Id)
+        };
+        var offset = (long)(page - 1) * pageSize;
+        var rows = offset > int.MaxValue
+            ? []
+            : await ordered.Skip((int)offset).Take(pageSize).Select(x => new
+            {
+                x.Id,
+                x.DocumentId,
+                x.ActorId,
+                ActorFirstName = x.BackofficeUser.FirstName,
+                ActorLastName = x.BackofficeUser.LastName,
+                ActorPatronymic = x.BackofficeUser.Patronymic,
+                x.Action,
+                x.At,
+                x.Kind,
+                x.Locale,
+                x.Title,
+                x.DisplayVersion,
+                x.EffectiveAt,
+                x.SourceHash,
+                x.ContentHash
+            }).ToArrayAsync(token);
         var items = rows.Select(x => new LegalDocumentAuditDto(x.Id, x.DocumentId, x.ActorId,
-            actors.TryGetValue(x.ActorId, out var actor)
-                ? string.Join(' ', new[] { actor.LastName, actor.FirstName, actor.Patronymic }.Where(value => !string.IsNullOrWhiteSpace(value)))
-                : $"ID {x.ActorId}",
+            string.Join(' ', new[] { x.ActorLastName, x.ActorFirstName, x.ActorPatronymic }
+                .Where(value => !string.IsNullOrWhiteSpace(value))),
             x.Action, x.At, x.Kind, x.Locale, x.Title, x.DisplayVersion, x.EffectiveAt,
             ConsentCalendar.LocalDate(x.EffectiveAt), ConsentCalendar.TimeZoneId, x.SourceHash, x.ContentHash)).ToArray();
-        return new LegalDocumentAuditPageDto(items, page, pageSize, total);
-    }, token, new { kind, action, search, documentId, page, pageSize });
+        var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize);
+        return new LegalDocumentAuditPageDto
+        {
+            Items = items,
+            Pagination = new PaginationInfo
+            {
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalCount = total,
+                TotalPages = totalPages,
+                HasNextPage = page < totalPages,
+                HasPreviousPage = page > 1
+            },
+            Sorting = new SortingInfo
+            {
+                SortBy = sortByKey switch
+                {
+                    "displayversion" => "displayVersion",
+                    "effectiveat" => "effectiveAt",
+                    "actorname" => "actorName",
+                    _ => sortByKey
+                },
+                SortOrder = sortOrderKey
+            },
+            Search = search
+        };
+    }, token, new { kind, action, search, documentId, page, pageSize, sortBy, sortOrder });
 
     private Task<T> Run<T>(string method, Func<Task<T>> action, CancellationToken token, object? input)
         => OperationLogging.RunAsync(logger, $"{typeof(LegalDocumentService).FullName}.{method}",

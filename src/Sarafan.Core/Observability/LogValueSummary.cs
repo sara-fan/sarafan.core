@@ -13,9 +13,15 @@ namespace Sarafan.Core.Observability;
 
 internal static class LogValueSummary
 {
+    private static readonly HashSet<string> PrivateListStateNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "page", "pageSize", "sortBy", "sortOrder", "search", "processed", "kind", "action", "customerId", "documentId"
+    };
+
     // Only these explicit projections may read values. Never serialize or call ToString on arbitrary input.
     internal static string Inputs(params (string Name, object? Value)[] values)
-        => values.Length == 0 ? "none" : string.Join("; ", values.Select(value => $"{value.Name}={Describe(value.Value)}"));
+        => values.Length == 0 ? "none" : string.Join("; ", values.Select(value =>
+            $"{value.Name}={(PrivateListStateNames.Contains(value.Name) ? "[redacted]" : Describe(value.Value))}"));
 
     internal static string Describe(object? value) => value switch
     {

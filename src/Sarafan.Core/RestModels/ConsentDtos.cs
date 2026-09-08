@@ -63,5 +63,6 @@ public sealed record LegalDocumentAuditDto(long Id, Guid DocumentId, int ActorId
     string Action, DateTimeOffset At, LegalDocumentKind Kind, string Locale, string Title, string DisplayVersion,
     DateTimeOffset EffectiveAt, DateOnly EffectiveLocalDate, string EffectiveTimeZone,
     string SourceHash, string ContentHash);
-public sealed record LegalDocumentAuditPageDto(LegalDocumentAuditDto[] Items, int Page, int PageSize, int Total);
+public sealed class LegalDocumentAuditPageDto : PagedResult<LegalDocumentAuditDto>;
+public sealed class CustomerConsentWithdrawalRequestPageDto : PagedResult<CustomerConsentWithdrawalRequestDto>;
 public sealed record ConsentRetentionDto(int Onboarding, int Events);
