@@ -1,9 +1,3 @@
-<!--
-Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
-All rights reserved.
-This file is a part of the Sarafan application
--->
-
 # Customer consent — Core #20 / specification v1.16
 
 The coordinated implementation is tracked by [spec #30](https://github.com/sara-fan/sarafan.spec/issues/30), [UI #16](https://github.com/sara-fan/sarafan.ui/issues/16), and [back.office #6](https://github.com/sara-fan/sarafan.back.office/issues/6). It supplies versioned consent infrastructure and an MVP queue for a customer's request to stop using the system and withdraw personal-data consent. The queue is an acknowledgement mechanism for manual work outside the application; it is not a claim of complete legal compliance.

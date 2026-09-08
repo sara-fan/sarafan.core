@@ -1,7 +1,3 @@
-<!-- Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting) -->
-<!-- All rights reserved. -->
-<!-- This file is a part of Sarafan application -->
-
 # Sarafan Core
 
 Product requirements are defined in the [current specification](https://github.com/sara-fan/sarafan.spec); implementation scope and delivery are tracked in the [MVP issue plan](https://github.com/sara-fan/sarafan.spec/issues/26). This README documents the technical implementation and operation of Core.

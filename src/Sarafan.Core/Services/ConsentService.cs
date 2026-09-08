@@ -259,10 +259,17 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
     {
         if (request.IdempotencyKey == Guid.Empty || request.Decision is not ("grant" or "refuse" or "withdraw"))
             throw new ServiceException(400, "invalid_consent_decision");
+
+        if (kind != LegalDocumentKind.CookieConsent)
+        {
+            if (request.Categories is null || request.Categories.Length > 0)
+                throw new ServiceException(400, "invalid_consent_decision");
+            return;
+        }
+
         if (request.Categories is null || request.Categories.Length > Enum.GetValues<CookieCategory>().Length
             || request.Categories.Distinct().Count() != request.Categories.Length
             || request.Categories.Any(category => !Enum.IsDefined(category))
-            || kind != LegalDocumentKind.CookieConsent && request.Categories.Length > 0
             || request.Decision != "grant" && request.Categories.Length > 0)
             throw new ServiceException(400, "invalid_consent_categories");
     }

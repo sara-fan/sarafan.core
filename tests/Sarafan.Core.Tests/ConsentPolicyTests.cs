@@ -295,6 +295,8 @@ public sealed class ConsentPolicyTests
         await _consents.DecidePersonalDataAsync(_customer, Decision(document, "refuse"), default); await _db.SaveChangesAsync();
         Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses[0].Status, Is.EqualTo("refused"));
         Reject(() => _consents.DecidePersonalDataAsync(_customer, Decision(document, "withdraw"), default), "invalid_consent_decision");
+        Reject(() => _consents.DecidePersonalDataAsync(_customer, Decision(document, "grant", CookieCategory.Mandatory), default),
+            "invalid_consent_decision");
         var grant = Decision(document);
         await _consents.DecidePersonalDataAsync(_customer, grant, default); await _db.SaveChangesAsync();
         await _consents.DecidePersonalDataAsync(_customer, grant, default);

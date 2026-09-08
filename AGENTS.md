@@ -1,9 +1,3 @@
-<!--
-Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
-All rights reserved.
-This file is a part of the Sarafan application
--->
-
 # Agent Guidelines for Sarafan Project
 
 ## Specification and repository guidance
@@ -124,15 +118,15 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 - **XML files (.xml, .csproj, .props):** Use `<!-- -->` comment style
 - **JSON files (.json):** Cannot have comments in standard JSON; 
-- **Markdown files (.md):** Use HTML comment style `<!-- -->`
+- **Markdown files (.md):** Do not add a copyright header.
 - **PowerShell scripts (.ps1):** Use `#` comment style
 - **Batch files (.bat, .cmd):** Use `REM` comment style
 
 ---
 
-**Version:** 1.12
+**Version:** 1.13
 
-**Last Updated:** 2026-09-07
+**Last Updated:** 2026-09-08
 
 **Maintained by:** Development Team
 
