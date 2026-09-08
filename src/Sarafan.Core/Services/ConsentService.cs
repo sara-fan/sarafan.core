@@ -22,9 +22,9 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
     public Task ValidateOnboardingDocumentsAsync(Guid termsId, ConsentDecisionRequest request, CancellationToken token)
         => Run(nameof(ValidateOnboardingDocumentsAsync), async () =>
         {
-            await ValidateDecision(ConsentKinds.PersonalData, request, token);
+            await ValidateDecision(LegalDocumentKind.PersonalDataConsent, request, token);
             if (request.Decision != "grant") throw new ServiceException(400, "consent_required");
-            var agreement = await RequireDocument(ConsentKinds.Agreement, token);
+            var agreement = await RequireDocument(LegalDocumentKind.UserAgreement, token);
             if (agreement.Id != termsId) throw Changed(agreement);
             return true;
         }, token, request);
@@ -40,9 +40,9 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
     public Task<string> BeginOnboardingAsync(string phone, Guid termsId, ConsentDecisionRequest request, CancellationToken token)
         => Run(nameof(BeginOnboardingAsync), () => ConsentTransaction.Run(database, async () =>
         {
-            var document = await ValidateDecision(ConsentKinds.PersonalData, request, token);
+            var document = await ValidateDecision(LegalDocumentKind.PersonalDataConsent, request, token);
             if (request.Decision != "grant") throw new ServiceException(400, "consent_required");
-            var agreement = await RequireDocument(ConsentKinds.Agreement, token);
+            var agreement = await RequireDocument(LegalDocumentKind.UserAgreement, token);
             if (agreement.Id != termsId) throw Changed(agreement);
             var raw = JwtTokenService.CreateRefreshToken();
             var now = clock.GetUtcNow();
@@ -74,13 +74,13 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
     public Task<CookieConsentDto> CookieStatusAsync(string? raw, CancellationToken token) => Run(nameof(CookieStatusAsync), async () =>
     {
         var now = clock.GetUtcNow();
-        var document = await LegalDocumentService.CurrentEntity(database, ConsentKinds.Cookies, now, token);
+        var document = await LegalDocumentService.CurrentEntity(database, LegalDocumentKind.CookieConsent, now, token);
         var subject = BrowserKey(raw);
         var last = subject is null ? null : await database.ConsentEvents.AsNoTracking().Where(x => x.SubjectKey == subject)
             .OrderByDescending(x => x.Id).FirstOrDefaultAsync(token);
         var status = Status(last, document, now);
         return new CookieConsentDto(status, status == "current" ? last!.Categories : [], last?.DocumentId,
-            last?.At, last?.ExpiresAt, now, await LegalDocumentService.NextChange(database, ConsentKinds.Cookies, now, token));
+            last?.At, last?.ExpiresAt, now, await LegalDocumentService.NextChange(database, LegalDocumentKind.CookieConsent, now, token));
     }, token, null);
 
     public Task<CookieConsentDto> DecideCookiesAsync(string raw, ConsentDecisionRequest request, CancellationToken token) => Run(nameof(DecideCookiesAsync),
@@ -90,16 +90,16 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             await ConsentTransaction.Run(database, async () =>
             {
                 var subject = BrowserKey(raw) ?? throw new ServiceException(400, "invalid_consent_decision");
-                var existing = await FindRetry(subject, request, ConsentKinds.Cookies, token);
+                var existing = await FindRetry(subject, request, LegalDocumentKind.CookieConsent, token);
                 if (existing is not null) return true;
                 var document = request.Decision == "withdraw"
-                    ? await WithdrawalDocument(subject, ConsentKinds.Cookies, request, token)
-                    : await ValidateDecision(ConsentKinds.Cookies, request, token);
+                    ? await WithdrawalDocument(subject, LegalDocumentKind.CookieConsent, request, token)
+                    : await ValidateDecision(LegalDocumentKind.CookieConsent, request, token);
                 wroteDecision = true;
                 database.ConsentEvents.Add(NewEvent(subject, null, document, request.Decision, request.Categories,
                     "cookie-settings", request.IdempotencyKey, clock.GetUtcNow()));
                 return true;
-            }, token, () => wroteDecision && request.Decision != "withdraw" ? ValidateDecision(ConsentKinds.Cookies, request, token) : Task.CompletedTask);
+            }, token, () => wroteDecision && request.Decision != "withdraw" ? ValidateDecision(LegalDocumentKind.CookieConsent, request, token) : Task.CompletedTask);
             return await CookieStatusAsync(raw, token);
         }, token, request);
 
@@ -112,13 +112,13 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
                 await RequireCustomer(customerId, token);
                 if (request.Decision is not ("grant" or "refuse")) throw new ServiceException(400, "invalid_consent_decision");
                 var subject = CustomerKey(customerId);
-                if (await FindRetry(subject, request, ConsentKinds.PersonalData, token) is not null) return true;
-                var document = await ValidateDecision(ConsentKinds.PersonalData, request, token);
+                if (await FindRetry(subject, request, LegalDocumentKind.PersonalDataConsent, token) is not null) return true;
+                var document = await ValidateDecision(LegalDocumentKind.PersonalDataConsent, request, token);
                 wroteDecision = true;
                 database.ConsentEvents.Add(NewEvent(subject, customerId, document, request.Decision, [], "customer-consents",
                     request.IdempotencyKey, clock.GetUtcNow()));
                 return true;
-            }, token, () => wroteDecision ? ValidateDecision(ConsentKinds.PersonalData, request, token) : Task.CompletedTask);
+            }, token, () => wroteDecision ? ValidateDecision(LegalDocumentKind.PersonalDataConsent, request, token) : Task.CompletedTask);
             return await CustomerAsync(customerId, token);
         }, token, request);
 
@@ -145,31 +145,33 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             .Where(x => x.CustomerId == customerId).OrderByDescending(x => x.Id).Take(200).ToArrayAsync(token);
         var observed = await database.ConsentAssociations.AsNoTracking().Include(x => x.Event).ThenInclude(x => x.Document)
             .Where(x => x.CustomerId == customerId).OrderByDescending(x => x.Id).Take(200).ToArrayAsync(token);
-        var document = await LegalDocumentService.CurrentEntity(database, ConsentKinds.PersonalData, now, token);
-        var last = events.FirstOrDefault(x => x.Kind == ConsentKinds.PersonalData);
+        var document = await LegalDocumentService.CurrentEntity(database, LegalDocumentKind.PersonalDataConsent, now, token);
+        var last = events.FirstOrDefault(x => x.Kind == LegalDocumentKind.PersonalDataConsent);
         var status = Status(last, document, now);
         var history = events.Select(x => History(x, "customer", null))
             .Concat(observed.Select(x => History(x.Event, "observed-browser", x.AssociatedAt)))
             .OrderByDescending(x => x.At).Take(200).ToArray();
-        var cases = await database.ConsentRightsCases.AsNoTracking().Where(x => x.CustomerId == customerId)
-            .OrderByDescending(x => x.ReceivedAt).Take(200).ToArrayAsync(token);
-        var nextChangeAt = await database.LegalDocuments.Where(x => x.Kind == ConsentKinds.PersonalData && x.Locale == "ru"
-            && x.State == "published" && x.EffectiveAt > now).MinAsync(x => x.EffectiveAt, token);
+        var withdrawalRequest = await database.CustomerConsentWithdrawalRequests.AsNoTracking()
+            .Where(x => x.CustomerId == customerId)
+            .OrderByDescending(x => x.RequestedAt)
+            .FirstOrDefaultAsync(token);
+        var nextChangeAt = await database.LegalDocuments.Where(x => x.Kind == LegalDocumentKind.PersonalDataConsent && x.Locale == "ru"
+            && x.EffectiveAt > now).Select(x => (DateTimeOffset?)x.EffectiveAt).MinAsync(token);
         return new CustomerConsentsDto(customerId, now,
-            [new(ConsentKinds.PersonalData, status, document?.Id, events.FirstOrDefault(x => x.Kind == ConsentKinds.PersonalData && x.Decision == "grant")?.DocumentId, last?.At)], history,
-            cases.Select(ConsentRightsService.ToDto).ToArray(), nextChangeAt);
+            [new(LegalDocumentKind.PersonalDataConsent, status, document?.Id, events.FirstOrDefault(x => x.Kind == LegalDocumentKind.PersonalDataConsent && x.Decision == "grant")?.DocumentId, last?.At)], history,
+            withdrawalRequest is null ? null : ConsentWithdrawalRequestService.ToDto(withdrawalRequest), nextChangeAt);
     }, token, customerId);
 
     public Task<T> WithPersonalDataAsync<T>(int customerId, Func<Task<T>> action, CancellationToken token)
         => Run(nameof(WithPersonalDataAsync), () => ConsentTransaction.Run(database, async () =>
         {
             await RequireCustomer(customerId, token);
-            var current = await RequireDocument(ConsentKinds.PersonalData, token);
-            var last = await database.ConsentEvents.AsNoTracking().Where(x => x.CustomerId == customerId && x.Kind == ConsentKinds.PersonalData)
+            var current = await RequireDocument(LegalDocumentKind.PersonalDataConsent, token);
+            var last = await database.ConsentEvents.AsNoTracking().Where(x => x.CustomerId == customerId && x.Kind == LegalDocumentKind.PersonalDataConsent)
                 .OrderByDescending(x => x.Id).FirstOrDefaultAsync(token);
             if (Status(last, current, clock.GetUtcNow()) != "current") throw new ServiceException(409, "personal_data_consent_required");
             var result = await action();
-            var atCommit = await RequireDocument(ConsentKinds.PersonalData, token);
+            var atCommit = await RequireDocument(LegalDocumentKind.PersonalDataConsent, token);
             if (atCommit.Id != current.Id) throw Changed(atCommit);
             return result;
         }, token), token, customerId);
@@ -186,9 +188,9 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
 
     private async Task<(LegalDocument PersonalData, LegalDocument Agreement)> ValidateOnboardingVersions(ConsentOnboarding row, CancellationToken token)
     {
-        var current = await RequireDocument(ConsentKinds.PersonalData, token);
+        var current = await RequireDocument(LegalDocumentKind.PersonalDataConsent, token);
         if (current.Id != row.PersonalDataDocumentId || current.ContentHash != row.PersonalDataHash) throw Changed(current);
-        var terms = await RequireDocument(ConsentKinds.Agreement, token);
+        var terms = await RequireDocument(LegalDocumentKind.UserAgreement, token);
         if (terms.Id != row.TermsDocumentId) throw Changed(terms);
         return (current, terms);
     }
@@ -209,33 +211,36 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
         if (!await database.Customers.AnyAsync(x => x.Id == id && x.State != CustomerState.Disabled, token))
             throw new ServiceException(404, "customer_not_found");
     }
-    private async Task<LegalDocument> RequireDocument(string kind, CancellationToken token) =>
-        await LegalDocumentService.CurrentEntity(database, kind, clock.GetUtcNow(), token) is { DisposedAt: null } value ? value
+    private async Task<LegalDocument> RequireDocument(LegalDocumentKind kind, CancellationToken token) =>
+        await LegalDocumentService.CurrentEntity(database, kind, clock.GetUtcNow(), token) is { } value ? value
             : throw new ServiceException(409, "consent_document_unavailable");
 
-    private async Task<LegalDocument> ValidateDecision(string kind, ConsentDecisionRequest request, CancellationToken token)
+    private async Task<LegalDocument> ValidateDecision(LegalDocumentKind kind, ConsentDecisionRequest request, CancellationToken token)
     {
-        ValidateShape(request);
+        ValidateShape(request, kind);
         var document = await RequireDocument(kind, token);
         if (document.Id != request.DocumentId || document.ContentHash != request.ContentHash)
             throw Changed(document);
-        if (request.Categories.Any(x => !document.CookieCategories.Contains(x))) throw new ServiceException(400, "invalid_consent_decision");
+        if (request.Categories.Any(category => !document.CookieCategories.Contains(category))
+            || kind == LegalDocumentKind.CookieConsent && request.Decision == "grant"
+            && document.CookieCategories.Where(category => category.IsRequired()).Any(category => !request.Categories.Contains(category)))
+            throw new ServiceException(400, "invalid_consent_categories");
         return document;
     }
-    private async Task<LegalDocument> WithdrawalDocument(string subject, string kind, ConsentDecisionRequest request, CancellationToken token)
+    private async Task<LegalDocument> WithdrawalDocument(string subject, LegalDocumentKind kind, ConsentDecisionRequest request, CancellationToken token)
     {
-        ValidateShape(request);
+        ValidateShape(request, kind);
         var last = await database.ConsentEvents.Include(x => x.Document).Where(x => x.SubjectKey == subject && x.Kind == kind)
             .OrderByDescending(x => x.Id).FirstOrDefaultAsync(token);
         if (last is null || last.DocumentId != request.DocumentId || last.ContentHash != request.ContentHash)
             throw new ServiceException(400, "invalid_consent_decision");
         return last.Document;
     }
-    private async Task<ConsentEvent?> FindRetry(string subject, ConsentDecisionRequest request, string kind, CancellationToken token)
+    private async Task<ConsentEvent?> FindRetry(string subject, ConsentDecisionRequest request, LegalDocumentKind kind, CancellationToken token)
     {
-        ValidateShape(request);
+        ValidateShape(request, kind);
         var query = database.ConsentEvents.AsNoTracking().Where(x => x.IdempotencyKey == request.IdempotencyKey);
-        query = kind == ConsentKinds.Cookies ? query.Where(x => x.Kind == ConsentKinds.Cookies) : query.Where(x => x.SubjectKey == subject);
+        query = kind == LegalDocumentKind.CookieConsent ? query.Where(x => x.Kind == LegalDocumentKind.CookieConsent) : query.Where(x => x.SubjectKey == subject);
         var found = await query.SingleOrDefaultAsync(token);
         if (found is null && await database.ConsentReplayTombstones.AnyAsync(x => x.KeyHash == ReplayKey(subject, request.IdempotencyKey, kind), token))
             throw new ServiceException(409, "consent_conflict");
@@ -244,19 +249,31 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             throw new ServiceException(409, "consent_conflict");
         return found;
     }
-    internal static string ReplayKey(string subject, Guid key, string kind) => Convert.ToHexStringLower(SHA256.HashData(
-        Encoding.UTF8.GetBytes($"{(kind == ConsentKinds.Cookies ? "browser" : subject)}:{key:D}")));
+    internal static string ReplayKey(string subject, Guid key, LegalDocumentKind kind) => Convert.ToHexStringLower(SHA256.HashData(
+        Encoding.UTF8.GetBytes(FormattableString.Invariant(
+            $"{(kind == LegalDocumentKind.CookieConsent ? "browser" : subject)}:{key:D}:{(int)kind}"))));
 
     private static ServiceException Changed(LegalDocument document) => new(409, "consent_version_changed")
     { RequiredDocumentId = document.Id, ConsentKind = document.Kind };
-    private static void ValidateShape(ConsentDecisionRequest request)
+    private static void ValidateShape(ConsentDecisionRequest request, LegalDocumentKind kind)
     {
-        if (request.IdempotencyKey == Guid.Empty || request.Decision is not ("grant" or "refuse" or "withdraw")
-            || request.Categories is null || request.Categories.Length > 2 || request.Categories.Distinct().Count() != request.Categories.Length
-            || request.Decision != "grant" && request.Categories.Length > 0)
+        if (request.IdempotencyKey == Guid.Empty || request.Decision is not ("grant" or "refuse" or "withdraw"))
             throw new ServiceException(400, "invalid_consent_decision");
+
+        if (kind != LegalDocumentKind.CookieConsent)
+        {
+            if (request.Categories is null || request.Categories.Length > 0)
+                throw new ServiceException(400, "invalid_consent_decision");
+            return;
+        }
+
+        if (request.Categories is null || request.Categories.Length > Enum.GetValues<CookieCategory>().Length
+            || request.Categories.Distinct().Count() != request.Categories.Length
+            || request.Categories.Any(category => !Enum.IsDefined(category))
+            || request.Decision != "grant" && request.Categories.Length > 0)
+            throw new ServiceException(400, "invalid_consent_categories");
     }
-    private ConsentEvent NewEvent(string subject, int? customer, LegalDocument document, string decision, string[] categories,
+    private ConsentEvent NewEvent(string subject, int? customer, LegalDocument document, string decision, CookieCategory[] categories,
         string source, Guid key, DateTimeOffset at) => new()
         {
             SubjectKey = subject,
@@ -269,7 +286,7 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             Source = source,
             IdempotencyKey = key,
             At = at,
-            ExpiresAt = document.Kind == ConsentKinds.Cookies ? at.AddDays(Settings.CookieDays) : null,
+            ExpiresAt = document.Kind == LegalDocumentKind.CookieConsent ? at.AddDays(Settings.CookieDays) : null,
             RetainUntil = at.AddDays(Settings.EvidenceDays)
         };
     private string PhoneHash(string phone) => Convert.ToHexStringLower(HMACSHA256.HashData(
@@ -279,10 +296,12 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
         ? "browser:" + JwtTokenService.HashRefreshToken(raw) : null;
     internal static string Status(ConsentEvent? last, LegalDocument? document, DateTimeOffset now)
     {
-        if (last?.Decision == "withdraw" && last.Kind != ConsentKinds.Cookies) return "withdrawn";
-        if (document is null || document.DisposedAt is not null) return "unavailable";
+        if (document is null) return "unavailable";
         if (last is null) return "missing";
         if (last.DocumentId != document.Id || last.ExpiresAt <= now) return "renewal-required";
+        if (last.Decision == "grant" && document.Kind == LegalDocumentKind.CookieConsent
+            && document.CookieCategories.Where(category => category.IsRequired()).Any(category => !last.Categories.Contains(category)))
+            return "renewal-required";
         return last.Decision switch { "grant" => "current", "withdraw" => "withdrawn", _ => "refused" };
     }
     private static ConsentHistoryDto History(ConsentEvent row, string scope, DateTimeOffset? associated) => new(

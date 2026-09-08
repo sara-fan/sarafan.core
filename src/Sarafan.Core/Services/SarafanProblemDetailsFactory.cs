@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using Sarafan.Core.Observability;
 using Sarafan.Core.RestModels;
+using Sarafan.Core.Models;
 
 namespace Sarafan.Core.Services;
 
@@ -31,18 +32,37 @@ public sealed class SarafanProblemDetailsFactory(
     private static readonly IReadOnlyDictionary<string, ProblemDefinition> Definitions =
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
-            ["invalid_legal_document"] = new(400, "Некорректный документ", "Проверьте вид документа, язык ru, непустое название до 200 символов и обозначение версии до 64 символов. Категории analytics/marketing без повторов допустимы только для cookie-consent. Загрузите файл .md в UTF-8 до 256 КиБ: заголовки, списки, выделение, безопасные ссылки и таблицы; без HTML, изображений и встроенных ресурсов."),
-            ["legal_document_not_found"] = new(404, "Документ не найден", "Документ отсутствует или ещё не опубликован."),
-            ["legal_document_disposed"] = new(410, "Срок хранения документа истёк", "Содержимое удалено по правилам хранения; сведения о версии сохранены."),
-            ["invalid_effective_date"] = new(400, "Некорректная дата публикации", "Выберите публикацию сейчас либо будущую дату по московскому времени."),
-            ["consent_conflict"] = new(409, "Данные изменились", "Обновите данные и проверьте версию, повторный запрос или существующую запланированную публикацию."),
+            ["invalid_legal_document_kind"] = new(400, "Некорректный вид документа", "Выберите вид документа из предложенного списка."),
+            ["invalid_legal_document_locale"] = new(400, "Некорректный язык документа", "Для документа укажите язык ru."),
+            ["invalid_legal_document_title"] = new(400, "Некорректное название документа", "Укажите непустое название длиной не более 200 символов."),
+            ["invalid_legal_document_version"] = new(400, "Некорректная версия документа", "Укажите версию длиной не более 64 символов."),
+            ["invalid_legal_document_audit_filter"] = new(400, "Некорректный фильтр журнала", "Выберите действие создания или удаления и сократите строку поиска до 200 символов."),
+            ["legal_document_file_required"] = new(400, "Файл документа не загружен", "Загрузите непустой файл Markdown с расширением .md."),
+            ["legal_document_file_too_large"] = new(400, "Файл документа слишком большой", "Размер файла не должен превышать 256 Кб."),
+            ["legal_document_file_type"] = new(400, "Некорректный тип файла", "Загрузите файл Markdown с расширением .md."),
+            ["legal_document_encoding"] = new(400, "Некорректная кодировка файла", "Сохраните файл в кодировке UTF-8 и загрузите его снова."),
+            ["legal_document_text_required"] = new(400, "Документ пуст", "Добавьте текст в документ и загрузите файл снова."),
+            ["legal_document_control_character"] = new(400, "Недопустимый символ в документе", "Удалите управляющие символы из текста документа."),
+            ["legal_document_html_not_allowed"] = new(400, "HTML в документе не поддерживается", "Удалите HTML-разметку из документа."),
+            ["legal_document_code_not_allowed"] = new(400, "Код в документе не поддерживается", "Удалите строчный или блочный код из документа."),
+            ["legal_document_quote_not_allowed"] = new(400, "Цитатный блок не поддерживается", "Удалите цитатный блок из документа."),
+            ["legal_document_separator_not_allowed"] = new(400, "Разделитель не поддерживается", "Удалите горизонтальный разделитель Markdown из документа."),
+            ["legal_document_image_not_allowed"] = new(400, "Изображения не поддерживаются", "Удалите изображение из документа."),
+            ["legal_document_link_not_allowed"] = new(400, "Некорректная ссылка в документе", "Используйте абсолютную ссылку с протоколом http, https или mailto."),
+            ["legal_document_not_found"] = new(404, "Документ не найден", "Документ отсутствует или дата начала его действия ещё не наступила."),
+            ["invalid_effective_date"] = new(400, "Некорректная дата начала действия", "Выберите сегодняшнюю или будущую дату по московскому времени."),
+            ["legal_document_effective_date_conflict"] = new(409, "Дата уже используется", "Для этого вида документа уже существует версия с выбранной датой начала действия."),
+            ["legal_document_version_conflict"] = new(409, "Версия уже используется", "Для этого вида документа уже существует запись с таким обозначением версии."),
+            ["legal_document_already_effective"] = new(409, "Документ уже действует", "Удалить документ можно только до даты начала его действия."),
+            ["consent_conflict"] = new(409, "Данные изменились", "Обновите данные и повторите действие с актуальными сведениями."),
             ["consent_document_unavailable"] = new(409, "Текст согласия недоступен", "Действующий документ пока недоступен. Повторите позже; чтение и реализация прав остаются доступны."),
             ["consent_version_changed"] = new(409, "Версия согласия изменилась", "Откройте действующий документ и подтвердите согласие заново."),
             ["personal_data_consent_required"] = new(409, "Требуется актуальное согласие", "Для этой операции откройте раздел «Согласия» и примите действующую версию согласия на обработку персональных данных."),
-            ["invalid_consent_decision"] = new(400, "Некорректное решение", "Проверьте версию документа и выбранные категории согласия."),
+            ["invalid_consent_decision"] = new(400, "Некорректное решение", "Проверьте версию документа и выбранное решение."),
+            ["invalid_consent_categories"] = new(400, "Некорректные категории куки", "Выберите все обязательные категории куки из предложенного списка."),
+            ["cookie_consent_required"] = new(403, "Требуется согласие на куки", "Чтобы использовать сервис, примите действующую версию согласия на обязательные куки."),
             ["onboarding_consent_expired"] = new(400, "Подтверждение согласия истекло", "Вернитесь к вводу телефона и подтвердите актуальный текст согласия."),
-            ["invalid_rights_request"] = new(400, "Некорректное обращение", "Проверьте вид обращения, ответственного, срок и сведения о результате."),
-            ["rights_case_not_found"] = new(404, "Обращение не найдено", "Запрошенное обращение отсутствует."),
+            ["consent_withdrawal_request_not_found"] = new(404, "Запрос не найден", "Обновите очередь: выбранный запрос отсутствует."),
             ["validation_failed"] = new(
                 StatusCodes.Status400BadRequest,
                 "Ошибка проверки данных",
@@ -243,17 +263,17 @@ public sealed class SarafanProblemDetailsFactory(
         HttpContext context,
         int statusCode,
         string code,
-        CancellationToken cancellationToken = default, Guid? requiredDocumentId = null, string? consentKind = null)
+        CancellationToken cancellationToken = default, Guid? requiredDocumentId = null, LegalDocumentKind? consentKind = null)
         => new(OperationLogging.RunAsync(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(WriteAsync)}",
             () => ProblemInputs(statusCode, code), () => WriteCoreAsync(context, statusCode, code, cancellationToken, requiredDocumentId, consentKind), cancellationToken));
 
-    private async Task WriteCoreAsync(HttpContext context, int statusCode, string code, CancellationToken cancellationToken, Guid? requiredDocumentId, string? consentKind)
+    private async Task WriteCoreAsync(HttpContext context, int statusCode, string code, CancellationToken cancellationToken, Guid? requiredDocumentId, LegalDocumentKind? consentKind)
     {
         var details = CreateCore(context, statusCode, code, null);
-        if (requiredDocumentId is not null && ConsentKinds.All.Contains(consentKind))
+        if (requiredDocumentId is not null && consentKind is { } kind && Enum.IsDefined(kind))
         {
             details.Extensions["requiredDocumentId"] = requiredDocumentId;
-            details.Extensions["consentKind"] = consentKind;
+            details.Extensions["consentKind"] = (int)kind;
         }
         context.Response.StatusCode = details.Status!.Value;
         context.Response.ContentType = MediaType;

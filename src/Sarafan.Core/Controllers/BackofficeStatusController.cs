@@ -11,7 +11,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[Route("api/v1/backoffice/status")]
+[CookieConsentNotRequired, Route("api/v1/backoffice/status")]
 [Authorize(Policy = BackofficePolicies.Access)]
 public sealed class BackofficeStatusController(
     ExchangeRateService exchangeRates, SarafanProblemDetailsFactory problemDetailsFactory)

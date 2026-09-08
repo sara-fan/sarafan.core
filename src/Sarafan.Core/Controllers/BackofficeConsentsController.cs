@@ -10,14 +10,15 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[Authorize(Policy = BackofficePolicies.ManageLegalDocuments), Route("api/v1/backoffice/consents")]
+[CookieConsentNotRequired, Authorize(Policy = BackofficePolicies.ManageConsentWithdrawalRequests), Route("api/v1/backoffice/consents")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class BackofficeConsentsController(ConsentService consents, ConsentRightsService rights, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
+public sealed class BackofficeConsentsController(ConsentWithdrawalRequestService withdrawalRequests, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
-    [HttpGet("customers/{id:int}")]
-    public async Task<ActionResult> Customer(int id, CancellationToken token) => Ok(await consents.CustomerAsync(id, token));
-    [HttpGet("rights")]
-    public async Task<ActionResult> Cases([FromQuery] int? customerId, CancellationToken token) => Ok(await rights.ListAsync(customerId, token));
-    [HttpPut("rights/{id:guid}")]
-    public async Task<ActionResult> Update(Guid id, RightsCaseUpdate request, CancellationToken token) => Ok(await rights.UpdateAsync(id, request, CurrentBackofficeUserId(), token));
+    [HttpGet("withdrawal-requests")]
+    public async Task<ActionResult> Requests(CancellationToken token)
+        => Ok(await withdrawalRequests.ListAsync(token));
+
+    [HttpPut("withdrawal-requests/processed")]
+    public async Task<ActionResult> Process(ProcessConsentWithdrawalRequest request, CancellationToken token)
+        => Ok(await withdrawalRequests.ProcessAsync(request, token));
 }

@@ -11,7 +11,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Sarafan.Core.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class VersionedCustomerConsents : Migration
+    public partial class _0_0_7_CustomerConsents : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -20,29 +20,18 @@ namespace Sarafan.Core.Data.Migrations
                 name: "customer_consents");
 
             migrationBuilder.CreateTable(
-                name: "consent_rights_cases",
+                name: "customer_consent_withdrawal_requests",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
                     customer_id = table.Column<int>(type: "integer", nullable: false),
-                    idempotency_key = table.Column<Guid>(type: "uuid", nullable: false),
-                    kind = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
-                    state = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
-                    received_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    due_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    responsible_staff_id = table.Column<int>(type: "integer", nullable: true),
-                    retention_basis = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
-                    completion_evidence = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
-                    extension_reason = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
-                    extended = table.Column<bool>(type: "boolean", nullable: false),
-                    completed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    revision = table.Column<int>(type: "integer", nullable: false)
+                    requested_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    processed = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_consent_rights_cases", x => x.id);
+                    table.PrimaryKey("PK_customer_consent_withdrawal_requests", x => new { x.customer_id, x.requested_at });
                     table.ForeignKey(
-                        name: "FK_consent_rights_cases_customers_customer_id",
+                        name: "FK_customer_consent_withdrawal_requests_customers_customer_id",
                         column: x => x.customer_id,
                         principalTable: "customers",
                         principalColumn: "id",
@@ -50,20 +39,32 @@ namespace Sarafan.Core.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "legal_audit_events",
+                name: "legal_document_audit_events",
                 columns: table => new
                 {
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    document_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    rights_case_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    document_id = table.Column<Guid>(type: "uuid", nullable: false),
                     actor_id = table.Column<int>(type: "integer", nullable: false),
-                    action = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
-                    at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                    action = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    kind = table.Column<int>(type: "integer", nullable: false),
+                    locale = table.Column<string>(type: "character varying(8)", maxLength: 8, nullable: false),
+                    title = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    display_version = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    effective_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    source_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    content_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_legal_audit_events", x => x.id);
+                    table.PrimaryKey("PK_legal_document_audit_events", x => x.id);
+                    table.ForeignKey(
+                        name: "FK_legal_document_audit_events_backoffice_users_actor_id",
+                        column: x => x.actor_id,
+                        principalTable: "backoffice_users",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -71,7 +72,7 @@ namespace Sarafan.Core.Data.Migrations
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    kind = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
+                    kind = table.Column<int>(type: "integer", nullable: false),
                     locale = table.Column<string>(type: "character varying(8)", maxLength: 8, nullable: false),
                     title = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     display_version = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
@@ -80,15 +81,10 @@ namespace Sarafan.Core.Data.Migrations
                     source_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     content_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     renderer_version = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    cookie_categories = table.Column<string[]>(type: "text[]", nullable: false),
-                    state = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    cookie_categories = table.Column<int[]>(type: "integer[]", nullable: false),
                     created_by = table.Column<int>(type: "integer", nullable: false),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    published_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    effective_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    disposed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    revision = table.Column<int>(type: "integer", nullable: false)
+                    effective_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -105,9 +101,9 @@ namespace Sarafan.Core.Data.Migrations
                     subject_key = table.Column<string>(type: "character varying(80)", maxLength: 80, nullable: false),
                     document_id = table.Column<Guid>(type: "uuid", nullable: false),
                     content_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    kind = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
+                    kind = table.Column<int>(type: "integer", nullable: false),
                     decision = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
-                    categories = table.Column<string[]>(type: "text[]", nullable: false),
+                    categories = table.Column<int[]>(type: "integer[]", nullable: false),
                     source = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     idempotency_key = table.Column<Guid>(type: "uuid", nullable: false),
                     at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
@@ -125,24 +121,6 @@ namespace Sarafan.Core.Data.Migrations
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_consent_events_legal_documents_document_id",
-                        column: x => x.document_id,
-                        principalTable: "legal_documents",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "consent_replay_tombstones",
-                columns: table => new
-                {
-                    key_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    document_id = table.Column<Guid>(type: "uuid", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_consent_replay_tombstones", x => x.key_hash);
-                    table.ForeignKey(
-                        name: "FK_consent_replay_tombstones_legal_documents_document_id",
                         column: x => x.document_id,
                         principalTable: "legal_documents",
                         principalColumn: "id",
@@ -174,6 +152,24 @@ namespace Sarafan.Core.Data.Migrations
                     table.ForeignKey(
                         name: "FK_consent_onboarding_legal_documents_terms_document_id",
                         column: x => x.terms_document_id,
+                        principalTable: "legal_documents",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "consent_replay_tombstones",
+                columns: table => new
+                {
+                    key_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    document_id = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_consent_replay_tombstones", x => x.key_hash);
+                    table.ForeignKey(
+                        name: "FK_consent_replay_tombstones_legal_documents_document_id",
+                        column: x => x.document_id,
                         principalTable: "legal_documents",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Restrict);
@@ -229,22 +225,17 @@ namespace Sarafan.Core.Data.Migrations
                 column: "document_id");
 
             migrationBuilder.CreateIndex(
-                name: "IX_consent_events_subject_key_idempotency_key",
-                table: "consent_events",
-                columns: new[] { "subject_key", "idempotency_key" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_consent_replay_tombstones_document_id",
-                table: "consent_replay_tombstones",
-                column: "document_id");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_consent_events_idempotency_key",
                 table: "consent_events",
                 column: "idempotency_key",
                 unique: true,
-                filter: "kind = 'cookie-consent'");
+                filter: "kind = 0");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_consent_events_subject_key_idempotency_key",
+                table: "consent_events",
+                columns: new[] { "subject_key", "idempotency_key" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_consent_onboarding_expires_at",
@@ -262,10 +253,31 @@ namespace Sarafan.Core.Data.Migrations
                 column: "terms_document_id");
 
             migrationBuilder.CreateIndex(
-                name: "IX_consent_rights_cases_customer_id_idempotency_key",
-                table: "consent_rights_cases",
-                columns: new[] { "customer_id", "idempotency_key" },
-                unique: true);
+                name: "IX_consent_replay_tombstones_document_id",
+                table: "consent_replay_tombstones",
+                column: "document_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_customer_consent_withdrawal_requests_customer_id",
+                table: "customer_consent_withdrawal_requests",
+                column: "customer_id",
+                unique: true,
+                filter: "processed = FALSE");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_legal_document_audit_events_actor_id",
+                table: "legal_document_audit_events",
+                column: "actor_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_legal_document_audit_events_at",
+                table: "legal_document_audit_events",
+                column: "at");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_legal_document_audit_events_document_id",
+                table: "legal_document_audit_events",
+                column: "document_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_legal_documents_kind_locale_display_version",
@@ -276,14 +288,13 @@ namespace Sarafan.Core.Data.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_legal_documents_kind_locale_effective_at",
                 table: "legal_documents",
-                columns: new[] { "kind", "locale", "effective_at" });
+                columns: new[] { "kind", "locale", "effective_at" },
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(name: "consent_replay_tombstones");
-
             migrationBuilder.DropTable(
                 name: "consent_associations");
 
@@ -291,10 +302,13 @@ namespace Sarafan.Core.Data.Migrations
                 name: "consent_onboarding");
 
             migrationBuilder.DropTable(
-                name: "consent_rights_cases");
+                name: "consent_replay_tombstones");
 
             migrationBuilder.DropTable(
-                name: "legal_audit_events");
+                name: "customer_consent_withdrawal_requests");
+
+            migrationBuilder.DropTable(
+                name: "legal_document_audit_events");
 
             migrationBuilder.DropTable(
                 name: "consent_events");
@@ -309,9 +323,9 @@ namespace Sarafan.Core.Data.Migrations
                     id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     customer_id = table.Column<int>(type: "integer", nullable: false),
-                    type = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     document_version = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                    type = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false)
                 },
                 constraints: table =>
                 {

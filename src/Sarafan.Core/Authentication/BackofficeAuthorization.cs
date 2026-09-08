@@ -15,7 +15,8 @@ public enum BackofficeAction
     ManageRoles = 2,
     OperationalQueue = 3,
     ManualQuotes = 4,
-    ManageLegalDocuments = 5
+    ManageLegalDocuments = 5,
+    ManageConsentWithdrawalRequests = 6
 }
 
 public static class BackofficeAuthenticationDefaults
@@ -31,6 +32,7 @@ public static class BackofficePolicies
     public const string OperationalQueue = "backoffice:operational-queue";
     public const string ManualQuotes = "backoffice:manual-quotes";
     public const string ManageLegalDocuments = "backoffice:manage-legal-documents";
+    public const string ManageConsentWithdrawalRequests = "backoffice:manage-consent-withdrawal-requests";
     public const string Administrator = "backoffice:role:administrator";
     public const string ShiftManager = "backoffice:role:shift-manager";
     public const string SeniorOperator = "backoffice:role:senior-operator";
@@ -45,13 +47,11 @@ public static class BackofficeAuthorization
             [BackofficeAction.Access] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
             [BackofficeAction.ManageUsers] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.ManageRoles] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
-            [BackofficeAction.OperationalQueue] = new HashSet<string>(
-                [BackofficeRoles.Administrator, BackofficeRoles.ShiftManager],
-                StringComparer.Ordinal),
+            [BackofficeAction.OperationalQueue] = new HashSet<string>([BackofficeRoles.Administrator, BackofficeRoles.ShiftManager], StringComparer.Ordinal),
             [BackofficeAction.ManualQuotes] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
-            [BackofficeAction.ManageLegalDocuments] = new HashSet<string>(
-                [BackofficeRoles.Administrator],
-                StringComparer.Ordinal)
+            [BackofficeAction.ManageLegalDocuments] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
+            [BackofficeAction.ManageConsentWithdrawalRequests] = new HashSet<string>(
+                [BackofficeRoles.Administrator, BackofficeRoles.ShiftManager, BackofficeRoles.SeniorOperator], StringComparer.Ordinal)
         };
 
     public static bool IsAllowed(IEnumerable<string> roles, BackofficeAction action)
@@ -66,6 +66,7 @@ public static class BackofficeAuthorization
         AddPolicy(options, BackofficePolicies.OperationalQueue, BackofficeAction.OperationalQueue);
         AddPolicy(options, BackofficePolicies.ManualQuotes, BackofficeAction.ManualQuotes);
         AddPolicy(options, BackofficePolicies.ManageLegalDocuments, BackofficeAction.ManageLegalDocuments);
+        AddPolicy(options, BackofficePolicies.ManageConsentWithdrawalRequests, BackofficeAction.ManageConsentWithdrawalRequests);
         AddRolePolicy(options, BackofficePolicies.Administrator, BackofficeRoles.Administrator);
         AddRolePolicy(options, BackofficePolicies.ShiftManager, BackofficeRoles.ShiftManager);
         AddRolePolicy(options, BackofficePolicies.SeniorOperator, BackofficeRoles.SeniorOperator);

@@ -34,7 +34,7 @@ public sealed class ProblemDetailsContractTests
     private HttpClient _client = null!;
 
     [SetUp]
-    public void SetUp()
+    public async Task SetUp()
     {
         _client = IntegrationTestEnvironment.Factory.CreateClient(
             new WebApplicationFactoryClientOptions
@@ -42,6 +42,7 @@ public sealed class ProblemDetailsContractTests
                 AllowAutoRedirect = false,
                 HandleCookies = false
             });
+        await ConsentTestData.AcceptMandatoryCookies(_client);
     }
 
     [TearDown]

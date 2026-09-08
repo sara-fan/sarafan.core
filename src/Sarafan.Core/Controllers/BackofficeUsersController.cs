@@ -11,7 +11,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[Route("api/v1/backoffice/users")]
+[CookieConsentNotRequired, Route("api/v1/backoffice/users")]
 public sealed class BackofficeUsersController(
     BackofficeUserService userService,
     SarafanProblemDetailsFactory problemDetailsFactory) : SarafanControllerBase(problemDetailsFactory)

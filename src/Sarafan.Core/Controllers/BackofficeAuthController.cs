@@ -12,7 +12,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[Route("api/v1/backoffice/auth")]
+[CookieConsentNotRequired, Route("api/v1/backoffice/auth")]
 public sealed class BackofficeAuthController(
     BackofficeAuthenticationService authenticationService,
     BackofficeUserService userService,

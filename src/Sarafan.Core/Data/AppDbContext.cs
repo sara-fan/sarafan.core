@@ -24,8 +24,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ConsentReplayTombstone> ConsentReplayTombstones => Set<ConsentReplayTombstone>();
     public DbSet<ConsentAssociation> ConsentAssociations => Set<ConsentAssociation>();
     public DbSet<ConsentOnboarding> ConsentOnboarding => Set<ConsentOnboarding>();
-    public DbSet<ConsentRightsCase> ConsentRightsCases => Set<ConsentRightsCase>();
-    public DbSet<LegalAuditEvent> LegalAuditEvents => Set<LegalAuditEvent>();
+    public DbSet<CustomerConsentWithdrawalRequest> CustomerConsentWithdrawalRequests => Set<CustomerConsentWithdrawalRequest>();
+    public DbSet<LegalDocumentAuditEvent> LegalDocumentAuditEvents => Set<LegalDocumentAuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
         => modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);

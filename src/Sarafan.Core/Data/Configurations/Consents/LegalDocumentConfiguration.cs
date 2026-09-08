@@ -18,7 +18,7 @@ internal sealed class LegalDocumentConfiguration : IEntityTypeConfiguration<Lega
         builder.HasKey(item => item.Id);
 
         builder.Property(item => item.Id).HasColumnName("id");
-        builder.Property(item => item.Kind).HasColumnName("kind").HasMaxLength(40);
+        builder.Property(item => item.Kind).HasColumnName("kind");
         builder.Property(item => item.Locale).HasColumnName("locale").HasMaxLength(8);
         builder.Property(item => item.Title).HasColumnName("title").HasMaxLength(200);
         builder.Property(item => item.DisplayVersion).HasColumnName("display_version").HasMaxLength(64);
@@ -27,17 +27,12 @@ internal sealed class LegalDocumentConfiguration : IEntityTypeConfiguration<Lega
         builder.Property(item => item.SourceHash).HasColumnName("source_hash").HasMaxLength(64);
         builder.Property(item => item.ContentHash).HasColumnName("content_hash").HasMaxLength(64);
         builder.Property(item => item.RendererVersion).HasColumnName("renderer_version").HasMaxLength(64);
-        builder.Property(item => item.CookieCategories).HasColumnName("cookie_categories");
-        builder.Property(item => item.State).HasColumnName("state").HasMaxLength(16);
+        builder.Property(item => item.CookieCategories).HasColumnName("cookie_categories").HasColumnType("integer[]");
         builder.Property(item => item.CreatedBy).HasColumnName("created_by");
         builder.Property(item => item.CreatedAt).HasColumnName("created_at");
-        builder.Property(item => item.UpdatedAt).HasColumnName("updated_at");
-        builder.Property(item => item.PublishedAt).HasColumnName("published_at");
         builder.Property(item => item.EffectiveAt).HasColumnName("effective_at");
-        builder.Property(item => item.DisposedAt).HasColumnName("disposed_at");
-        builder.Property(item => item.Revision).HasColumnName("revision").IsConcurrencyToken();
 
         builder.HasIndex(item => new { item.Kind, item.Locale, item.DisplayVersion }).IsUnique();
-        builder.HasIndex(item => new { item.Kind, item.Locale, item.EffectiveAt });
+        builder.HasIndex(item => new { item.Kind, item.Locale, item.EffectiveAt }).IsUnique();
     }
 }

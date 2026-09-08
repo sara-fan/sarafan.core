@@ -7,7 +7,7 @@ namespace Sarafan.Core.Models;
 public sealed class LegalDocument
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string Kind { get; set; } = "";
+    public LegalDocumentKind Kind { get; set; }
     public string Locale { get; set; } = "ru";
     public string Title { get; set; } = "";
     public string DisplayVersion { get; set; } = "";
@@ -16,23 +16,25 @@ public sealed class LegalDocument
     public string SourceHash { get; set; } = "";
     public string ContentHash { get; set; } = "";
     public string RendererVersion { get; set; } = "";
-    public string[] CookieCategories { get; set; } = [];
-    public string State { get; set; } = "draft";
+    public CookieCategory[] CookieCategories { get; set; } = [];
     public int CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset UpdatedAt { get; set; }
-    public DateTimeOffset? PublishedAt { get; set; }
-    public DateTimeOffset? EffectiveAt { get; set; }
-    public DateTimeOffset? DisposedAt { get; set; }
-    public int Revision { get; set; } = 1;
+    public DateTimeOffset EffectiveAt { get; set; }
 }
 
-public sealed class LegalAuditEvent
+public sealed class LegalDocumentAuditEvent
 {
     public long Id { get; set; }
-    public Guid? DocumentId { get; set; }
-    public Guid? RightsCaseId { get; set; }
+    public Guid DocumentId { get; set; }
     public int ActorId { get; set; }
+    public BackofficeUser BackofficeUser { get; set; } = null!;
     public string Action { get; set; } = "";
     public DateTimeOffset At { get; set; }
+    public LegalDocumentKind Kind { get; set; }
+    public string Locale { get; set; } = "ru";
+    public string Title { get; set; } = "";
+    public string DisplayVersion { get; set; } = "";
+    public DateTimeOffset EffectiveAt { get; set; }
+    public string SourceHash { get; set; } = "";
+    public string ContentHash { get; set; } = "";
 }

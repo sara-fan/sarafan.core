@@ -51,6 +51,7 @@ public sealed class AuthController(
     }
 
     [AllowAnonymous]
+    [CookieConsentNotRequired]
     [HttpPost("refresh")]
     [ProducesResponseType<AuthenticationSessionDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<AuthenticationSessionDto>> Refresh(CancellationToken cancellationToken)
@@ -79,6 +80,7 @@ public sealed class AuthController(
     }
 
     [AllowAnonymous]
+    [CookieConsentNotRequired]
     [HttpPost("logout")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> Logout(CancellationToken cancellationToken)

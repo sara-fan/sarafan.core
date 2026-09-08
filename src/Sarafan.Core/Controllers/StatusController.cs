@@ -15,6 +15,7 @@ public sealed class StatusController(SarafanProblemDetailsFactory problemDetails
     : SarafanControllerBase(problemDetailsFactory)
 {
     [AllowAnonymous]
+    [CookieConsentNotRequired]
     [HttpGet("status")]
     [ProducesResponseType<ServiceStatus>(StatusCodes.Status200OK)]
     public ActionResult<ServiceStatus> Status()

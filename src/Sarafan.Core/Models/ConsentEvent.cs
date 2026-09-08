@@ -12,9 +12,9 @@ public sealed class ConsentEvent
     public Guid DocumentId { get; set; }
     public LegalDocument Document { get; set; } = null!;
     public string ContentHash { get; set; } = "";
-    public string Kind { get; set; } = "";
+    public LegalDocumentKind Kind { get; set; }
     public string Decision { get; set; } = "";
-    public string[] Categories { get; set; } = [];
+    public CookieCategory[] Categories { get; set; } = [];
     public string Source { get; set; } = "";
     public Guid IdempotencyKey { get; set; }
     public DateTimeOffset At { get; set; }
@@ -42,22 +42,4 @@ public sealed class ConsentOnboarding
     public DateTimeOffset At { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? UsedAt { get; set; }
-}
-
-public sealed class ConsentRightsCase
-{
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public int CustomerId { get; set; }
-    public Guid IdempotencyKey { get; set; }
-    public string Kind { get; set; } = "withdrawal";
-    public string State { get; set; } = "open";
-    public DateTimeOffset ReceivedAt { get; set; }
-    public DateTimeOffset DueAt { get; set; }
-    public int? ResponsibleStaffId { get; set; }
-    public string RetentionBasis { get; set; } = "";
-    public string CompletionEvidence { get; set; } = "";
-    public string ExtensionReason { get; set; } = "";
-    public bool Extended { get; set; }
-    public DateTimeOffset? CompletedAt { get; set; }
-    public int Revision { get; set; } = 1;
 }
