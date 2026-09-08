@@ -111,6 +111,7 @@ namespace Sarafan.Core
 	// ... rest of the file
 }
 ```
+**Auto-generated files:** Do not add headers to auto-generated files like AppDbContextModelSnapshot.cs
 
 #### Other File Types
 
