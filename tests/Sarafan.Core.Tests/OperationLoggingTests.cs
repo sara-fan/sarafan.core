@@ -429,6 +429,7 @@ public sealed class OperationLoggingTests
                 .AddFilter<LogCollector>(
                     typeof(ControllerLoggingFilter).FullName!, LogLevel.Trace)));
         using var client = app.CreateClient();
+        await ConsentTestData.AcceptMandatoryCookies(client);
         var phone = $"+79994{Random.Shared.Next(100000, 999999)}";
         using var status = await client.GetAsync("/api/v1/status/status");
         using var invalid = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone = "", purpose = "login" });
@@ -607,6 +608,7 @@ public sealed class OperationLoggingTests
             });
         });
         using var client = app.CreateClient();
+        await ConsentTestData.AcceptMandatoryCookies(client);
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/code/request");
         request.Headers.Add("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
         request.Content = JsonContent.Create(new { phone = "+79993332211", purpose = "login" });

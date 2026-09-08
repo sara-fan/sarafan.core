@@ -82,6 +82,26 @@ public sealed class BackofficeSecurityTests
                     BackofficeAction.ManageLegalDocuments),
                 Is.True);
             Assert.That(
+                BackofficeAuthorization.IsAllowed(
+                    [BackofficeRoles.Administrator],
+                    BackofficeAction.ManageConsentWithdrawalRequests),
+                Is.True);
+            Assert.That(
+                BackofficeAuthorization.IsAllowed(
+                    [BackofficeRoles.SeniorOperator],
+                    BackofficeAction.ManageConsentWithdrawalRequests),
+                Is.True);
+            Assert.That(
+                BackofficeAuthorization.IsAllowed(
+                    [BackofficeRoles.ShiftManager],
+                    BackofficeAction.ManageConsentWithdrawalRequests),
+                Is.True);
+            Assert.That(
+                BackofficeAuthorization.IsAllowed(
+                    [BackofficeRoles.Operator],
+                    BackofficeAction.ManageConsentWithdrawalRequests),
+                Is.False);
+            Assert.That(
                 BackofficeAuthorization.IsAllowed(["unknown"], BackofficeAction.Access),
                 Is.False);
             Assert.That(
@@ -104,6 +124,7 @@ public sealed class BackofficeSecurityTests
             BackofficePolicies.OperationalQueue,
             BackofficePolicies.ManualQuotes,
             BackofficePolicies.ManageLegalDocuments,
+            BackofficePolicies.ManageConsentWithdrawalRequests,
             BackofficePolicies.Administrator,
             BackofficePolicies.ShiftManager,
             BackofficePolicies.SeniorOperator,

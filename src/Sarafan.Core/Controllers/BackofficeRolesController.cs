@@ -11,7 +11,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[Authorize(Policy = BackofficePolicies.ManageRoles)]
+[CookieConsentNotRequired, Authorize(Policy = BackofficePolicies.ManageRoles)]
 [Route("api/v1/backoffice/roles")]
 public sealed class BackofficeRolesController(
     BackofficeUserService userService,

@@ -22,9 +22,9 @@ internal sealed class ConsentEventConfiguration : IEntityTypeConfiguration<Conse
         builder.Property(item => item.SubjectKey).HasColumnName("subject_key").HasMaxLength(80);
         builder.Property(item => item.DocumentId).HasColumnName("document_id");
         builder.Property(item => item.ContentHash).HasColumnName("content_hash").HasMaxLength(64);
-        builder.Property(item => item.Kind).HasColumnName("kind").HasMaxLength(40);
+        builder.Property(item => item.Kind).HasColumnName("kind");
         builder.Property(item => item.Decision).HasColumnName("decision").HasMaxLength(16);
-        builder.Property(item => item.Categories).HasColumnName("categories");
+        builder.Property(item => item.Categories).HasColumnName("categories").HasColumnType("integer[]");
         builder.Property(item => item.Source).HasColumnName("source").HasMaxLength(32);
         builder.Property(item => item.IdempotencyKey).HasColumnName("idempotency_key");
         builder.Property(item => item.At).HasColumnName("at");
@@ -32,7 +32,7 @@ internal sealed class ConsentEventConfiguration : IEntityTypeConfiguration<Conse
         builder.Property(item => item.RetainUntil).HasColumnName("retain_until");
 
         builder.HasIndex(item => new { item.SubjectKey, item.IdempotencyKey }).IsUnique();
-        builder.HasIndex(item => item.IdempotencyKey).IsUnique().HasFilter("kind = 'cookie-consent'");
+        builder.HasIndex(item => item.IdempotencyKey).IsUnique().HasFilter("kind = 0");
         builder.HasIndex(item => new { item.CustomerId, item.Kind, item.Id });
 
         builder.HasOne(item => item.Document)

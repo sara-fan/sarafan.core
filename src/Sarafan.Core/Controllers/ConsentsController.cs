@@ -16,34 +16,33 @@ using Sarafan.Core.Services;
 namespace Sarafan.Core.Controllers;
 
 [Route("api/v1/consents"), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class ConsentsController(ConsentService consents, ConsentRightsService rights, VerificationAttemptStore attempts,
+public sealed class ConsentsController(ConsentService consents, ConsentWithdrawalRequestService withdrawalRequests, VerificationAttemptStore attempts,
     IOptions<AuthenticationOptions> options, IOptions<ConsentOptions> consentOptions, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
-    public const string BrowserCookie = "sarafan.consent-browser";
-    [AllowAnonymous, HttpGet("cookies")]
-    public async Task<ActionResult> Cookies(CancellationToken token) => Ok(await consents.CookieStatusAsync(Request.Cookies[BrowserCookie], token));
-    [AllowAnonymous, HttpPost("cookies")]
+    [AllowAnonymous, CookieConsentNotRequired, HttpGet("cookies")]
+    public async Task<ActionResult> Cookies(CancellationToken token) => Ok(await consents.CookieStatusAsync(Request.Cookies[ConsentBrowserCookie.Name], token));
+    [AllowAnonymous, CookieConsentNotRequired, HttpPost("cookies")]
     public async Task<ActionResult> DecideCookies(ConsentDecisionRequest request, CancellationToken token)
     {
         if (!attempts.TryConsume($"consent:{RemoteAddress()}", 60, TimeSpan.FromMinutes(15))) throw new ServiceException(429, "rate_limited");
-        var raw = Request.Cookies[BrowserCookie];
+        var raw = Request.Cookies[ConsentBrowserCookie.Name];
         // A lost first response can be retried without its Set-Cookie header.
         // The opaque subject remains stable for that random idempotency key.
         if (raw is not { Length: >= 32 and <= 128 }) raw = Convert.ToHexStringLower(HMACSHA256.HashData(
             Encoding.UTF8.GetBytes(options.Value.SigningKey), Encoding.UTF8.GetBytes("cookie-receipt:" + request.IdempotencyKey)));
         var result = await consents.DecideCookiesAsync(raw, request, token);
-        Response.Cookies.Append(BrowserCookie, raw, new CookieOptions
+        Response.Cookies.Append(ConsentBrowserCookie.Name, raw, new CookieOptions
         {
             HttpOnly = true,
             Secure = options.Value.SecureCookies,
             SameSite = SameSiteMode.Strict,
-            Path = "/api/v1/consents",
+            Path = "/api/v1",
             MaxAge = TimeSpan.FromDays(consentOptions.Value.CookieDays),
             IsEssential = true
         });
         return Ok(result);
     }
-    [Authorize, HttpGet("me")]
+    [Authorize, CookieConsentNotRequired, HttpGet("me")]
     public async Task<ActionResult> Mine(CancellationToken token) => Ok(await consents.CustomerAsync(CurrentCustomerId(), token));
     [Authorize, HttpPost("me/personal-data")]
     public async Task<ActionResult> PersonalData(ConsentDecisionRequest request, CancellationToken token) => Ok(await consents.DecidePersonalDataAsync(CurrentCustomerId(), request, token));
@@ -52,9 +51,10 @@ public sealed class ConsentsController(ConsentService consents, ConsentRightsSer
     {
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Jti), out var authenticationTokenId) || authenticationTokenId == Guid.Empty)
             throw new ServiceException(401, "invalid_access_token");
-        await consents.AssociateBrowserAsync(CurrentCustomerId(), Request.Cookies[BrowserCookie], authenticationTokenId, token);
+        await consents.AssociateBrowserAsync(CurrentCustomerId(), Request.Cookies[ConsentBrowserCookie.Name], authenticationTokenId, token);
         return NoContent();
     }
-    [Authorize, HttpPost("me/rights")]
-    public async Task<ActionResult> Rights(RightsRequest request, CancellationToken token) => Ok(await rights.CreateAsync(CurrentCustomerId(), request, token));
+    [Authorize, CookieConsentNotRequired, HttpPost("me/withdrawal-request")]
+    public async Task<ActionResult> RequestWithdrawal(CancellationToken token)
+        => Ok(await withdrawalRequests.CreateAsync(CurrentCustomerId(), token));
 }

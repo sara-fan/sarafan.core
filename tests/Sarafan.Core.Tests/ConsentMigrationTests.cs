@@ -15,9 +15,8 @@ namespace Sarafan.Core.Tests;
 [TestFixture, NonParallelizable]
 public sealed class ConsentMigrationTests
 {
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task ConsentMigrationDropsLegacyDataWithoutChangingCustomerData(bool hasLegacyData)
+    [Test]
+    public async Task ConsentMigrationCreatesTheMvpSchemaWithoutChangingCustomerData()
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var parent = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -31,7 +30,7 @@ public sealed class ConsentMigrationTests
         {
             await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(builder.ConnectionString).Options);
             var migrations = database.Database.GetMigrations().ToArray();
-            Assert.That(migrations[^1], Is.EqualTo("20260907125724_VersionedCustomerConsents"));
+            Assert.That(migrations[^1], Is.EqualTo("20260908181115_0_0_7_CustomerConsents"));
             var migrator = database.GetService<IMigrator>();
             await migrator.MigrateAsync(migrations[^2]);
             var customer = new Customer
@@ -44,20 +43,99 @@ public sealed class ConsentMigrationTests
             };
             database.Customers.Add(customer);
             await database.SaveChangesAsync();
-            if (hasLegacyData)
-                await database.Database.ExecuteSqlInterpolatedAsync($"""
-                    INSERT INTO customer_consents (customer_id, type, document_version, accepted_at)
-                    VALUES ({customer.Id}, 'Terms', 'old-terms', {DateTimeOffset.UtcNow}),
-                           ({customer.Id}, 'PersonalData', 'old-personal-data', {DateTimeOffset.UtcNow})
-                    """);
             Assert.That(await database.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM customer_consents").SingleAsync(),
-                Is.EqualTo(hasLegacyData ? 2 : 0));
+                Is.Zero);
 
             await migrator.MigrateAsync();
             Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.customer_consents') IS NULL AS \"Value\"").SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.legal_document_audit_events') IS NOT NULL AS \"Value\"").SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.customer_consent_withdrawal_requests') IS NOT NULL AS \"Value\"").SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.consent_rights_cases') IS NULL AS \"Value\"").SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.consent_rights_audit_events') IS NULL AS \"Value\"").SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'customer_consent_withdrawal_requests'
+                  AND column_name IN ('customer_id', 'requested_at', 'processed')
+                """).SingleAsync(), Is.EqualTo(3));
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'customer_consent_withdrawal_requests'
+                """).SingleAsync(), Is.EqualTo(3));
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM pg_constraint
+                WHERE conrelid = 'customer_consent_withdrawal_requests'::regclass
+                  AND contype = 'p' AND conkey = ARRAY[
+                    (SELECT attnum FROM pg_attribute WHERE attrelid = 'customer_consent_withdrawal_requests'::regclass AND attname = 'customer_id'),
+                    (SELECT attnum FROM pg_attribute WHERE attrelid = 'customer_consent_withdrawal_requests'::regclass AND attname = 'requested_at')
+                  ]::smallint[]
+                """).SingleAsync(), Is.EqualTo(1));
+            Assert.That(await database.Database.SqlQueryRaw<bool>("""
+                SELECT indexdef LIKE '%UNIQUE INDEX%' AND indexdef LIKE '%WHERE (processed = false)%' AS "Value"
+                FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'customer_consent_withdrawal_requests'
+                  AND indexname = 'IX_customer_consent_withdrawal_requests_customer_id'
+                """).SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM pg_constraint
+                WHERE conrelid = 'customer_consent_withdrawal_requests'::regclass
+                  AND confrelid = 'customers'::regclass
+                  AND conname = 'FK_customer_consent_withdrawal_requests_customers_customer_id'
+                  AND contype = 'f' AND confdeltype = 'r'
+                """).SingleAsync(), Is.EqualTo(1));
+            Assert.That(await database.Database.SqlQueryRaw<bool>("""
+                SELECT is_nullable = 'NO' AS "Value"
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'legal_documents' AND column_name = 'effective_at'
+                """).SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name IN ('legal_documents', 'legal_document_audit_events', 'consent_events')
+                  AND column_name = 'kind' AND data_type = 'integer'
+                """).SingleAsync(), Is.EqualTo(3));
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'legal_documents'
+                  AND column_name IN ('state', 'updated_at', 'published_at', 'disposed_at', 'revision')
+                """).SingleAsync(), Is.Zero);
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'legal_documents'
+                  AND indexname IN ('IX_legal_documents_kind_locale_display_version', 'IX_legal_documents_kind_locale_effective_at')
+                  AND indexdef LIKE 'CREATE UNIQUE INDEX%'
+                """).SingleAsync(), Is.EqualTo(2));
+            Assert.That(await database.Database.SqlQueryRaw<bool>("""
+                SELECT indexdef LIKE '%WHERE (kind = 0)' AS "Value"
+                FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'consent_events'
+                  AND indexname = 'IX_consent_events_idempotency_key'
+                """).SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM pg_constraint
+                WHERE conrelid = 'legal_document_audit_events'::regclass
+                  AND confrelid = 'backoffice_users'::regclass
+                  AND conname = 'FK_legal_document_audit_events_backoffice_users_actor_id'
+                  AND contype = 'f' AND confdeltype = 'r'
+                """).SingleAsync(), Is.EqualTo(1));
+            Assert.That(await database.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*)::int AS "Value"
+                FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'legal_document_audit_events'
+                  AND indexname = 'IX_legal_document_audit_events_actor_id'
+                """).SingleAsync(), Is.EqualTo(1));
+            Assert.That(await database.Database.GetAppliedMigrationsAsync(), Does.Contain("20260908181115_0_0_7_CustomerConsents"));
             Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);
             Assert.That(await database.ConsentAssociations.CountAsync(), Is.Zero);
             Assert.That(await database.LegalDocuments.CountAsync(), Is.Zero);
+            Assert.That(await database.CustomerConsentWithdrawalRequests.CountAsync(), Is.Zero);
             database.ChangeTracker.Clear();
             var saved = await database.Customers.Include(x => x.Profile).Include(x => x.Photo).Include(x => x.RefreshSessions).SingleAsync();
             using (Assert.EnterMultipleScope())

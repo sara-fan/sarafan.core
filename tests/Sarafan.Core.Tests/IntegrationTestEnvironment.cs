@@ -91,11 +91,17 @@ public sealed class IntegrationTestEnvironment
             .Include(item => item.UserRoles)
             .ToListAsync();
         var documents = scope.ServiceProvider.GetRequiredService<Sarafan.Core.Services.LegalDocumentService>();
-        foreach (var kind in Sarafan.Core.Services.ConsentKinds.All)
+        foreach (var kind in Enum.GetValues<Sarafan.Core.Models.LegalDocumentKind>())
         {
-            var draft = await documents.SaveAsync(null, new Sarafan.Core.RestModels.LegalDocumentRequest
-            { Kind = kind, Title = "Тестовый документ", DisplayVersion = "test-v1", FileName = "test.md", Source = System.Text.Encoding.UTF8.GetBytes("# Только для тестов\n\nОтдельный текст документа."), CookieCategories = kind == "cookie-consent" ? ["analytics", "marketing"] : [] }, initialUsers[0].Id, default);
-            await documents.PublishAsync(draft.Id, new() { Revision = draft.Revision, Now = true }, initialUsers[0].Id, default);
+            await documents.CreateAsync(new Sarafan.Core.RestModels.LegalDocumentRequest
+            {
+                Kind = kind,
+                Title = "Тестовый документ",
+                DisplayVersion = "test-v1",
+                FileName = "test.md",
+                Source = System.Text.Encoding.UTF8.GetBytes("# Только для тестов\n\nОтдельный текст документа."),
+                EffectiveDate = Sarafan.Core.Services.ConsentCalendar.LocalDate(DateTimeOffset.UtcNow)
+            }, initialUsers[0].Id, default);
         }
         using (Assert.EnterMultipleScope())
         {
