@@ -221,6 +221,12 @@ public sealed class OperationLoggingTests
         Assert.That(summaries, Does.Contain("BackofficeRoleDto collection(count=1)"));
         Assert.That(summaries.Count(summary => summary.Contains("purpose=other")), Is.EqualTo(2));
         Assert.That(LogValueSummary.Inputs(), Is.EqualTo("none"));
+        var privateListState = LogValueSummary.Inputs(
+            ("page", 3), ("pageSize", 100), ("sortBy", Secret), ("sortOrder", Secret),
+            ("search", Secret), ("processed", true), ("kind", Secret), ("action", Secret),
+            ("customerId", 42), ("documentId", Guid.NewGuid()));
+        Assert.That(privateListState, Does.Not.Contain(Secret).And.Not.Contain("true").And.Not.Contain("42"));
+        Assert.That(privateListState.Split("[redacted]").Length - 1, Is.EqualTo(10));
     }
 
     [TestCase(false)]

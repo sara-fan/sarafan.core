@@ -39,7 +39,9 @@ public sealed class BackofficeLegalDocumentsController(LegalDocumentService docu
     [HttpGet("audit")]
     public async Task<ActionResult> Audit([FromQuery] LegalDocumentKind? kind, [FromQuery] string? action,
         [FromQuery] string? search, [FromQuery] Guid? documentId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
-        CancellationToken token = default) => Ok(await documents.AuditAsync(kind, action, search, documentId, page, pageSize, token));
+        [FromQuery] string sortBy = "at", [FromQuery] string sortOrder = "desc",
+        CancellationToken token = default) => Ok(await documents.AuditAsync(
+            kind, action, search, documentId, page, pageSize, sortBy, sortOrder, token));
     [HttpGet("{id:guid}/source")]
     public async Task<ActionResult> Download(Guid id, CancellationToken token)
     {

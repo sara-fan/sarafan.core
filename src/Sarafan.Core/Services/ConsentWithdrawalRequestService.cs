@@ -45,13 +45,73 @@ public sealed class ConsentWithdrawalRequestService(
             return ToDto(item);
         }, token), token, customerId);
 
-    public Task<CustomerConsentWithdrawalRequestDto[]> ListAsync(CancellationToken token)
-        => Run(nameof(ListAsync), () => database.CustomerConsentWithdrawalRequests
-            .AsNoTracking()
-            .OrderBy(item => item.Processed)
-            .ThenBy(item => item.RequestedAt)
-            .Select(item => new CustomerConsentWithdrawalRequestDto(item.CustomerId, item.RequestedAt, item.Processed))
-            .ToArrayAsync(token), token, null);
+    public Task<CustomerConsentWithdrawalRequestPageDto> ListAsync(
+        int page,
+        int pageSize,
+        string sortBy,
+        string sortOrder,
+        string? search,
+        bool? processed,
+        CancellationToken token)
+        => Run(nameof(ListAsync), async () =>
+        {
+            search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+            var sortByKey = sortBy?.Trim().ToLowerInvariant();
+            var sortOrderKey = sortOrder?.Trim().ToLowerInvariant();
+            if (page < 1 || pageSize is < 1 or > 100
+                || search is { Length: > 10 } || search?.Any(character => !char.IsAsciiDigit(character)) == true
+                || sortByKey is not ("processed" or "requestedat" or "customerid")
+                || sortOrderKey is not ("asc" or "desc"))
+                throw new ServiceException(400, "invalid_consent_withdrawal_request_filter");
+
+            var query = database.CustomerConsentWithdrawalRequests.AsNoTracking()
+                .Where(item => (processed == null || item.Processed == processed)
+                    && (search == null || EF.Functions.Like(item.CustomerId.ToString(), $"%{search}%")));
+            var total = await query.CountAsync(token);
+            var descending = sortOrderKey == "desc";
+            var ordered = (sortByKey, descending) switch
+            {
+                ("processed", false) => query.OrderBy(item => item.Processed)
+                    .ThenByDescending(item => item.RequestedAt).ThenBy(item => item.CustomerId),
+                ("processed", true) => query.OrderByDescending(item => item.Processed)
+                    .ThenByDescending(item => item.RequestedAt).ThenBy(item => item.CustomerId),
+                ("requestedat", false) => query.OrderBy(item => item.RequestedAt).ThenBy(item => item.CustomerId),
+                ("requestedat", true) => query.OrderByDescending(item => item.RequestedAt).ThenByDescending(item => item.CustomerId),
+                ("customerid", false) => query.OrderBy(item => item.CustomerId).ThenByDescending(item => item.RequestedAt),
+                _ => query.OrderByDescending(item => item.CustomerId).ThenByDescending(item => item.RequestedAt)
+            };
+            var offset = (long)(page - 1) * pageSize;
+            var items = offset > int.MaxValue
+                ? []
+                : await ordered.Skip((int)offset).Take(pageSize)
+                    .Select(item => new CustomerConsentWithdrawalRequestDto(item.CustomerId, item.RequestedAt, item.Processed))
+                    .ToArrayAsync(token);
+            var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize);
+            return new CustomerConsentWithdrawalRequestPageDto
+            {
+                Items = items,
+                Pagination = new PaginationInfo
+                {
+                    CurrentPage = page,
+                    PageSize = pageSize,
+                    TotalCount = total,
+                    TotalPages = totalPages,
+                    HasNextPage = page < totalPages,
+                    HasPreviousPage = page > 1
+                },
+                Sorting = new SortingInfo
+                {
+                    SortBy = sortByKey switch
+                    {
+                        "requestedat" => "requestedAt",
+                        "customerid" => "customerId",
+                        _ => "processed"
+                    },
+                    SortOrder = sortOrderKey
+                },
+                Search = search
+            };
+        }, token, new { page, pageSize, sortBy, sortOrder, search, processed });
 
     public Task<CustomerConsentWithdrawalRequestDto> ProcessAsync(
         ProcessConsentWithdrawalRequest request,

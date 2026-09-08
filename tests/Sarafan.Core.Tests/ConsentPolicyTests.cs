@@ -192,14 +192,40 @@ public sealed class ConsentPolicyTests
         Assert.That(await _db.LegalDocumentAuditEvents.CountAsync(x => x.DocumentId == document.Id), Is.EqualTo(1));
         await _documents.DeleteAsync(document.Id, _admin, default); await _db.SaveChangesAsync();
         Assert.That(await _db.LegalDocuments.AnyAsync(x => x.Id == document.Id), Is.False);
-        var audit = await _documents.AuditAsync(null, null, null, document.Id, 1, 50, default);
+        var audit = await _documents.AuditAsync(null, null, null, document.Id, 1, 50, "at", "desc", default);
         Assert.That(audit.Items.Select(x => x.Action), Is.EqualTo(new[] { "deleted", "created" }));
         Assert.That(audit.Items, Has.All.Property(nameof(LegalDocumentAuditDto.ContentHash)).EqualTo(document.ContentHash));
-        var searched = await _documents.AuditAsync(LegalDocumentKind.PersonalDataConsent, "deleted", "Документ", null, 1, 1, default);
-        Assert.That(searched.Total, Is.EqualTo(1));
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(audit.Pagination.TotalCount, Is.EqualTo(2));
+            Assert.That(audit.Pagination.TotalPages, Is.EqualTo(1));
+            Assert.That(audit.Sorting.SortBy, Is.EqualTo("at"));
+            Assert.That(audit.Sorting.SortOrder, Is.EqualTo("desc"));
+        }
+        var searched = await _documents.AuditAsync(LegalDocumentKind.PersonalDataConsent, "deleted", "Документ", null, 1, 1, "at", "desc", default);
+        Assert.That(searched.Pagination.TotalCount, Is.EqualTo(1));
         Assert.That(searched.Items.Single().DocumentId, Is.EqualTo(document.Id));
-        Reject(() => _documents.AuditAsync(null, "changed", null, null, 1, 50, default), "invalid_legal_document_audit_filter");
-        Reject(() => _documents.AuditAsync(null, null, new string('x', 201), null, 1, 50, default), "invalid_legal_document_audit_filter");
+        foreach (var sort in new[] { "at", "action", "title", "displayVersion", "effectiveAt", "actorName" })
+        {
+            foreach (var order in new[] { "asc", "desc" })
+            {
+                var sorted = await _documents.AuditAsync(null, null, null, document.Id, 1, 1, sort, order, default);
+                Assert.That(sorted.Items, Has.Length.EqualTo(1));
+                Assert.That(sorted.Pagination.TotalCount, Is.EqualTo(2));
+                Assert.That(sorted.Sorting, Has.Property(nameof(SortingInfo.SortBy)).EqualTo(sort));
+                Assert.That(sorted.Sorting, Has.Property(nameof(SortingInfo.SortOrder)).EqualTo(order));
+            }
+        }
+        var beyondLastPage = await _documents.AuditAsync(null, null, "   ", document.Id, int.MaxValue, 100, "at", "desc", default);
+        Assert.That(beyondLastPage.Items, Is.Empty);
+        Assert.That(beyondLastPage.Search, Is.Null);
+        Assert.That(beyondLastPage.Pagination.HasPreviousPage, Is.True);
+        Reject(() => _documents.AuditAsync(null, "changed", null, null, 1, 50, "at", "desc", default), "invalid_legal_document_audit_filter");
+        Reject(() => _documents.AuditAsync(null, null, new string('x', 201), null, 1, 50, "at", "desc", default), "invalid_legal_document_audit_filter");
+        Reject(() => _documents.AuditAsync(null, null, null, null, 0, 50, "at", "desc", default), "invalid_legal_document_audit_filter");
+        Reject(() => _documents.AuditAsync(null, null, null, null, 1, 101, "at", "desc", default), "invalid_legal_document_audit_filter");
+        Reject(() => _documents.AuditAsync(null, null, null, null, 1, 50, "unknown", "desc", default), "invalid_legal_document_audit_filter");
+        Reject(() => _documents.AuditAsync(null, null, null, null, 1, 50, "at", "sideways", default), "invalid_legal_document_audit_filter");
     }
 
     [Test]
@@ -318,7 +344,7 @@ public sealed class ConsentPolicyTests
         var second = await _withdrawalRequests.CreateAsync(_customer, default); await _db.SaveChangesAsync();
         Assert.That(second.RequestedAt, Is.GreaterThan(first.RequestedAt));
         Assert.That(second.Processed, Is.False);
-        Assert.That((await _withdrawalRequests.ListAsync(default))
+        Assert.That((await _withdrawalRequests.ListAsync(1, 10, "processed", "asc", null, null, default)).Items
             .Where(item => item.CustomerId == _customer)
             .Select(item => item.Processed), Is.EqualTo(new[] { false, true }));
         Assert.That((await _consents.CustomerAsync(_customer, default)).WithdrawalRequest, Is.EqualTo(second));
@@ -331,6 +357,88 @@ public sealed class ConsentPolicyTests
     {
         Assert.That(typeof(CustomerConsentWithdrawalRequest).GetProperties().Select(property => property.Name),
             Is.EquivalentTo(new[] { "CustomerId", "RequestedAt", "Processed" }));
+    }
+
+    [Test]
+    public async Task WithdrawalRequestListFiltersSortsAndPaginatesOnTheServer()
+    {
+        await _db.CustomerConsentWithdrawalRequests.ExecuteDeleteAsync();
+        var customers = Enumerable.Range(2, 12)
+            .Select(value => new Customer { Phone = $"+788800000{value:00}", Profile = new() })
+            .ToArray();
+        _db.Customers.AddRange(customers);
+        await _db.SaveChangesAsync();
+        var requestedAt = _clock.Now.ToUniversalTime();
+        _db.CustomerConsentWithdrawalRequests.AddRange(customers.Select((customer, index) => new CustomerConsentWithdrawalRequest
+        {
+            CustomerId = customer.Id,
+            RequestedAt = index is 1 or 3 ? requestedAt.AddMinutes(3) : requestedAt.AddMinutes(index),
+            Processed = index % 2 == 0
+        }));
+        await _db.SaveChangesAsync();
+
+        var first = await _withdrawalRequests.ListAsync(1, 5, "processed", "asc", null, null, default);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(first.Items, Has.Length.EqualTo(5));
+            Assert.That(first.Items, Has.All.Property(nameof(CustomerConsentWithdrawalRequestDto.Processed)).False);
+            Assert.That(first.Items.Select(item => item.RequestedAt), Is.Ordered.Descending);
+            Assert.That(first.Pagination.TotalCount, Is.EqualTo(12));
+            Assert.That(first.Pagination.TotalPages, Is.EqualTo(3));
+            Assert.That(first.Pagination.HasNextPage, Is.True);
+            Assert.That(first.Pagination.HasPreviousPage, Is.False);
+            Assert.That(first.Sorting.SortBy, Is.EqualTo("processed"));
+        }
+        foreach (var sort in new[] { "processed", "requestedAt", "customerId" })
+        {
+            foreach (var order in new[] { "asc", "desc" })
+            {
+                var sorted = await _withdrawalRequests.ListAsync(1, 100, sort, order, null, null, default);
+                Assert.That(sorted.Items, Has.Length.EqualTo(12));
+                Assert.That(sorted.Sorting.SortBy, Is.EqualTo(sort));
+                Assert.That(sorted.Sorting.SortOrder, Is.EqualTo(order));
+            }
+        }
+        var second = await _withdrawalRequests.ListAsync(2, 5, "customerId", "desc", null, null, default);
+        Assert.That(second.Items.Select(item => item.CustomerId), Is.Ordered.Descending);
+        Assert.That(second.Pagination.HasPreviousPage, Is.True);
+        var byTime = await _withdrawalRequests.ListAsync(1, 100, "requestedAt", "asc", null, null, default);
+        Assert.That(byTime.Items.Select(item => item.RequestedAt), Is.Ordered.Ascending);
+        var defaultOrder = await _withdrawalRequests.ListAsync(1, 100, "processed", "asc", null, null, default);
+        var equalTimeIds = defaultOrder.Items.Where(item => !item.Processed)
+            .GroupBy(item => item.RequestedAt)
+            .Single(group => group.Count() == 2)
+            .Select(item => item.CustomerId)
+            .ToArray();
+        Assert.That(equalTimeIds, Has.Length.EqualTo(2));
+        Assert.That(equalTimeIds, Is.Ordered.Ascending);
+        var processed = await _withdrawalRequests.ListAsync(1, 100, "processed", "desc", null, true, default);
+        Assert.That(processed.Items, Has.Length.EqualTo(6));
+        Assert.That(processed.Items, Has.All.Property(nameof(CustomerConsentWithdrawalRequestDto.Processed)).True);
+        var digit = customers[0].Id.ToString()[^1].ToString();
+        var searched = await _withdrawalRequests.ListAsync(1, 100, "customerId", "asc", digit, null, default);
+        Assert.That(searched.Search, Is.EqualTo(digit));
+        Assert.That(searched.Items, Is.Not.Empty);
+        Assert.That(searched.Items, Has.All.Matches<CustomerConsentWithdrawalRequestDto>(item => item.CustomerId.ToString().Contains(digit)));
+        var normalized = await _withdrawalRequests.ListAsync(1, 100, "customerId", "asc", $" {digit} ", null, default);
+        Assert.That(normalized.Search, Is.EqualTo(digit));
+        var beyondLastPage = await _withdrawalRequests.ListAsync(int.MaxValue, 100, "processed", "asc", null, null, default);
+        Assert.That(beyondLastPage.Items, Is.Empty);
+        Assert.That(beyondLastPage.Pagination.HasPreviousPage, Is.True);
+        var empty = await _withdrawalRequests.ListAsync(1, 10, "processed", "asc", "0000000000", null, default);
+        Assert.That(empty.Items, Is.Empty);
+        Assert.That(empty.Pagination.TotalPages, Is.Zero);
+        Assert.That(empty.Pagination.HasNextPage, Is.False);
+
+        Reject(() => _withdrawalRequests.ListAsync(0, 10, "processed", "asc", null, null, default), "invalid_consent_withdrawal_request_filter");
+        Reject(() => _withdrawalRequests.ListAsync(1, 0, "processed", "asc", null, null, default), "invalid_consent_withdrawal_request_filter");
+        Reject(() => _withdrawalRequests.ListAsync(1, 101, "processed", "asc", null, null, default), "invalid_consent_withdrawal_request_filter");
+        Reject(() => _withdrawalRequests.ListAsync(1, 10, "processed", "asc", "customer", null, default), "invalid_consent_withdrawal_request_filter");
+        Reject(() => _withdrawalRequests.ListAsync(1, 10, "processed", "asc", "12345678901", null, default), "invalid_consent_withdrawal_request_filter");
+        Reject(() => _withdrawalRequests.ListAsync(1, 10, null!, "asc", null, null, default), "invalid_consent_withdrawal_request_filter");
+        Reject(() => _withdrawalRequests.ListAsync(1, 10, "unknown", "asc", null, null, default), "invalid_consent_withdrawal_request_filter");
+        Reject(() => _withdrawalRequests.ListAsync(1, 10, "processed", null!, null, null, default), "invalid_consent_withdrawal_request_filter");
+        Reject(() => _withdrawalRequests.ListAsync(1, 10, "processed", "sideways", null, null, default), "invalid_consent_withdrawal_request_filter");
     }
 
     [Test]
