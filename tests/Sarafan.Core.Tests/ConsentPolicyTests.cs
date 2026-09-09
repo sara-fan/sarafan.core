@@ -90,7 +90,7 @@ public sealed class ConsentPolicyTests
     {
         var expected = new[]
         {
-            (LegalDocumentKind.CookieConsent, 0, "Согласие на куки", "cookie-consent"),
+            (LegalDocumentKind.CookieConsent, 0, "Согласие на использование куки", "cookie-consent"),
             (LegalDocumentKind.PersonalDataConsent, 1, "Согласие на обработку персональных данных", "personal-data-consent"),
             (LegalDocumentKind.UserAgreement, 2, "Пользовательское соглашение", "user-agreement"),
             (LegalDocumentKind.OrderRules, 3, "Правила заказа товаров", "order-rules"),

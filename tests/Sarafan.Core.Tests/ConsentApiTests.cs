@@ -60,7 +60,7 @@ public sealed class ConsentApiTests
         using var publicResponse = await _client.GetAsync("/api/v1/legal/ops");
         var publicOps = await Read<LegalDocumentOpsDto>(publicResponse);
         Assert.That(publicOps.Kinds.Select(item => item.Value), Is.EqualTo(new[] { 0, 1, 2, 3, 4 }));
-        Assert.That(publicOps.Kinds.Select(item => item.Name), Does.Contain("Согласие на куки"));
+        Assert.That(publicOps.Kinds.Select(item => item.Name), Does.Contain("Согласие на использование куки"));
         Assert.That(publicOps.Kinds.Select(item => item.RouteAlias), Does.Contain("privacy-policy"));
         Assert.That(publicOps.CookieCategories, Is.EqualTo(new[] { new CookieCategoryOpsItemDto(0, "Обязательные", true) }));
 
