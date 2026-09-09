@@ -17,7 +17,7 @@ public static class LegalDocumentKindExtensions
 {
     public static string GetDisplayName(this LegalDocumentKind kind) => kind switch
     {
-        LegalDocumentKind.CookieConsent => "Согласие на куки",
+        LegalDocumentKind.CookieConsent => "Согласие на использование куки",
         LegalDocumentKind.PersonalDataConsent => "Согласие на обработку персональных данных",
         LegalDocumentKind.UserAgreement => "Пользовательское соглашение",
         LegalDocumentKind.OrderRules => "Правила заказа товаров",
