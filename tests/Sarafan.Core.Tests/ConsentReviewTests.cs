@@ -251,7 +251,7 @@ public sealed class ConsentReviewTests
             new VerificationAttemptStore(_clock), new JwtTokenService(_auth, _clock, NullLogger<JwtTokenService>.Instance),
             _auth, _clock, Consents(database), NullLogger<AuthenticationService>.Instance);
         Assert.ThrowsAsync<DbUpdateException>(() => service.VerifyCodeAsync(new()
-        { Phone = phone, Purpose = "register", Code = "0003", TermsAccepted = true, OnboardingToken = receipt }, "test", null, default));
+        { Phone = phone, Code = "0003", TermsAccepted = true, OnboardingToken = receipt }, "test", null, default));
         await using var check = Database();
         Assert.That(await check.Customers.AnyAsync(x => x.Phone == phone), Is.False);
         Assert.That(await check.ConsentEvents.CountAsync(), Is.Zero);
@@ -299,8 +299,7 @@ public sealed class ConsentReviewTests
             _auth, _clock, Consents(database), NullLogger<AuthenticationService>.Instance);
         var request = new RequestCodeRequest
         {
-            Phone = Phone,
-            Purpose = "register",
+            Phone = "+78880000004",
             TermsAccepted = true,
             TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id,
             PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent)
@@ -479,10 +478,9 @@ public sealed class ConsentReviewTests
         Assert.That(await database.CustomerConsentWithdrawalRequests.CountAsync(), Is.EqualTo(1));
     }
 
-    [TestCase("request", "register", 20, "invalid_phone")]
-    [TestCase("verify", "register", 30, "onboarding_consent_expired")]
-    [TestCase("verify", "login", 30, "invalid_phone")]
-    public async Task AuthenticationIpQuotaBoundsConsentLookupsAndMalformedPhoneAttempts(string operation, string purpose, int limit, string expected)
+    [TestCase("request", 20, "invalid_phone")]
+    [TestCase("verify", 30, "invalid_phone")]
+    public async Task AuthenticationIpQuotaBoundsConsentLookupsAndMalformedPhoneAttempts(string operation, int limit, string expected)
     {
         var commands = new CountCommands();
         await using var database = Database(commands);
@@ -494,13 +492,12 @@ public sealed class ConsentReviewTests
             if (operation == "request") await service.RequestCodeAsync(new()
             {
                 Phone = "malformed",
-                Purpose = purpose,
                 TermsAccepted = true,
                 TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id,
                 PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent)
             }, "throttle-test", default);
             else await service.VerifyCodeAsync(new()
-            { Phone = "malformed", Purpose = purpose, OnboardingToken = Guid.NewGuid().ToString("N"), Code = "0000" }, "throttle-test", null, default);
+            { Phone = "malformed", OnboardingToken = Guid.NewGuid().ToString("N"), Code = "0000" }, "throttle-test", null, default);
         }
         for (var attempt = 0; attempt < limit; attempt++) Assert.That(Assert.ThrowsAsync<ServiceException>(Attempt)!.Code, Is.EqualTo(expected));
         var before = commands.Count;

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 using Sarafan.Core.Authentication;
+using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
 using Sarafan.Core.Services;
 
@@ -19,6 +20,25 @@ public sealed class AuthController(
     SarafanProblemDetailsFactory problemDetailsFactory) : SarafanControllerBase(problemDetailsFactory)
 {
     private readonly AuthenticationOptions _options = options.Value;
+
+    [AllowAnonymous]
+    [CookieConsentNotRequired]
+    [HttpGet("ops")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public ActionResult<AuthenticationOpsDto> Operations() => Ok(new AuthenticationOpsDto(
+        Enum.GetValues<AuthenticationFlowStep>()
+            .Select(step => new EnumOpsItemDto((int)step, step.GetDisplayName(), step.GetRouteAlias()))
+            .ToArray()));
+
+    [AllowAnonymous]
+    [CookieConsentNotRequired]
+    [HttpPost("phone/resolve")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [ProducesResponseType<PhoneResolveDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<PhoneResolveDto>> Resolve(
+        PhoneResolveRequest request,
+        CancellationToken cancellationToken)
+        => Ok(await authenticationService.ResolveAsync(request, RemoteAddress(), cancellationToken));
 
     [AllowAnonymous]
     [HttpPost("code/request")]

@@ -56,7 +56,6 @@ internal static class ConsentTestData
         return new RequestCodeRequest
         {
             Phone = phone,
-            Purpose = "register",
             TermsAccepted = true,
             TermsDocumentId = terms.Id,
             PersonalDataConsent = new() { Decision = "grant", DocumentId = pd.Id, ContentHash = pd.ContentHash, IdempotencyKey = Guid.NewGuid() }

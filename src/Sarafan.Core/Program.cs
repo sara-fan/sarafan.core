@@ -76,6 +76,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<VerificationAttemptStore>();
 builder.Services.AddSingleton<IPhoneNormalizer, PhoneNormalizer>();
 builder.Services.AddSingleton<IVerificationCodeProvider, PhoneSuffixVerificationCodeProvider>();
+builder.Services.AddSingleton<VerificationCodeReleaseGate>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddOptions<ConsentOptions>().Bind(builder.Configuration.GetSection(ConsentOptions.SectionName))
@@ -94,6 +95,7 @@ builder.Services.AddScoped<BackofficeAuthenticationService>();
 builder.Services.AddScoped<BackofficeUserService>();
 builder.Services.AddScoped<BackofficeBootstrapService>();
 builder.Services.AddScoped<BackofficeJwtBearerEvents>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, CustomerAccessHandler>();
 builder.Services.AddHttpClient<ICbrRateClient, CbrRateClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
@@ -126,7 +128,11 @@ builder.Services
             backofficeSigningKey);
         options.EventsType = typeof(BackofficeJwtBearerEvents);
     });
-builder.Services.AddAuthorization(BackofficeAuthorization.Configure);
+builder.Services.AddAuthorization(options =>
+{
+    CustomerAuthorization.Configure(options);
+    BackofficeAuthorization.Configure(options);
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -157,6 +163,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 var app = builder.Build();
 var applicationLogger = app.Services.GetRequiredService<ILogger<ApplicationLifecycle>>();
+
+app.Services.GetRequiredService<VerificationCodeReleaseGate>().EnsureAllowed();
 
 if (migrateOnly || builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
 {

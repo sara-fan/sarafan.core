@@ -49,8 +49,12 @@ public sealed class SarafanExceptionHandler(
             httpContext.Response.Headers.WWWAuthenticate = supplied ? "Bearer error=\"invalid_token\"" : "Bearer";
         }
 
+        var serviceDetails = exception as ServiceException;
         await problemDetailsFactory.WriteAsync(httpContext, statusCode, code, cancellationToken,
-            (exception as ServiceException)?.RequiredDocumentId, (exception as ServiceException)?.ConsentKind);
+            serviceDetails?.RequiredDocumentId,
+            serviceDetails?.ConsentKind,
+            serviceDetails?.NextStep,
+            serviceDetails?.RequiredDocumentKinds);
         return true;
     }
 }

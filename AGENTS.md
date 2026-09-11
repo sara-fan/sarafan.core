@@ -125,13 +125,18 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ---
 
-**Version:** 1.13
+**Version:** 1.14
 
-**Last Updated:** 2026-09-08
+**Last Updated:** 2026-09-11
 
 **Maintained by:** Development Team
 
 ## Versioned customer consent
+
+- Spec v1.17 §4.3 and Core #19 govern combined authentication. Core resolves `Code`/`Agreement`/`Registration` from the canonical Russian phone, account state and current User Agreement evidence; clients never choose a purpose. Keep `AuthenticationFlowStep` and `CustomerState` as stable numeric enums with Core-owned Russian names/aliases exposed by anonymous `ops` endpoints, and never create lookup tables for them.
+- Reactivation updates the existing disabled customer, preserves its ID/profile/history, recomputes profile state with the shared completeness rule, increments `token_version`, revokes every prior refresh session and issues a new family. Customer authorization must compare non-disabled state and token version with the database; refresh must reject disabled customers. Treat pre-migration customer JWTs without the version claim as version zero.
+- Authentication receipts bind the hashed canonical phone, resolved flow, optional target customer, exact current legal-document versions and idempotency keys. Verify the code before reading account-sensitive receipt requirements; then re-resolve state and complete evidence/account/session changes atomically under the consent transaction lock. A changed account/document boundary must not issue a session.
+- Accept only `+7XXXXXXXXXX`, exact `8XXXXXXXXXX`, or `+7` input formatted with ASCII spaces, parentheses and hyphens, and store only `+7XXXXXXXXXX`. The `0_0_9_Login` migration enforces this invariant but must not normalize, deduplicate, scan or report existing phone data.
 
 - Keep `LegalDocumentKind` a stable, append-only numeric enum persisted as PostgreSQL integers and serialized as JSON numbers. Core owns each Russian display name and readable route alias and exposes the identical catalogue from public and staff `ops` endpoints. Do not add string-enum converters, accept legacy string kind codes, reorder/reuse values, or duplicate kind metadata in clients.
 - Spec v1.16 §4.18 / CONS-01–07 and Core #20 govern consent. Legal documents live in the database; the obsolete `CustomerConsent`/`ConsentType` models and `customer_consents` rows are removed by migration `20260908181115_0_0_7_CustomerConsents`. Do not retain, import or fabricate legacy evidence; customers without versioned events have missing consent. Every history event identifies its document and content digest. Preserve exact source bytes and frozen canonical HTML/digests. Only Administrator may manage legal documents. Do not expose a general-purpose staff endpoint for browsing a customer's consent history or let staff accept/edit consent evidence.
@@ -146,7 +151,7 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Return the withdrawal queue and legal-document audit through the shared bounded `PagedResult<T>` envelope. Validate page/page size, filter and single-sort allowlists in Core; compute filtered totals and keep filtering, deterministic ordering, `Skip`/`Take` and field projection in `IQueryable`. Never log list searches or customer/document identifiers.
 - Integration tests require explicit `SARAFAN_TEST_POSTGRES` pointing to disposable storage and disable exchange-rate and consent-retention workers. Migration round trips use separately created test databases, so they cannot destroy another fixture's data.
 
-- Consent decisions must be explicit; missing `decision` never defaults to grant. Validate registration document versions/receipts before phone normalization or verification, and revalidate affected versions after persistence before committing consent/onboarding transactions. Agreement mismatches identify the agreement artifact. Map only customer-insert conflicts to `account_exists`; consent persistence failures retain server-error semantics.
+- Consent decisions must be explicit; missing `decision` never defaults to grant. For code requests, consume the IP quota, normalize the phone, consume the hashed-phone quota, re-resolve the flow and validate exactly the required documents before provider dispatch. For verification, validate the code before receipt/account requirement disclosure, then revalidate affected versions after persistence before commit. Agreement mismatches identify the agreement artifact; consent persistence failures retain server-error semantics.
 - Browser association provenance is the validated customer JWT `jti` (`AuthenticationTokenId`), identifying the exact authenticated access session that first observed a receipt. It is not an authentication credential, never comes from a request body, is not logged or exposed by customer history, and is retained with the association independently of token expiry. Preserve the first observation on retries.
 - Require `EvidenceDays >= CookieDays`. Verify duplicate decisions, single-use onboarding and competing document creations with concurrent operations in separate DbContexts on disposable databases; sequential retry tests alone do not prove the locking policy.
 
@@ -156,4 +161,4 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 - Disposing consent evidence must atomically retain a compact replay-key digest for documents that are still current; remove these tombstones after supersession, when stale-version validation rejects old grants. Tombstones contain no decision, categories, customer ID or browser receipt. Cookie idempotency keys are unique across browser subjects to prevent replay after storage loss; customer keys remain subject-scoped.
 
-- Consume the public authentication IP quota before consent/receipt database lookups or phone normalization. Keep consent validation before phone processing, and phone quotas before onboarding persistence. Verify through the API that withdrawal-request creation and processing leave consent history/status and protected-write access unchanged.
+- Consume every public authentication IP quota before receipt/account database lookups or phone normalization, and consume hashed canonical-phone quotas before receipt persistence or verification. Verify through the API that withdrawal-request creation and processing leave consent history/status and protected-write access unchanged.

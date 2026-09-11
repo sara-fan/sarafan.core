@@ -11,5 +11,7 @@ public sealed class ServiceException(int statusCode, string code) : Exception(co
     public int StatusCode { get; } = statusCode;
     public Guid? RequiredDocumentId { get; init; }
     public LegalDocumentKind? ConsentKind { get; init; }
+    public AuthenticationFlowStep? NextStep { get; init; }
+    public IReadOnlyList<LegalDocumentKind>? RequiredDocumentKinds { get; init; }
     public string Code { get; } = code;
 }

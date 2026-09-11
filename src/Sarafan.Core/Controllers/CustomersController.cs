@@ -73,9 +73,7 @@ public sealed class CustomersController(
         return await consents.WithPersonalDataAsync<ActionResult<CustomerDto>>(customerId, async () =>
         {
             Apply(customer.Profile, request);
-            customer.State = IsComplete(customer.Profile)
-                ? CustomerState.Complete
-                : CustomerState.Preliminary;
+            customer.State = CustomerProfileState.Evaluate(customer.Profile);
             customer.UpdatedAt = timeProvider.GetUtcNow();
             await database.SaveChangesAsync(cancellationToken);
             var hasPhoto = await database.CustomerPhotos
@@ -192,15 +190,6 @@ public sealed class CustomersController(
         profile.City = Normalize(request.City);
         profile.Address = Normalize(request.Address);
     }
-
-    private static bool IsComplete(CustomerProfile profile) =>
-        !string.IsNullOrWhiteSpace(profile.LastName)
-        && !string.IsNullOrWhiteSpace(profile.FirstName)
-        && !string.IsNullOrWhiteSpace(profile.Email)
-        && !string.IsNullOrWhiteSpace(profile.Inn)
-        && !string.IsNullOrWhiteSpace(profile.PostalCode)
-        && !string.IsNullOrWhiteSpace(profile.City)
-        && !string.IsNullOrWhiteSpace(profile.Address);
 
     private static string SafeFileName(string fileName)
     {

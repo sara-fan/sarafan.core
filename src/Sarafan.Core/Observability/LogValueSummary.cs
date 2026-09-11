@@ -27,8 +27,9 @@ internal static class LogValueSummary
     {
         null => "null",
         CancellationToken token => $"cancellation requested={token.IsCancellationRequested}",
-        VerifyCodeRequest request => $"VerifyCodeRequest(purpose={Purpose(request.Purpose)}; phone/code/consents=[redacted])",
-        RequestCodeRequest request => $"RequestCodeRequest(purpose={Purpose(request.Purpose)}; phone=[redacted])",
+        VerifyCodeRequest => "VerifyCodeRequest(phone/code/receipt=[redacted])",
+        RequestCodeRequest => "RequestCodeRequest(phone/consents=[redacted])",
+        PhoneResolveRequest => "PhoneResolveRequest(phone=[redacted])",
         BackofficeLoginRequest => "BackofficeLoginRequest(email/password=[redacted])",
         BackofficeUserCreateRequest => "BackofficeUserCreateRequest(identity/password/roles=[redacted])",
         BackofficeUserUpdateRequest => "BackofficeUserUpdateRequest(identity/password/roles=[redacted])",
@@ -62,12 +63,5 @@ internal static class LogValueSummary
         OperationLogging.OperationCompleted => "completed; no return value",
         bool result => result ? "true" : "false",
         _ => "[redacted]"
-    };
-
-    private static string Purpose(string? purpose) => purpose?.Trim().ToLowerInvariant() switch
-    {
-        "register" => "register",
-        "login" => "login",
-        _ => "other"
     };
 }

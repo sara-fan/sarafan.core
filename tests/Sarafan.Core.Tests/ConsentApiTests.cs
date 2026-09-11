@@ -139,14 +139,17 @@ public sealed class ConsentApiTests
     }
 
     [Test]
-    public async Task RegistrationValidatesConsentBeforePhoneNormalizationOrVerification()
+    public async Task AuthenticationValidatesPhoneBeforeTheResolvedConsentPayload()
     {
-        var request = await ConsentTestData.Request(_client, "not-a-phone");
+        var invalidRequest = await ConsentTestData.Request(_client, "not-a-phone");
+        using var invalidPhone = await _client.PostAsJsonAsync("/api/v1/auth/code/request", invalidRequest);
+        Assert.That((await invalidPhone.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_phone"));
+
+        var request = await ConsentTestData.Request(_client, "+79996" + Random.Shared.Next(100000, 999999));
         var pd = request.PersonalDataConsent!;
         using var omitted = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new
         {
             request.Phone,
-            request.Purpose,
             request.TermsAccepted,
             request.TermsDocumentId,
             personalDataConsent = new { pd.DocumentId, pd.ContentHash, pd.IdempotencyKey }
@@ -155,11 +158,8 @@ public sealed class ConsentApiTests
         request.PersonalDataConsent!.DocumentId = Guid.NewGuid();
         using var stale = await _client.PostAsJsonAsync("/api/v1/auth/code/request", request);
         Assert.That((await stale.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("consent_version_changed"));
-        request.PersonalDataConsent.DocumentId = (await Current(LegalDocumentKind.PersonalDataConsent)).Id;
-        using var invalidPhone = await _client.PostAsJsonAsync("/api/v1/auth/code/request", request);
-        Assert.That((await invalidPhone.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_phone"));
-        using var invalidReceipt = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new { phone = "not-a-phone", purpose = "register", code = "0000", onboardingToken = "unknown" });
-        Assert.That((await invalidReceipt.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("onboarding_consent_expired"));
+        using var invalidReceipt = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new { phone = "not-a-phone", code = "0000", onboardingToken = "unknown" });
+        Assert.That((await invalidReceipt.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_phone"));
     }
 
     [TestCase(null)]

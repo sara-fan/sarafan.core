@@ -31,12 +31,17 @@ The v1 API status endpoint is <http://localhost:5080/api/v1/status/status> when 
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
+| `GET` | `/api/v1/auth/ops` | Read the stable numeric combined-authentication steps and Core-owned names/aliases |
+| `POST` | `/api/v1/auth/phone/resolve` | Resolve a phone to code, agreement, or registration requirements |
 | `POST` | `/api/v1/auth/code/request` | Request a registration or login code |
 | `POST` | `/api/v1/auth/code/verify` | Register or log in and issue an access/refresh session |
 | `POST` | `/api/v1/auth/refresh` | Rotate the HttpOnly refresh cookie and issue a new access token |
 | `POST` | `/api/v1/auth/logout` | Revoke the refresh-token family and clear the cookie |
+| `GET` | `/api/v1/customers/ops` | Read stable numeric customer states and Core-owned names/aliases |
 | `GET`, `PUT` | `/api/v1/customers/me` | Read or update the authenticated customer profile |
 | `GET`, `PUT`, `DELETE` | `/api/v1/customers/me/photo` | Manage a JPEG, PNG, or WebP profile photo up to 5 MiB |
+
+The customer dialog is phone-first: Core chooses the next step and returns the exact legal-document kinds required at that moment. Unknown and disabled accounts enter registration; reactivation preserves the customer record and profile but revokes all older sessions. `AuthenticationFlowStep` and `CustomerState` are numeric API enums exposed through Ops endpoints and are not database lookup tables.
 
 ### Back-office identity
 
