@@ -72,17 +72,17 @@ public sealed class AuthenticationService(
         CheckAttemptLimit($"request:ip:{remoteAddress}", 20);
         var phone = NormalizePhone(request.Phone);
         CheckAttemptLimit($"request:phone:{PhoneAttemptKey(phone)}", 3);
-        var resolution = await ResolveCoreAsync(phone, cancellationToken);
+        var receipt = await ConsentTransaction.Run(database, async () =>
+        {
+            var resolution = await ResolveCoreAsync(phone, cancellationToken);
+            if (resolution.NextStep == AuthenticationFlowStep.Code)
+            {
+                if (HasConsentPayload(request)) throw InvalidAuthenticationRequest();
+                return null;
+            }
 
-        string? receipt = null;
-        if (resolution.NextStep == AuthenticationFlowStep.Code)
-        {
-            if (HasConsentPayload(request)) throw InvalidAuthenticationRequest();
-        }
-        else
-        {
-            receipt = await consents.BeginAuthenticationAsync(phone, resolution, request, cancellationToken);
-        }
+            return await consents.BeginAuthenticationAsync(phone, resolution, request, cancellationToken);
+        }, cancellationToken);
 
         await codeProvider.RequestCodeAsync(phone, cancellationToken);
         return receipt;
@@ -100,8 +100,6 @@ public sealed class AuthenticationService(
 
         if (string.IsNullOrWhiteSpace(request.OnboardingToken))
         {
-            var resolution = await ResolveCoreAsync(phone, cancellationToken);
-            if (resolution.NextStep != AuthenticationFlowStep.Code) throw RequirementsChanged(resolution);
             return await LoginAsync(phone, remoteAddress, userAgent, cancellationToken);
         }
 
@@ -192,6 +190,7 @@ public sealed class AuthenticationService(
         var tokenHash = JwtTokenService.HashRefreshToken(rawToken);
         var now = timeProvider.GetUtcNow();
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await ConsentTransaction.Lock(database, cancellationToken);
 
         var current = await database.RefreshSessions.Include(item => item.Customer).ThenInclude(item => item.Profile)
             .SingleOrDefaultAsync(item => item.TokenHash == tokenHash, cancellationToken);
@@ -254,16 +253,30 @@ public sealed class AuthenticationService(
     private async Task<AuthenticationSession> LoginAsync(
         string phone, string remoteAddress, string? userAgent, CancellationToken cancellationToken)
     {
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await ConsentTransaction.Lock(database, cancellationToken);
+
+        var resolution = await ResolveCoreAsync(phone, cancellationToken);
+        if (resolution.NextStep != AuthenticationFlowStep.Code) throw RequirementsChanged(resolution);
+
         var customer = await database.Customers.Include(item => item.Profile)
             .SingleOrDefaultAsync(item => item.Phone == phone, cancellationToken);
-        if (customer is null || customer.State == CustomerState.Disabled)
-            throw new ServiceException(StatusCodes.Status401Unauthorized, "login_failed");
+        if (customer is null
+            || customer.State == CustomerState.Disabled
+            || resolution.TargetCustomerId != customer.Id)
+            throw RequirementsChanged(await ResolveCoreAsync(phone, cancellationToken));
 
         var now = timeProvider.GetUtcNow();
         var rawRefreshToken = JwtTokenService.CreateRefreshToken();
         database.RefreshSessions.Add(CreateRefreshSession(
             customer, Guid.NewGuid(), JwtTokenService.HashRefreshToken(rawRefreshToken), remoteAddress, userAgent, now));
         await database.SaveChangesAsync(cancellationToken);
+
+        var atCommit = await ResolveCoreAsync(phone, cancellationToken);
+        if (atCommit.NextStep != AuthenticationFlowStep.Code || atCommit.TargetCustomerId != customer.Id)
+            throw RequirementsChanged(atCommit);
+
+        await transaction.CommitAsync(cancellationToken);
         var hasPhoto = await database.CustomerPhotos.AnyAsync(item => item.CustomerId == customer.Id, cancellationToken);
         return CreateSession(customer, hasPhoto, rawRefreshToken);
     }

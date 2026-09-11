@@ -85,6 +85,16 @@ public sealed class ConsentReviewTests
         return new(builder.Options);
     }
     private ConsentService Consents(AppDbContext database) => new(database, _clock, Options.Create(new ConsentOptions()), _auth, NullLogger<ConsentService>.Instance);
+    private AuthenticationService Authentication(AppDbContext database) => new(
+        database,
+        new PhoneNormalizer(),
+        new PhoneSuffixVerificationCodeProvider(),
+        new VerificationAttemptStore(_clock),
+        new JwtTokenService(_auth, _clock, NullLogger<JwtTokenService>.Instance),
+        _auth,
+        _clock,
+        Consents(database),
+        NullLogger<AuthenticationService>.Instance);
     private LegalDocumentService Documents(AppDbContext database) => new(database, _clock, NullLogger<LegalDocumentService>.Instance);
     private Task<LegalDocumentDto> CreateDocument(AppDbContext database, LegalDocumentKind kind, DateOnly? effectiveDate = null) => Documents(database).CreateAsync(
         new()
@@ -169,6 +179,191 @@ public sealed class ConsentReviewTests
         Assert.That(results, Is.EquivalentTo(new[] { "success", "legal_document_effective_date_conflict" }));
         await using var check = Database();
         Assert.That(await check.LegalDocuments.CountAsync(x => x.EffectiveAt > _clock.Now), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task DirectLoginWaitsForAgreementChangeAndRejectsStaleRequirements()
+    {
+        await using (var setup = Database())
+        {
+            var receipt = await Onboarding(setup);
+            await Consents(setup).CompleteOnboardingAsync(await setup.Customers.SingleAsync(), receipt, default);
+        }
+
+        await using var documentDatabase = Database();
+        await using var documentTransaction = await documentDatabase.Database.BeginTransactionAsync();
+        await ConsentTransaction.Lock(documentDatabase, default);
+        var effectiveDate = ConsentCalendar.LocalDate(_clock.Now).AddDays(1);
+        await CreateDocument(documentDatabase, LegalDocumentKind.UserAgreement, effectiveDate);
+        await documentDatabase.SaveChangesAsync();
+        _clock.Now = ConsentCalendar.Midnight(effectiveDate);
+
+        await using var loginDatabase = Database();
+        var login = Authentication(loginDatabase).VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = Phone[^4..]
+        }, "login-test", null, default);
+
+        try
+        {
+            Assert.That(await Task.WhenAny(login, Task.Delay(200)), Is.Not.SameAs(login),
+                "Direct login must wait for the consent transaction lock.");
+        }
+        finally
+        {
+            await documentTransaction.CommitAsync();
+        }
+
+        var error = Assert.ThrowsAsync<ServiceException>(async () => await login);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(error!.Code, Is.EqualTo("authentication_requirements_changed"));
+            Assert.That(error.NextStep, Is.EqualTo(AuthenticationFlowStep.Agreement));
+            Assert.That(error.RequiredDocumentKinds, Is.EqualTo(new[] { LegalDocumentKind.UserAgreement }));
+        }
+        await using var check = Database();
+        Assert.That(await check.RefreshSessions.CountAsync(), Is.Zero);
+    }
+
+    [Test]
+    public async Task DirectLoginCodeRequestDoesNotCreateAnotherConsentReceipt()
+    {
+        await using var database = Database();
+        var onboarding = await Onboarding(database);
+        await Consents(database).CompleteOnboardingAsync(
+            await database.Customers.SingleAsync(), onboarding, default);
+
+        var receipt = await Authentication(database).RequestCodeAsync(
+            new RequestCodeRequest { Phone = Phone }, "code-request-test", default);
+
+        Assert.That(receipt, Is.Null);
+        Assert.That(await database.ConsentOnboarding.CountAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task DirectLoginRejectsAgreementThatBecomesEffectiveBeforeCommit()
+    {
+        DateTimeOffset replacementEffectiveAt;
+        await using (var setup = Database())
+        {
+            var onboarding = await Onboarding(setup);
+            await Consents(setup).CompleteOnboardingAsync(
+                await setup.Customers.SingleAsync(), onboarding, default);
+            var replacement = await CreateDocument(setup, LegalDocumentKind.UserAgreement,
+                ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
+            replacementEffectiveAt = replacement.EffectiveAt;
+        }
+        _clock.Now = replacementEffectiveAt.AddMinutes(-1);
+
+        var pause = new PauseAfterSave();
+        await using var loginDatabase = Database(pause);
+        var login = Authentication(loginDatabase).VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = Phone[^4..]
+        }, "login-commit-test", null, default);
+        await pause.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        _clock.Now = replacementEffectiveAt;
+        pause.Continue.TrySetResult();
+
+        var error = Assert.ThrowsAsync<ServiceException>(async () =>
+            await login.WaitAsync(TimeSpan.FromSeconds(5)));
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(error!.Code, Is.EqualTo("authentication_requirements_changed"));
+            Assert.That(error.NextStep, Is.EqualTo(AuthenticationFlowStep.Agreement));
+            Assert.That(error.RequiredDocumentKinds, Is.EqualTo(new[] { LegalDocumentKind.UserAgreement }));
+        }
+        await using var check = Database();
+        Assert.That(await check.RefreshSessions.CountAsync(), Is.Zero);
+    }
+
+    [Test]
+    public async Task RefreshWaitsForReactivationAndCannotRevokeItsNewSession()
+    {
+        var oldRawToken = JwtTokenService.CreateRefreshToken();
+        string receipt;
+        await using (var setup = Database())
+        {
+            var customer = await setup.Customers.SingleAsync();
+            customer.State = CustomerState.Disabled;
+            setup.RefreshSessions.Add(new RefreshSession
+            {
+                Customer = customer,
+                FamilyId = Guid.NewGuid(),
+                TokenHash = JwtTokenService.HashRefreshToken(oldRawToken),
+                CreatedAt = _clock.Now,
+                ExpiresAt = _clock.Now.AddDays(30)
+            });
+            await setup.SaveChangesAsync();
+            receipt = (await Authentication(setup).RequestCodeAsync(new RequestCodeRequest
+            {
+                Phone = Phone,
+                TermsAccepted = true,
+                TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id,
+                PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent)
+            }, "reactivation-test", default))!;
+        }
+
+        var pause = new PauseAfterSave();
+        await using var reactivationDatabase = Database(pause);
+        await using var refreshDatabase = Database();
+        var reactivation = Authentication(reactivationDatabase).VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = Phone[^4..],
+            OnboardingToken = receipt
+        }, "reactivation-test", null, default);
+        await pause.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var refresh = Authentication(refreshDatabase).RefreshAsync(
+            oldRawToken, "refresh-test", null, default);
+        try
+        {
+            Assert.That(await Task.WhenAny(refresh, Task.Delay(200)), Is.Not.SameAs(refresh),
+                "Refresh must wait while reactivation holds the consent transaction lock.");
+        }
+        finally
+        {
+            pause.Continue.TrySetResult();
+        }
+
+        var reactivated = await reactivation.WaitAsync(TimeSpan.FromSeconds(5));
+        var refreshError = Assert.ThrowsAsync<ServiceException>(async () => await refresh);
+        Assert.That(refreshError!.Code, Is.EqualTo("invalid_refresh_token"));
+
+        await using var check = Database();
+        var activeSessions = await check.RefreshSessions.Where(item => item.RevokedAt == null).ToArrayAsync();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(activeSessions, Has.Length.EqualTo(1));
+            Assert.That(activeSessions[0].TokenHash,
+                Is.EqualTo(JwtTokenService.HashRefreshToken(reactivated.RefreshToken)));
+            Assert.That((await check.Customers.SingleAsync()).TokenVersion, Is.EqualTo(1));
+        }
+    }
+
+    [Test]
+    public async Task AuthenticationRequestReportsCurrentAgreementForStaleDocumentId()
+    {
+        await using var database = Database();
+        var error = Assert.ThrowsAsync<ServiceException>(() => Authentication(database).RequestCodeAsync(
+            new RequestCodeRequest
+            {
+                Phone = Phone,
+                TermsAccepted = true,
+                TermsDocumentId = Guid.NewGuid()
+            }, "agreement-test", default));
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(error!.Code, Is.EqualTo("consent_version_changed"));
+            Assert.That(error.RequiredDocumentId, Is.EqualTo(_documents[LegalDocumentKind.UserAgreement].Id));
+            Assert.That(error.ConsentKind, Is.EqualTo(LegalDocumentKind.UserAgreement));
+        }
+        Assert.That(await database.ConsentOnboarding.CountAsync(), Is.Zero);
     }
 
     [TestCase("personal-data-consent")]
@@ -535,5 +730,21 @@ public sealed class ConsentReviewTests
     {
         public override ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
         { action(); return ValueTask.FromResult(result); }
+    }
+
+    private sealed class PauseAfterSave : SaveChangesInterceptor
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<int> SavedChangesAsync(
+            SaveChangesCompletedEventData eventData,
+            int result,
+            CancellationToken cancellationToken = default)
+        {
+            Entered.TrySetResult();
+            await Continue.Task.WaitAsync(cancellationToken);
+            return result;
+        }
     }
 }

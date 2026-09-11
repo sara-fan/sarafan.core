@@ -74,6 +74,17 @@ public sealed class AuthenticationContractTests
     }
 
     [Test]
+    public void VerificationProviderMustExplicitlyOptInToProductionUse()
+    {
+        IVerificationCodeProvider provider = new UnclassifiedVerificationCodeProvider();
+        Assert.That(provider.IsProductionReady, Is.False);
+        Assert.That(new VerificationCodeReleaseGate(provider, Options.Create(new BackofficeBootstrapOptions
+        {
+            RealOrdersEnabled = true
+        })).EnsureAllowed, Throws.TypeOf<InvalidOperationException>());
+    }
+
+    [Test]
     public void CustomerAccessTokenCarriesTheCurrentTokenVersion()
     {
         var service = new JwtTokenService(
@@ -110,5 +121,12 @@ public sealed class AuthenticationContractTests
             City = "Москва",
             Address = "ул. Тестовая, 1"
         }), Is.EqualTo(CustomerState.Complete));
+    }
+
+    private sealed class UnclassifiedVerificationCodeProvider : IVerificationCodeProvider
+    {
+        public Task RequestCodeAsync(string phone, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<bool> VerifyCodeAsync(string phone, string? code, CancellationToken cancellationToken)
+            => Task.FromResult(false);
     }
 }

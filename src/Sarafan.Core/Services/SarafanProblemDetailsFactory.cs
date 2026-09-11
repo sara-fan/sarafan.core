@@ -99,7 +99,7 @@ public sealed class SarafanProblemDetailsFactory(
             ["invalid_code"] = new(
                 StatusCodes.Status401Unauthorized,
                 "Некорректный код подтверждения",
-                "Код подтверждения неверен или срок его действия истёк."),
+                "Код подтверждения неверен."),
             ["invalid_access_token"] = new(
                 StatusCodes.Status401Unauthorized,
                 "Недействительный токен доступа",

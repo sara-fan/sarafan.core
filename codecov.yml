@@ -1,0 +1,17 @@
+# Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+# All rights reserved.
+# This file is a part of Klinok application
+
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        target: 90%
+        informational: false
+
+
+# When modifying this file, please validate using
+# curl -X POST --data-binary @codecov.yml https://codecov.io/validate

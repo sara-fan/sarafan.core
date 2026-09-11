@@ -6,7 +6,7 @@ namespace Sarafan.Core.Authentication;
 
 public interface IVerificationCodeProvider
 {
-    bool IsProductionReady => true;
+    bool IsProductionReady => false;
     Task RequestCodeAsync(string phone, CancellationToken cancellationToken);
     Task<bool> VerifyCodeAsync(string phone, string? code, CancellationToken cancellationToken);
 }

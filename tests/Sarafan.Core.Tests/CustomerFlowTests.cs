@@ -301,6 +301,59 @@ public sealed class CustomerFlowTests
     }
 
     [Test]
+    public async Task AgreementFlow_AcceptsCurrentDocumentAndIssuesSession()
+    {
+        var phone = NextPhone();
+        int customerId;
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var customer = new Customer { Phone = phone, Profile = new CustomerProfile() };
+            database.Customers.Add(customer);
+            await database.SaveChangesAsync();
+            customerId = customer.Id;
+        }
+
+        var agreement = (await _client.GetFromJsonAsync<CurrentDocumentDto>(
+            $"/api/v1/legal/current/{(int)LegalDocumentKind.UserAgreement}"))!.Document!;
+        using var codeRequest = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new
+        {
+            phone,
+            termsAccepted = true,
+            termsDocumentId = agreement.Id
+        });
+        var receipt = await codeRequest.Content.ReadFromJsonAsync<CodeRequestDto>();
+
+        using var verify = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
+        {
+            phone,
+            code = VerificationCode(phone),
+            onboardingToken = receipt!.OnboardingToken
+        });
+        var session = await verify.Content.ReadFromJsonAsync<AuthenticationSessionDto>();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(codeRequest.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
+            Assert.That(receipt.OnboardingToken, Is.Not.Empty);
+            Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(session?.Customer.Id, Is.EqualTo(customerId));
+            Assert.That(RefreshCookie(verify), Does.StartWith("sarafan.refresh="));
+        }
+
+        await using var verificationScope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var consent = await verificationDatabase.ConsentEvents.SingleAsync(item =>
+            item.CustomerId == customerId && item.Kind == LegalDocumentKind.UserAgreement);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(consent.DocumentId, Is.EqualTo(agreement.Id));
+            Assert.That(consent.Decision, Is.EqualTo("grant"));
+            Assert.That(consent.Source, Is.EqualTo("authentication"));
+        }
+    }
+
+    [Test]
     public async Task RegistrationReceipt_RejectsAnAccountCreatedAfterResolution()
     {
         var phone = NextPhone();

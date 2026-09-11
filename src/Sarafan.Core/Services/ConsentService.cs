@@ -44,8 +44,8 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
 
             if (requiresAgreement)
             {
-                if (!request.TermsAccepted || request.TermsDocumentId != agreement.Id)
-                    throw InvalidAuthenticationRequest();
+                if (!request.TermsAccepted) throw InvalidAuthenticationRequest();
+                if (request.TermsDocumentId != agreement.Id) throw Changed(agreement);
             }
             else if (request.TermsAccepted || request.TermsDocumentId.HasValue)
             {
