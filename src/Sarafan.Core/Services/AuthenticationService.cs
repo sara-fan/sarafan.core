@@ -72,17 +72,29 @@ public sealed class AuthenticationService(
         CheckAttemptLimit($"request:ip:{remoteAddress}", 20);
         var phone = NormalizePhone(request.Phone);
         CheckAttemptLimit($"request:phone:{PhoneAttemptKey(phone)}", 3);
-        var receipt = await ConsentTransaction.Run(database, async () =>
-        {
-            var resolution = await ResolveCoreAsync(phone, cancellationToken);
-            if (resolution.NextStep == AuthenticationFlowStep.Code)
-            {
-                if (HasConsentPayload(request)) throw InvalidAuthenticationRequest();
-                return null;
-            }
 
-            return await consents.BeginAuthenticationAsync(phone, resolution, request, cancellationToken);
-        }, cancellationToken);
+        var resolution = await ResolveCoreAsync(phone, cancellationToken);
+        string? receipt;
+        if (resolution.NextStep == AuthenticationFlowStep.Code)
+        {
+            if (HasConsentPayload(request)) throw InvalidAuthenticationRequest();
+            receipt = null;
+        }
+        else
+        {
+            receipt = await ConsentTransaction.Run(database, async () =>
+            {
+                var lockedResolution = await ResolveCoreAsync(phone, cancellationToken);
+                if (lockedResolution.NextStep == AuthenticationFlowStep.Code)
+                {
+                    if (HasConsentPayload(request)) throw InvalidAuthenticationRequest();
+                    return null;
+                }
+
+                return await consents.BeginAuthenticationAsync(
+                    phone, lockedResolution, request, cancellationToken);
+            }, cancellationToken);
+        }
 
         await codeProvider.RequestCodeAsync(phone, cancellationToken);
         return receipt;
@@ -113,6 +125,8 @@ public sealed class AuthenticationService(
         await ConsentTransaction.Lock(database, cancellationToken);
 
         var receipt = await consents.ReadAuthenticationReceiptAsync(receiptToken, phone, cancellationToken);
+        if (receipt.TargetCustomerId is { } targetCustomerId)
+            await ConsentTransaction.LockCustomer(database, targetCustomerId, cancellationToken);
         var customer = await database.Customers
             .Include(item => item.Profile)
             .SingleOrDefaultAsync(item => item.Phone == phone, cancellationToken);
@@ -188,9 +202,16 @@ public sealed class AuthenticationService(
         string rawToken, string remoteAddress, string? userAgent, CancellationToken cancellationToken)
     {
         var tokenHash = JwtTokenService.HashRefreshToken(rawToken);
-        var now = timeProvider.GetUtcNow();
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        await ConsentTransaction.Lock(database, cancellationToken);
+
+        var customerId = await database.RefreshSessions.AsNoTracking()
+            .Where(item => item.TokenHash == tokenHash)
+            .Select(item => (int?)item.CustomerId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (customerId is null) throw InvalidRefreshToken();
+
+        await ConsentTransaction.LockCustomer(database, customerId.Value, cancellationToken);
+        var now = timeProvider.GetUtcNow();
 
         var current = await database.RefreshSessions.Include(item => item.Customer).ThenInclude(item => item.Profile)
             .SingleOrDefaultAsync(item => item.TokenHash == tokenHash, cancellationToken);

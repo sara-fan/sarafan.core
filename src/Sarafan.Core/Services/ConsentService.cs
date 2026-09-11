@@ -124,9 +124,19 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
         if (row.PersonalDataDocumentId is { } personalDataDocumentId)
         {
             var personalData = await database.LegalDocuments.SingleAsync(item => item.Id == personalDataDocumentId, token);
-            database.ConsentEvents.Add(NewEvent(
-                CustomerKey(customer.Id), customer.Id, personalData, "grant", [], source,
-                row.PersonalDataIdempotencyKey ?? throw InvalidAuthenticationRequest(), row.At));
+            var request = new ConsentDecisionRequest
+            {
+                DocumentId = personalData.Id,
+                ContentHash = personalData.ContentHash,
+                Decision = "grant",
+                Categories = [],
+                IdempotencyKey = row.PersonalDataIdempotencyKey ?? throw InvalidAuthenticationRequest()
+            };
+            var subject = CustomerKey(customer.Id);
+            if (await FindRetry(subject, request, LegalDocumentKind.PersonalDataConsent, token) is null)
+                database.ConsentEvents.Add(NewEvent(
+                    subject, customer.Id, personalData, request.Decision, request.Categories, source,
+                    request.IdempotencyKey, row.At));
         }
 
         row.UsedAt = clock.GetUtcNow();
