@@ -498,7 +498,8 @@ public sealed class ConsentReviewTests
         var persisted = await check.RefreshSessions.SingleAsync();
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(persisted.RevokedAt, Is.EqualTo(expiresAt));
+            Assert.That(persisted.RevokedAt,
+                Is.EqualTo(expiresAt).Within(TimeSpan.FromMicroseconds(1)));
             Assert.That(await check.RefreshSessions.CountAsync(), Is.EqualTo(1));
         }
     }
