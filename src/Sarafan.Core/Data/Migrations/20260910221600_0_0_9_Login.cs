@@ -151,7 +151,7 @@ namespace Sarafan.Core.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("DELETE FROM consent_onboarding WHERE flow = 1;");
+            migrationBuilder.Sql("DELETE FROM consent_onboarding WHERE flow <> 2 OR NOT terms_accepted;");
 
             migrationBuilder.DropForeignKey(
                 name: "FK_consent_onboarding_customers_target_customer_id",
