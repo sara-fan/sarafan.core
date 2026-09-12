@@ -1,0 +1,18 @@
+# Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+# All rights reserved.
+# This file is a part of the Sarafan application
+
+coverage:
+  status:
+    project:
+      default:
+        target: 95%
+        informational: false
+    patch:
+      default:
+        target: 95%
+        informational: false
+
+
+# When modifying this file, please validate using
+# curl -X POST --data-binary @codecov.yml https://codecov.io/validate

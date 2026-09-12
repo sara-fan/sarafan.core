@@ -19,6 +19,137 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
 {
     private ConsentOptions Settings => options.Value;
 
+    internal async Task<bool> HasCurrentGrantAsync(int customerId, LegalDocumentKind kind, CancellationToken token)
+    {
+        var now = clock.GetUtcNow();
+        var document = await LegalDocumentService.CurrentEntity(database, kind, now, token);
+        if (document is null) return false;
+        var last = await database.ConsentEvents.AsNoTracking()
+            .Where(item => item.CustomerId == customerId && item.Kind == kind)
+            .OrderByDescending(item => item.Id)
+            .FirstOrDefaultAsync(token);
+        return Status(last, document, now) == "current";
+    }
+
+    internal Task<string> BeginAuthenticationAsync(
+        string phone,
+        AuthenticationResolution resolution,
+        RequestCodeRequest request,
+        CancellationToken token)
+        => Run(nameof(BeginAuthenticationAsync), () => ConsentTransaction.Run(database, async () =>
+        {
+            var requiresAgreement = resolution.RequiredDocumentKinds.Contains(LegalDocumentKind.UserAgreement);
+            var requiresPersonalData = resolution.RequiredDocumentKinds.Contains(LegalDocumentKind.PersonalDataConsent);
+            var agreement = await RequireDocument(LegalDocumentKind.UserAgreement, token);
+
+            if (requiresAgreement)
+            {
+                if (!request.TermsAccepted) throw InvalidAuthenticationRequest();
+                if (request.TermsDocumentId != agreement.Id) throw Changed(agreement);
+            }
+            else if (request.TermsAccepted || request.TermsDocumentId.HasValue)
+            {
+                throw InvalidAuthenticationRequest();
+            }
+
+            LegalDocument? personalData = null;
+            if (requiresPersonalData)
+            {
+                if (request.PersonalDataConsent is null) throw InvalidAuthenticationRequest();
+                personalData = await ValidateDecision(LegalDocumentKind.PersonalDataConsent, request.PersonalDataConsent, token);
+                if (request.PersonalDataConsent.Decision != "grant") throw InvalidAuthenticationRequest();
+            }
+            else if (request.PersonalDataConsent is not null)
+            {
+                throw InvalidAuthenticationRequest();
+            }
+
+            var raw = JwtTokenService.CreateRefreshToken();
+            var now = clock.GetUtcNow();
+            database.ConsentOnboarding.Add(new ConsentOnboarding
+            {
+                TokenHash = JwtTokenService.HashRefreshToken(raw),
+                PhoneHash = PhoneHash(phone),
+                Flow = resolution.NextStep,
+                TargetCustomerId = resolution.TargetCustomerId,
+                PersonalDataDocumentId = personalData?.Id,
+                TermsDocumentId = agreement.Id,
+                PersonalDataHash = personalData?.ContentHash,
+                TermsHash = agreement.ContentHash,
+                TermsAccepted = requiresAgreement,
+                PersonalDataIdempotencyKey = personalData is null ? null : request.PersonalDataConsent!.IdempotencyKey,
+                TermsIdempotencyKey = requiresAgreement ? Guid.NewGuid() : null,
+                At = now,
+                ExpiresAt = now.AddMinutes(Settings.OnboardingMinutes)
+            });
+            return raw;
+        }, token), token, request);
+
+    internal async Task<ConsentOnboarding> ReadAuthenticationReceiptAsync(string raw, string phone, CancellationToken token)
+    {
+        var row = await ReadOnboarding(raw, token);
+        if (row.PhoneHash != PhoneHash(phone))
+            throw new ServiceException(400, "onboarding_consent_expired");
+        return row;
+    }
+
+    internal async Task ValidateAuthenticationReceiptVersionsAsync(ConsentOnboarding row, CancellationToken token)
+    {
+        var agreement = await RequireDocument(LegalDocumentKind.UserAgreement, token);
+        if (agreement.Id != row.TermsDocumentId || agreement.ContentHash != row.TermsHash) throw Changed(agreement);
+
+        if (row.PersonalDataDocumentId.HasValue)
+        {
+            var personalData = await RequireDocument(LegalDocumentKind.PersonalDataConsent, token);
+            if (personalData.Id != row.PersonalDataDocumentId || personalData.ContentHash != row.PersonalDataHash)
+                throw Changed(personalData);
+        }
+    }
+
+    internal async Task CompleteAuthenticationConsentsAsync(
+        Customer customer,
+        ConsentOnboarding row,
+        string source,
+        CancellationToken token)
+    {
+        await ValidateAuthenticationReceiptVersionsAsync(row, token);
+        if (row.TermsAccepted)
+        {
+            var agreement = await database.LegalDocuments.SingleAsync(item => item.Id == row.TermsDocumentId, token);
+            database.ConsentEvents.Add(NewEvent(
+                CustomerKey(customer.Id), customer.Id, agreement, "grant", [], source,
+                row.TermsIdempotencyKey ?? throw InvalidAuthenticationRequest(), row.At));
+        }
+
+        if (row.PersonalDataDocumentId is { } personalDataDocumentId)
+        {
+            var personalData = await database.LegalDocuments.SingleAsync(item => item.Id == personalDataDocumentId, token);
+            var request = new ConsentDecisionRequest
+            {
+                DocumentId = personalData.Id,
+                ContentHash = personalData.ContentHash,
+                Decision = "grant",
+                Categories = [],
+                IdempotencyKey = row.PersonalDataIdempotencyKey ?? throw InvalidAuthenticationRequest()
+            };
+            var subject = CustomerKey(customer.Id);
+            if (await FindRetry(subject, request, LegalDocumentKind.PersonalDataConsent, token) is null)
+                database.ConsentEvents.Add(NewEvent(
+                    subject, customer.Id, personalData, request.Decision, request.Categories, source,
+                    request.IdempotencyKey, row.At));
+        }
+
+        row.UsedAt = clock.GetUtcNow();
+    }
+
+    internal async Task ValidateAuthenticationAtCommitAsync(string raw, CancellationToken token)
+    {
+        var hash = JwtTokenService.HashRefreshToken(raw);
+        var row = await database.ConsentOnboarding.SingleAsync(item => item.TokenHash == hash, token);
+        if (row.ExpiresAt <= clock.GetUtcNow()) throw new ServiceException(400, "onboarding_consent_expired");
+        await ValidateAuthenticationReceiptVersionsAsync(row, token);
+    }
+
     public Task ValidateOnboardingDocumentsAsync(Guid termsId, ConsentDecisionRequest request, CancellationToken token)
         => Run(nameof(ValidateOnboardingDocumentsAsync), async () =>
         {
@@ -50,9 +181,14 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             {
                 TokenHash = JwtTokenService.HashRefreshToken(raw),
                 PhoneHash = PhoneHash(phone),
+                Flow = AuthenticationFlowStep.Registration,
                 PersonalDataDocumentId = document.Id,
                 TermsDocumentId = agreement.Id,
                 PersonalDataHash = document.ContentHash,
+                TermsHash = agreement.ContentHash,
+                TermsAccepted = true,
+                PersonalDataIdempotencyKey = request.IdempotencyKey,
+                TermsIdempotencyKey = Guid.NewGuid(),
                 At = now,
                 ExpiresAt = now.AddMinutes(Settings.OnboardingMinutes)
             });
@@ -66,8 +202,10 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
             var (current, terms) = await ValidateOnboardingVersions(row, token);
             if (row.PhoneHash != PhoneHash(customer.Phone)) throw new ServiceException(400, "onboarding_consent_expired");
             row.UsedAt = clock.GetUtcNow();
-            database.ConsentEvents.Add(NewEvent(CustomerKey(customer.Id), customer.Id, current, "grant", [], "registration", Guid.NewGuid(), row.At));
-            database.ConsentEvents.Add(NewEvent(CustomerKey(customer.Id), customer.Id, terms, "grant", [], "registration", Guid.NewGuid(), row.At));
+            database.ConsentEvents.Add(NewEvent(CustomerKey(customer.Id), customer.Id, current, "grant", [], "registration",
+                row.PersonalDataIdempotencyKey ?? Guid.NewGuid(), row.At));
+            database.ConsentEvents.Add(NewEvent(CustomerKey(customer.Id), customer.Id, terms, "grant", [], "registration",
+                row.TermsIdempotencyKey ?? Guid.NewGuid(), row.At));
             return true;
         }, token, () => ValidateOnboardingAtCommitAsync(raw!, token)), token, customer);
 
@@ -191,7 +329,7 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
         var current = await RequireDocument(LegalDocumentKind.PersonalDataConsent, token);
         if (current.Id != row.PersonalDataDocumentId || current.ContentHash != row.PersonalDataHash) throw Changed(current);
         var terms = await RequireDocument(LegalDocumentKind.UserAgreement, token);
-        if (terms.Id != row.TermsDocumentId) throw Changed(terms);
+        if (terms.Id != row.TermsDocumentId || terms.ContentHash != row.TermsHash) throw Changed(terms);
         return (current, terms);
     }
 
@@ -255,6 +393,7 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
 
     private static ServiceException Changed(LegalDocument document) => new(409, "consent_version_changed")
     { RequiredDocumentId = document.Id, ConsentKind = document.Kind };
+    private static ServiceException InvalidAuthenticationRequest() => new(400, "invalid_auth_request");
     private static void ValidateShape(ConsentDecisionRequest request, LegalDocumentKind kind)
     {
         if (request.IdempotencyKey == Guid.Empty || request.Decision is not ("grant" or "refuse" or "withdraw"))

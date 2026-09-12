@@ -52,7 +52,7 @@ public sealed class ProblemDetailsContractTests
     public async Task AutomaticValidation_ReturnsStructuredRussianProblem()
     {
         using var content = new StringContent(
-            """{"phone":"","purpose":"other"}""",
+            """{"phone":""}""",
             Encoding.UTF8,
             "application/json");
         using var response = await _client.PostAsync("/api/v1/auth/code/request", content);
@@ -69,9 +69,7 @@ public sealed class ProblemDetailsContractTests
             Assert.That(problem.TraceId, Is.Not.Empty);
             Assert.That(response.Content.Headers.ContentLanguage, Does.Contain("ru"));
             Assert.That(problem.Errors?.Keys, Does.Contain("phone"));
-            Assert.That(problem.Errors?.Keys, Does.Contain("purpose"));
             Assert.That(problem.Errors?["phone"], Does.Contain("Поле обязательно для заполнения."));
-            Assert.That(problem.Errors?["purpose"], Does.Contain("Укажите register или login."));
             Assert.That(problem.Errors?.SelectMany(item => item.Value),
                 Is.All.Matches<string>(value => Regex.IsMatch(value, "[А-Яа-яЁё]")));
         }
@@ -205,7 +203,7 @@ public sealed class ProblemDetailsContractTests
     public async Task DomainFailure_ReturnsCatalogProblemWithoutExceptionMessage()
     {
         using var content = new StringContent(
-            """{"phone":"+79990009999","purpose":"login","code":"2222"}""",
+            """{"phone":"+79990009999","code":"2222"}""",
             Encoding.UTF8,
             "application/json");
         using var response = await _client.PostAsync("/api/v1/auth/code/verify", content);
@@ -244,13 +242,13 @@ public sealed class ProblemDetailsContractTests
         using var invalidPhone = await _client.PostAsync(
             "/api/v1/auth/code/request",
             new StringContent(
-                """{"phone":"not-a-phone","purpose":"login"}""",
+                """{"phone":"not-a-phone"}""",
                 Encoding.UTF8,
                 "application/json"));
         using var failedLogin = await _client.PostAsync(
             "/api/v1/auth/code/verify",
             new StringContent(
-                $$"""{"phone":"{{phone}}","purpose":"login","code":"{{VerificationCode(phone)}}"}""",
+                $$"""{"phone":"{{phone}}","code":"{{VerificationCode(phone)}}"}""",
                 Encoding.UTF8,
                 "application/json"));
         var invalidPhoneProblem = await ReadProblem(invalidPhone);
@@ -259,7 +257,7 @@ public sealed class ProblemDetailsContractTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(invalidPhoneProblem.Code, Is.EqualTo("invalid_phone"));
-            Assert.That(failedLoginProblem.Code, Is.EqualTo("login_failed"));
+            Assert.That(failedLoginProblem.Code, Is.EqualTo("authentication_requirements_changed"));
         }
     }
 
@@ -531,7 +529,8 @@ public sealed class ProblemDetailsContractTests
         {
             ["validation_failed"] = 400,
             ["invalid_phone"] = 400,
-            ["invalid_purpose"] = 400,
+            ["invalid_auth_request"] = 400,
+            ["authentication_requirements_changed"] = 409,
             ["consent_required"] = 400,
             ["invalid_photo_size"] = 400,
             ["invalid_photo_type"] = 400,
@@ -579,6 +578,9 @@ public sealed class ProblemDetailsContractTests
                 Assert.That(problem.Detail, Does.Match("[А-Яа-яЁё]"));
             }
         }
+
+        Assert.That(factory.Create(context, 401, "invalid_code").Detail,
+            Is.EqualTo("Код подтверждения неверен."));
     }
 
     [Test]
@@ -693,7 +695,7 @@ public sealed class ProblemDetailsContractTests
         using var verify = await _client.PostAsync(
             "/api/v1/auth/code/verify",
             new StringContent(
-                $$"""{"phone":"{{phone}}","purpose":"register","code":"{{VerificationCode(phone)}}","termsAccepted":true,"onboardingToken":"{{onboarding}}"}""",
+                $$"""{"phone":"{{phone}}","code":"{{VerificationCode(phone)}}","onboardingToken":"{{onboarding}}"}""",
                 Encoding.UTF8,
                 "application/json"));
         Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK));

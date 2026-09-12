@@ -11,7 +11,7 @@ namespace Sarafan.Core.RestModels;
 public sealed record CustomerDto(
     int Id,
     string Phone,
-    string State,
+    CustomerState State,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     bool HasPhoto,
@@ -20,12 +20,14 @@ public sealed record CustomerDto(
     public static CustomerDto From(Customer customer, bool hasPhoto) => new(
         customer.Id,
         customer.Phone,
-        customer.State.ToString().ToLowerInvariant(),
+        customer.State,
         customer.CreatedAt,
         customer.UpdatedAt,
         hasPhoto,
         CustomerProfileDto.From(customer.Profile, customer.Phone));
 }
+
+public sealed record CustomerOpsDto(IReadOnlyList<EnumOpsItemDto> States);
 
 public sealed record CustomerProfileDto(
     string Phone,

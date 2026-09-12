@@ -16,7 +16,7 @@ namespace Sarafan.Core.Tests;
 public sealed class ConsentMigrationTests
 {
     [Test]
-    public async Task ConsentMigrationCreatesTheMvpSchemaWithoutChangingCustomerData()
+    public async Task ConsentAndLoginMigrationsCreateTheMvpSchemaWithoutChangingCustomerData()
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var parent = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -30,20 +30,24 @@ public sealed class ConsentMigrationTests
         {
             await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(builder.ConnectionString).Options);
             var migrations = database.Database.GetMigrations().ToArray();
-            Assert.That(migrations[^2], Is.EqualTo("20260908181115_0_0_7_CustomerConsents"));
-            Assert.That(migrations[^1], Does.EndWith("_0_0_9_ConsentListPaginationIndexes"));
+            Assert.That(migrations[^3], Is.EqualTo("20260908181115_0_0_7_CustomerConsents"));
+            Assert.That(migrations[^2], Does.EndWith("_0_0_9_ConsentListPaginationIndexes"));
+            Assert.That(migrations[^1], Does.EndWith("_0_0_9_Login"));
             var migrator = database.GetService<IMigrator>();
-            await migrator.MigrateAsync(migrations[^3]);
-            var customer = new Customer
-            {
-                Phone = "+78889999998",
-                State = CustomerState.Complete,
-                Profile = new() { FirstName = "Migration test" },
-                Photo = new() { FileName = "photo.png", ContentType = "image/png", Content = [1, 2, 3], Size = 3 },
-                RefreshSessions = [new() { TokenHash = new string('a', 64), FamilyId = Guid.NewGuid() }]
-            };
-            database.Customers.Add(customer);
-            await database.SaveChangesAsync();
+            await migrator.MigrateAsync(migrations[^4]);
+            await database.Database.ExecuteSqlRawAsync("""
+                INSERT INTO customers (phone, state, created_at, updated_at)
+                VALUES ('+78889999998', 'Complete', now(), now())
+                """);
+            var customerId = await database.Database.SqlQueryRaw<int>(
+                "SELECT id AS \"Value\" FROM customers WHERE phone = '+78889999998'").SingleAsync();
+            await database.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO customer_profiles (customer_id, first_name) VALUES ({customerId}, 'Migration test');
+                INSERT INTO customer_photos (customer_id, file_name, content_type, content, size, updated_at)
+                VALUES ({customerId}, 'photo.png', 'image/png', decode('010203', 'hex'), 3, now());
+                INSERT INTO refresh_sessions (customer_id, family_id, token_hash, created_at, expires_at)
+                VALUES ({customerId}, gen_random_uuid(), {new string('a', 64)}, now(), now() + interval '1 day');
+                """);
             Assert.That(await database.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM customer_consents").SingleAsync(),
                 Is.Zero);
 
@@ -153,16 +157,17 @@ public sealed class ConsentMigrationTests
             var saved = await database.Customers.Include(x => x.Profile).Include(x => x.Photo).Include(x => x.RefreshSessions).SingleAsync();
             using (Assert.EnterMultipleScope())
             {
-                Assert.That(saved.Id, Is.EqualTo(customer.Id));
-                Assert.That(saved.Phone, Is.EqualTo(customer.Phone));
-                Assert.That(saved.State, Is.EqualTo(customer.State));
+                Assert.That(saved.Id, Is.EqualTo(customerId));
+                Assert.That(saved.Phone, Is.EqualTo("+78889999998"));
+                Assert.That(saved.State, Is.EqualTo(CustomerState.Complete));
+                Assert.That(saved.TokenVersion, Is.Zero);
                 Assert.That(saved.Profile.FirstName, Is.EqualTo("Migration test"));
                 Assert.That(saved.Photo!.Content, Is.EqualTo(new byte[] { 1, 2, 3 }));
                 Assert.That(saved.RefreshSessions.Single().TokenHash, Is.EqualTo(new string('a', 64)));
             }
 
             // Schema rollback recreates an empty table; deleted consent evidence is never restored.
-            await migrator.MigrateAsync(migrations[^3]);
+            await migrator.MigrateAsync(migrations[^4]);
             Assert.That(await database.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM customer_consents").SingleAsync(), Is.Zero);
             await migrator.MigrateAsync();
             Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);

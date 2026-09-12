@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -57,7 +58,7 @@ public sealed class OperationLoggingTests
     {
         using var activity = new Activity("logging-test").SetIdFormat(ActivityIdFormat.W3C).Start();
         var result = OperationLogging.Run(_logger, Operation,
-            () => LogValueSummary.Inputs(("request", new RequestCodeRequest { Phone = Secret, Purpose = "login" })),
+            () => LogValueSummary.Inputs(("request", new RequestCodeRequest { Phone = Secret })),
             () => true);
 
         Assert.That(result, Is.True);
@@ -68,9 +69,9 @@ public sealed class OperationLoggingTests
             SarafanEvents.OperationEnteredName, SarafanEvents.OperationExitedName
         }));
         Assert.That(records.Select(record => record.Level), Is.All.EqualTo(LogLevel.Debug));
-        Assert.That(records[0].Message, Is.EqualTo($"Entering {Operation}. Inputs: request=RequestCodeRequest(purpose=login; phone=[redacted])."));
+        Assert.That(records[0].Message, Is.EqualTo($"Entering {Operation}. Inputs: request=RequestCodeRequest(phone/consents=[redacted])."));
         Assert.That(records[1].Message, Is.EqualTo($"Exiting {Operation}. Outputs: true."));
-        Assert.That(records[0].Attributes["sarafan.operation.inputs"], Does.Contain("purpose=login"));
+        Assert.That(records[0].Attributes["sarafan.operation.inputs"], Is.EqualTo("request=RequestCodeRequest(phone/consents=[redacted])"));
         Assert.That(records[1].Attributes["sarafan.operation.outputs"], Is.EqualTo("true"));
         Assert.That(records.Select(record => record.Attributes["code.function.name"]), Is.All.EqualTo(Operation));
         Assert.That(records.Select(record => record.TraceId), Is.All.EqualTo(activity.TraceId.ToHexString()));
@@ -197,10 +198,14 @@ public sealed class OperationLoggingTests
             new BackofficeUserCreateRequest { Email = Secret, Password = Secret, Roles = [Secret] },
             new BackofficeUserUpdateRequest { Email = Secret, Password = Secret, Roles = [Secret] },
             new BackofficeSelfUpdateRequest { FirstName = Secret, LastName = Secret, Password = Secret },
-            new RequestCodeRequest { Phone = Secret, Purpose = " REGISTER " },
-            new RequestCodeRequest { Phone = Secret, Purpose = Secret },
-            new RequestCodeRequest { Phone = Secret, Purpose = null! },
-            new VerifyCodeRequest { Phone = Secret, Code = Secret, Purpose = "login" },
+            new RequestCodeRequest { Phone = Secret },
+            new VerifyCodeRequest
+            {
+                Phone = Secret,
+                Code = Secret,
+                AdditionalFields = new() { [Secret] = JsonSerializer.SerializeToElement(Secret) }
+            },
+            new PhoneResolveRequest(Secret),
             new FormFile(stream, 0, 3, Secret, Secret), new FileContentResult([1, 2, 3], $"application/{Secret}"),
             problem, new ObjectResult(problem), new NoContentResult(), new EmptyResult(),
             new ServiceStatus("Sarafan.Core", "ok", VersionInfo.AppVersion), new ServiceStatus(Secret, Secret, Secret),
@@ -216,10 +221,10 @@ public sealed class OperationLoggingTests
         Assert.That(summaries, Does.Contain("cancellation requested=True"));
         Assert.That(summaries, Does.Contain("cancellation requested=False"));
         Assert.That(summaries, Does.Contain($"ServiceStatus(name=Sarafan.Core; status=ok; version={VersionInfo.AppVersion})"));
-        Assert.That(summaries, Does.Contain("RequestCodeRequest(purpose=register; phone=[redacted])"));
+        Assert.That(summaries, Does.Contain("RequestCodeRequest(phone/consents=[redacted])"));
         Assert.That(summaries, Does.Contain("BackofficeUserDto collection(count=1)"));
         Assert.That(summaries, Does.Contain("BackofficeRoleDto collection(count=1)"));
-        Assert.That(summaries.Count(summary => summary.Contains("purpose=other")), Is.EqualTo(2));
+        Assert.That(summaries, Does.Contain("PhoneResolveRequest(phone=[redacted])"));
         Assert.That(LogValueSummary.Inputs(), Is.EqualTo("none"));
         var privateListState = LogValueSummary.Inputs(
             ("page", 3), ("pageSize", 100), ("sortBy", Secret), ("sortOrder", Secret),
@@ -438,15 +443,16 @@ public sealed class OperationLoggingTests
         await ConsentTestData.AcceptMandatoryCookies(client);
         var phone = $"+79994{Random.Shared.Next(100000, 999999)}";
         using var status = await client.GetAsync("/api/v1/status/status");
-        using var invalid = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone = "", purpose = "login" });
+        using var authOps = await client.GetAsync("/api/v1/auth/ops");
+        using var customerOps = await client.GetAsync("/api/v1/customers/ops");
+        using var resolve = await client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
+        using var invalid = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone = "" });
         using var request = await client.PostAsJsonAsync("/api/v1/auth/code/request", await ConsentTestData.Request(client, phone));
         var onboarding = (await request.Content.ReadFromJsonAsync<CodeRequestDto>())!.OnboardingToken;
         using var verify = await client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {
             phone,
-            purpose = "register",
             code = phone[^4..],
-            termsAccepted = true,
             onboardingToken = onboarding
         });
         verify.EnsureSuccessStatusCode();
@@ -463,6 +469,9 @@ public sealed class OperationLoggingTests
         using var logout = await client.PostAsync("/api/v1/auth/logout", null);
 
         Assert.That(invalid.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        Assert.That(authOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(customerOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(update.StatusCode, Is.EqualTo(HttpStatusCode.OK));
@@ -472,7 +481,13 @@ public sealed class OperationLoggingTests
         Assert.That(refresh.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(logout.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
 
-        Type[] controllers = [typeof(AuthController), typeof(CustomersController), typeof(StatusController)];
+        Type[] controllers =
+        [
+            typeof(AuthController),
+            typeof(CustomerOperationsController),
+            typeof(CustomersController),
+            typeof(StatusController)
+        ];
         var actions = controllers.SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));
         foreach (var action in actions)
         {
@@ -617,7 +632,7 @@ public sealed class OperationLoggingTests
         await ConsentTestData.AcceptMandatoryCookies(client);
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/code/request");
         request.Headers.Add("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
-        request.Content = JsonContent.Create(new { phone = "+79993332211", purpose = "login" });
+        request.Content = JsonContent.Create(await ConsentTestData.Request(client, "+79993332211"));
         using var response = await client.SendAsync(request);
         var problem = (await response.Content.ReadFromJsonAsync<SarafanProblemDetails>())!;
         var warnings = _logs.Records.Where(record => record.Event.Id == 1602).ToArray();

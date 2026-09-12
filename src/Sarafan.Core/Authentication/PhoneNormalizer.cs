@@ -19,34 +19,22 @@ public sealed class PhoneNormalizer : IPhoneNormalizer
             return false;
         }
 
-        var trimmed = value.Trim();
-        var plusCount = trimmed.Count(character => character == '+');
-        var hasLeadingPlus = trimmed.StartsWith('+');
-        if (plusCount > 1 || (plusCount == 1 && !hasLeadingPlus) ||
-            trimmed.Any(character =>
-                !IsAsciiDigit(character) &&
-                !char.IsWhiteSpace(character) &&
-                character is not ('+' or '(' or ')' or '-' or '.')))
+        var trimmed = value.Trim(' ');
+        if (trimmed.Length == 11 && trimmed[0] == '8' && trimmed.All(IsAsciiDigit))
+        {
+            normalized = $"+7{trimmed[1..]}";
+            return true;
+        }
+
+        if (!trimmed.StartsWith("+7", StringComparison.Ordinal)
+            || trimmed.Count(character => character == '+') != 1
+            || trimmed.Any(character => !IsAsciiDigit(character) && character is not ('+' or '(' or ')' or '-' or ' ')))
         {
             return false;
         }
 
         var digits = new string(trimmed.Where(IsAsciiDigit).ToArray());
-        if (digits.Length == 0 || digits.All(character => character == '0'))
-        {
-            return false;
-        }
-
-        if (digits.Length == 10 && !hasLeadingPlus)
-        {
-            digits = $"7{digits}";
-        }
-        else if (digits.Length == 11 && digits[0] == '8' && !hasLeadingPlus)
-        {
-            digits = $"7{digits[1..]}";
-        }
-
-        if (digits.Length is < 8 or > 15 || digits[0] == '0')
+        if (digits.Length != 11 || digits[0] != '7')
         {
             return false;
         }

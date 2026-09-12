@@ -53,6 +53,9 @@ public sealed class SwaggerEndpointTests
             Assert.That(bearerScheme.GetProperty("type").GetString(), Is.EqualTo("http"));
             Assert.That(bearerScheme.GetProperty("scheme").GetString(), Is.EqualTo("bearer"));
             Assert.That(root.GetProperty("security")[0].TryGetProperty("Bearer", out _), Is.True);
+            Assert.That(root.GetProperty("components").GetProperty("schemas").GetProperty("VerifyCodeRequest")
+                .GetProperty("properties").EnumerateObject().Select(property => property.Name),
+                Is.EquivalentTo(new[] { "phone", "code", "onboardingToken" }));
         }
     }
 }

@@ -5,6 +5,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Data.Common;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -85,6 +86,16 @@ public sealed class ConsentReviewTests
         return new(builder.Options);
     }
     private ConsentService Consents(AppDbContext database) => new(database, _clock, Options.Create(new ConsentOptions()), _auth, NullLogger<ConsentService>.Instance);
+    private AuthenticationService Authentication(AppDbContext database) => new(
+        database,
+        new PhoneNormalizer(),
+        new PhoneSuffixVerificationCodeProvider(),
+        new VerificationAttemptStore(_clock),
+        new JwtTokenService(_auth, _clock, NullLogger<JwtTokenService>.Instance),
+        _auth,
+        _clock,
+        Consents(database),
+        NullLogger<AuthenticationService>.Instance);
     private LegalDocumentService Documents(AppDbContext database) => new(database, _clock, NullLogger<LegalDocumentService>.Instance);
     private Task<LegalDocumentDto> CreateDocument(AppDbContext database, LegalDocumentKind kind, DateOnly? effectiveDate = null) => Documents(database).CreateAsync(
         new()
@@ -171,6 +182,530 @@ public sealed class ConsentReviewTests
         Assert.That(await check.LegalDocuments.CountAsync(x => x.EffectiveAt > _clock.Now), Is.EqualTo(1));
     }
 
+    [Test, Combinatorial]
+    public async Task VerificationRejectsConsentPayloadWithoutChangingAuthenticationState(
+        [Values("termsAccepted", "termsDocumentId", "personalDataConsent")] string field,
+        [Values] bool withReceipt,
+        [Values] bool validCode)
+    {
+        string? receipt = null;
+        await using (var setup = Database())
+        {
+            if (withReceipt)
+            {
+                receipt = await Authentication(setup).RequestCodeAsync(new RequestCodeRequest
+                {
+                    Phone = Phone,
+                    TermsAccepted = true,
+                    TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id
+                }, "verify-consent-test", default);
+                Assert.That(receipt, Is.Not.Empty);
+            }
+            else
+            {
+                var onboarding = await Onboarding(setup);
+                await Consents(setup).CompleteOnboardingAsync(await setup.Customers.SingleAsync(), onboarding, default);
+            }
+        }
+
+        var request = new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = validCode ? "0002" : "0000",
+            OnboardingToken = receipt
+        };
+        request.AdditionalFields = new Dictionary<string, JsonElement>
+        {
+            [field] = field switch
+            {
+                "termsAccepted" => JsonSerializer.SerializeToElement(true),
+                "termsDocumentId" => JsonSerializer.SerializeToElement(_documents[LegalDocumentKind.UserAgreement].Id),
+                _ => JsonSerializer.SerializeToElement(Decision(LegalDocumentKind.PersonalDataConsent))
+            }
+        };
+
+        await using var database = Database();
+        var service = Authentication(database);
+        var error = Assert.ThrowsAsync<ServiceException>(() => service.VerifyCodeAsync(
+            request, "verify-consent-test", null, default));
+
+        await using (var check = Database())
+        {
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(error!.StatusCode, Is.EqualTo(validCode ? 400 : 401));
+                Assert.That(error.Code, Is.EqualTo(validCode ? "invalid_auth_request" : "invalid_code"));
+                Assert.That(error.NextStep, Is.Null);
+                Assert.That(error.RequiredDocumentKinds, Is.Null);
+                Assert.That(await check.RefreshSessions.CountAsync(), Is.Zero);
+                Assert.That(await check.ConsentEvents.CountAsync(), Is.EqualTo(withReceipt ? 0 : 2));
+                Assert.That((await check.ConsentOnboarding.SingleAsync()).UsedAt.HasValue, Is.EqualTo(!withReceipt));
+            }
+        }
+
+        var session = await service.VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = "0002",
+            OnboardingToken = receipt
+        }, "verify-consent-test", null, default);
+        Assert.That(session.Response.Customer.Id, Is.EqualTo(_customer));
+        await using var completed = Database();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(await completed.RefreshSessions.CountAsync(), Is.EqualTo(1));
+            Assert.That(await completed.ConsentEvents.CountAsync(), Is.EqualTo(withReceipt ? 1 : 2));
+            Assert.That((await completed.ConsentOnboarding.SingleAsync()).UsedAt, Is.Not.Null);
+        }
+    }
+
+    [Test]
+    public async Task DirectLoginWaitsForAgreementChangeAndRejectsStaleRequirements()
+    {
+        await using (var setup = Database())
+        {
+            var receipt = await Onboarding(setup);
+            await Consents(setup).CompleteOnboardingAsync(await setup.Customers.SingleAsync(), receipt, default);
+        }
+
+        await using var documentDatabase = Database();
+        await using var documentTransaction = await documentDatabase.Database.BeginTransactionAsync();
+        await ConsentTransaction.Lock(documentDatabase, default);
+        var effectiveDate = ConsentCalendar.LocalDate(_clock.Now).AddDays(1);
+        await CreateDocument(documentDatabase, LegalDocumentKind.UserAgreement, effectiveDate);
+        await documentDatabase.SaveChangesAsync();
+        _clock.Now = ConsentCalendar.Midnight(effectiveDate);
+
+        await using var loginDatabase = Database();
+        var login = Authentication(loginDatabase).VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = Phone[^4..]
+        }, "login-test", null, default);
+
+        try
+        {
+            Assert.That(await Task.WhenAny(login, Task.Delay(200)), Is.Not.SameAs(login),
+                "Direct login must wait for the consent transaction lock.");
+        }
+        finally
+        {
+            await documentTransaction.CommitAsync();
+        }
+
+        var error = Assert.ThrowsAsync<ServiceException>(async () => await login);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(error!.Code, Is.EqualTo("authentication_requirements_changed"));
+            Assert.That(error.NextStep, Is.EqualTo(AuthenticationFlowStep.Agreement));
+            Assert.That(error.RequiredDocumentKinds, Is.EqualTo(new[] { LegalDocumentKind.UserAgreement }));
+        }
+        await using var check = Database();
+        Assert.That(await check.RefreshSessions.CountAsync(), Is.Zero);
+    }
+
+    [Test]
+    public async Task DirectLoginCodeRequestDoesNotWaitForConsentLockOrCreateAnotherReceipt()
+    {
+        await using (var setup = Database())
+        {
+            var onboarding = await Onboarding(setup);
+            await Consents(setup).CompleteOnboardingAsync(
+                await setup.Customers.SingleAsync(), onboarding, default);
+        }
+
+        await using var lockDatabase = Database();
+        await using var lockTransaction = await lockDatabase.Database.BeginTransactionAsync();
+        await ConsentTransaction.Lock(lockDatabase, default);
+
+        await using var requestDatabase = Database();
+        var request = Authentication(requestDatabase).RequestCodeAsync(
+            new RequestCodeRequest { Phone = Phone }, "code-request-test", default);
+        try
+        {
+            Assert.That(await Task.WhenAny(request, Task.Delay(TimeSpan.FromSeconds(2))), Is.SameAs(request),
+                "A direct-login code request must not wait for the global consent lock.");
+        }
+        finally
+        {
+            await lockTransaction.RollbackAsync();
+        }
+
+        var receipt = await request;
+
+        Assert.That(receipt, Is.Null);
+        Assert.That(await requestDatabase.ConsentOnboarding.CountAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task ReceiptCreatingCodeRequestStillWaitsForConsentLock()
+    {
+        await using var lockDatabase = Database();
+        await using var lockTransaction = await lockDatabase.Database.BeginTransactionAsync();
+        await ConsentTransaction.Lock(lockDatabase, default);
+
+        await using var requestDatabase = Database();
+        var request = Authentication(requestDatabase).RequestCodeAsync(new RequestCodeRequest
+        {
+            Phone = Phone,
+            TermsAccepted = true,
+            TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id
+        }, "receipt-request-test", default);
+        try
+        {
+            Assert.That(await Task.WhenAny(request, Task.Delay(200)), Is.Not.SameAs(request),
+                "Receipt creation must retain the global consent lock.");
+        }
+        finally
+        {
+            await lockTransaction.RollbackAsync();
+        }
+
+        Assert.That(await request.WaitAsync(TimeSpan.FromSeconds(5)), Is.Not.Empty);
+    }
+
+    [Test]
+    public async Task CodeRequestRechecksFlowAfterWaitingForConsentLock()
+    {
+        await using var lockDatabase = Database();
+        await using var lockTransaction = await lockDatabase.Database.BeginTransactionAsync();
+        await ConsentTransaction.Lock(lockDatabase, default);
+
+        await using var requestDatabase = Database();
+        var request = Authentication(requestDatabase).RequestCodeAsync(
+            new RequestCodeRequest { Phone = Phone }, "changed-code-request-test", default);
+        Assert.That(await Task.WhenAny(request, Task.Delay(200)), Is.Not.SameAs(request),
+            "A receipt-creating code request must wait for the global consent lock.");
+
+        var onboarding = await Onboarding(lockDatabase);
+        await lockDatabase.SaveChangesAsync();
+        await Consents(lockDatabase).CompleteOnboardingAsync(
+            await lockDatabase.Customers.SingleAsync(), onboarding, default);
+        await lockDatabase.SaveChangesAsync();
+        await lockTransaction.CommitAsync();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(await request.WaitAsync(TimeSpan.FromSeconds(5)), Is.Null);
+            Assert.That(await requestDatabase.ConsentOnboarding.CountAsync(), Is.EqualTo(1));
+        }
+    }
+
+    [Test]
+    public async Task DirectLoginRejectsAgreementThatBecomesEffectiveBeforeCommit()
+    {
+        DateTimeOffset replacementEffectiveAt;
+        await using (var setup = Database())
+        {
+            var onboarding = await Onboarding(setup);
+            await Consents(setup).CompleteOnboardingAsync(
+                await setup.Customers.SingleAsync(), onboarding, default);
+            var replacement = await CreateDocument(setup, LegalDocumentKind.UserAgreement,
+                ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
+            replacementEffectiveAt = replacement.EffectiveAt;
+        }
+        _clock.Now = replacementEffectiveAt.AddMinutes(-1);
+
+        var pause = new PauseAfterSave();
+        await using var loginDatabase = Database(pause);
+        var login = Authentication(loginDatabase).VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = Phone[^4..]
+        }, "login-commit-test", null, default);
+        await pause.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        _clock.Now = replacementEffectiveAt;
+        pause.Continue.TrySetResult();
+
+        var error = Assert.ThrowsAsync<ServiceException>(async () =>
+            await login.WaitAsync(TimeSpan.FromSeconds(5)));
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(error!.Code, Is.EqualTo("authentication_requirements_changed"));
+            Assert.That(error.NextStep, Is.EqualTo(AuthenticationFlowStep.Agreement));
+            Assert.That(error.RequiredDocumentKinds, Is.EqualTo(new[] { LegalDocumentKind.UserAgreement }));
+        }
+        await using var check = Database();
+        Assert.That(await check.RefreshSessions.CountAsync(), Is.Zero);
+    }
+
+    [Test]
+    public async Task RefreshWaitsForReactivationAndCannotRevokeItsNewSession()
+    {
+        var oldRawToken = JwtTokenService.CreateRefreshToken();
+        string receipt;
+        await using (var setup = Database())
+        {
+            var customer = await setup.Customers.SingleAsync();
+            customer.State = CustomerState.Disabled;
+            setup.RefreshSessions.Add(new RefreshSession
+            {
+                Customer = customer,
+                FamilyId = Guid.NewGuid(),
+                TokenHash = JwtTokenService.HashRefreshToken(oldRawToken),
+                CreatedAt = _clock.Now,
+                ExpiresAt = _clock.Now.AddDays(30)
+            });
+            await setup.SaveChangesAsync();
+            receipt = (await Authentication(setup).RequestCodeAsync(new RequestCodeRequest
+            {
+                Phone = Phone,
+                TermsAccepted = true,
+                TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id,
+                PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent)
+            }, "reactivation-test", default))!;
+        }
+
+        var pause = new PauseAfterSave();
+        await using var reactivationDatabase = Database(pause);
+        await using var refreshDatabase = Database();
+        var reactivation = Authentication(reactivationDatabase).VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = Phone[^4..],
+            OnboardingToken = receipt
+        }, "reactivation-test", null, default);
+        await pause.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var refresh = Authentication(refreshDatabase).RefreshAsync(
+            oldRawToken, "refresh-test", null, default);
+        try
+        {
+            Assert.That(await Task.WhenAny(refresh, Task.Delay(200)), Is.Not.SameAs(refresh),
+                "Refresh must wait while reactivation holds the consent transaction lock.");
+        }
+        finally
+        {
+            pause.Continue.TrySetResult();
+        }
+
+        var reactivated = await reactivation.WaitAsync(TimeSpan.FromSeconds(5));
+        var refreshError = Assert.ThrowsAsync<ServiceException>(async () => await refresh);
+        Assert.That(refreshError!.Code, Is.EqualTo("invalid_refresh_token"));
+
+        await using var check = Database();
+        var activeSessions = await check.RefreshSessions.Where(item => item.RevokedAt == null).ToArrayAsync();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(activeSessions, Has.Length.EqualTo(1));
+            Assert.That(activeSessions[0].TokenHash,
+                Is.EqualTo(JwtTokenService.HashRefreshToken(reactivated.RefreshToken)));
+            Assert.That((await check.Customers.SingleAsync()).TokenVersion, Is.EqualTo(1));
+        }
+    }
+
+    [Test]
+    public async Task RefreshDoesNotWaitForGlobalConsentLock()
+    {
+        var rawToken = JwtTokenService.CreateRefreshToken();
+        await using (var setup = Database())
+        {
+            setup.RefreshSessions.Add(new RefreshSession
+            {
+                Customer = await setup.Customers.SingleAsync(),
+                FamilyId = Guid.NewGuid(),
+                TokenHash = JwtTokenService.HashRefreshToken(rawToken),
+                CreatedAt = _clock.Now,
+                ExpiresAt = _clock.Now.AddDays(30)
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await using var lockDatabase = Database();
+        await using var lockTransaction = await lockDatabase.Database.BeginTransactionAsync();
+        await ConsentTransaction.Lock(lockDatabase, default);
+
+        await using var refreshDatabase = Database();
+        var refresh = Authentication(refreshDatabase).RefreshAsync(
+            rawToken, "independent-refresh-test", null, default);
+        try
+        {
+            Assert.That(await Task.WhenAny(refresh, Task.Delay(TimeSpan.FromSeconds(2))), Is.SameAs(refresh),
+                "Refresh must not wait for unrelated consent work.");
+        }
+        finally
+        {
+            await lockTransaction.RollbackAsync();
+        }
+
+        Assert.That((await refresh).RefreshToken, Is.Not.Empty);
+    }
+
+    [Test]
+    public async Task RefreshRechecksExpiryAfterWaitingForCustomerLock()
+    {
+        var rawToken = JwtTokenService.CreateRefreshToken();
+        var expiresAt = _clock.Now.AddMinutes(1);
+        await using (var setup = Database())
+        {
+            setup.RefreshSessions.Add(new RefreshSession
+            {
+                Customer = await setup.Customers.SingleAsync(),
+                FamilyId = Guid.NewGuid(),
+                TokenHash = JwtTokenService.HashRefreshToken(rawToken),
+                CreatedAt = _clock.Now,
+                ExpiresAt = expiresAt
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await using var lockDatabase = Database();
+        await using var lockTransaction = await lockDatabase.Database.BeginTransactionAsync();
+        await ConsentTransaction.LockCustomer(lockDatabase, _customer, default);
+
+        await using var refreshDatabase = Database();
+        var refresh = Authentication(refreshDatabase).RefreshAsync(
+            rawToken, "expiring-refresh-test", null, default);
+        try
+        {
+            Assert.That(await Task.WhenAny(refresh, Task.Delay(200)), Is.Not.SameAs(refresh),
+                "Refresh must wait for another transaction changing the same customer.");
+            _clock.Now = expiresAt;
+        }
+        finally
+        {
+            await lockTransaction.RollbackAsync();
+        }
+
+        var error = Assert.ThrowsAsync<ServiceException>(async () =>
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.That(error!.Code, Is.EqualTo("invalid_refresh_token"));
+
+        await using var check = Database();
+        var persisted = await check.RefreshSessions.SingleAsync();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(persisted.RevokedAt,
+                Is.EqualTo(expiresAt).Within(TimeSpan.FromMicroseconds(1)));
+            Assert.That(await check.RefreshSessions.CountAsync(), Is.EqualTo(1));
+        }
+    }
+
+    [Test]
+    public async Task ReactivationReusesExactPersonalDataIdempotencyRetry()
+    {
+        string receipt;
+        Guid existingKey;
+        await using (var setup = Database())
+        {
+            var onboarding = await Onboarding(setup);
+            var customer = await setup.Customers.SingleAsync();
+            await Consents(setup).CompleteOnboardingAsync(customer, onboarding, default);
+            var existing = await setup.ConsentEvents.SingleAsync(item =>
+                item.Kind == LegalDocumentKind.PersonalDataConsent);
+            existingKey = existing.IdempotencyKey;
+            customer.State = CustomerState.Disabled;
+            await setup.SaveChangesAsync();
+
+            receipt = (await Authentication(setup).RequestCodeAsync(new RequestCodeRequest
+            {
+                Phone = Phone,
+                PersonalDataConsent = new ConsentDecisionRequest
+                {
+                    DocumentId = existing.DocumentId,
+                    ContentHash = existing.ContentHash,
+                    Decision = "grant",
+                    Categories = [],
+                    IdempotencyKey = existingKey
+                }
+            }, "idempotent-reactivation-test", default))!;
+        }
+
+        await using var authenticationDatabase = Database();
+        var session = await Authentication(authenticationDatabase).VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = Phone[^4..],
+            OnboardingToken = receipt
+        }, "idempotent-reactivation-test", null, default);
+
+        Assert.That(session.RefreshToken, Is.Not.Empty);
+        await using var check = Database();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(await check.ConsentEvents.CountAsync(item =>
+                item.Kind == LegalDocumentKind.PersonalDataConsent), Is.EqualTo(1));
+            Assert.That((await check.Customers.SingleAsync()).State, Is.Not.EqualTo(CustomerState.Disabled));
+            Assert.That(await check.ConsentOnboarding
+                .Where(item => item.PersonalDataIdempotencyKey == existingKey)
+                .AllAsync(item => item.UsedAt != null), Is.True);
+        }
+    }
+
+    [Test]
+    public async Task ReactivationRejectsConflictingPersonalDataIdempotencyRetry()
+    {
+        string receipt;
+        Guid conflictingKey;
+        await using (var setup = Database())
+        {
+            var onboarding = await Onboarding(setup);
+            var customer = await setup.Customers.SingleAsync();
+            await Consents(setup).CompleteOnboardingAsync(customer, onboarding, default);
+
+            var refusal = Decision(LegalDocumentKind.PersonalDataConsent);
+            refusal.Decision = "refuse";
+            conflictingKey = refusal.IdempotencyKey;
+            await Consents(setup).DecidePersonalDataAsync(customer.Id, refusal, default);
+            customer.State = CustomerState.Disabled;
+            await setup.SaveChangesAsync();
+
+            receipt = (await Authentication(setup).RequestCodeAsync(new RequestCodeRequest
+            {
+                Phone = Phone,
+                PersonalDataConsent = new ConsentDecisionRequest
+                {
+                    DocumentId = refusal.DocumentId,
+                    ContentHash = refusal.ContentHash,
+                    Decision = "grant",
+                    Categories = [],
+                    IdempotencyKey = conflictingKey
+                }
+            }, "conflicting-reactivation-test", default))!;
+        }
+
+        await using var authenticationDatabase = Database();
+        var error = Assert.ThrowsAsync<ServiceException>(() => Authentication(authenticationDatabase).VerifyCodeAsync(
+            new VerifyCodeRequest
+            {
+                Phone = Phone,
+                Code = Phone[^4..],
+                OnboardingToken = receipt
+            }, "conflicting-reactivation-test", null, default));
+        Assert.That(error!.Code, Is.EqualTo("consent_conflict"));
+
+        await using var check = Database();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That((await check.Customers.SingleAsync()).State, Is.EqualTo(CustomerState.Disabled));
+            Assert.That(await check.RefreshSessions.CountAsync(), Is.Zero);
+            Assert.That((await check.ConsentOnboarding.SingleAsync(item =>
+                item.PersonalDataIdempotencyKey == conflictingKey)).UsedAt, Is.Null);
+        }
+    }
+
+    [Test]
+    public async Task AuthenticationRequestReportsCurrentAgreementForStaleDocumentId()
+    {
+        await using var database = Database();
+        var error = Assert.ThrowsAsync<ServiceException>(() => Authentication(database).RequestCodeAsync(
+            new RequestCodeRequest
+            {
+                Phone = Phone,
+                TermsAccepted = true,
+                TermsDocumentId = Guid.NewGuid()
+            }, "agreement-test", default));
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(error!.Code, Is.EqualTo("consent_version_changed"));
+            Assert.That(error.RequiredDocumentId, Is.EqualTo(_documents[LegalDocumentKind.UserAgreement].Id));
+            Assert.That(error.ConsentKind, Is.EqualTo(LegalDocumentKind.UserAgreement));
+        }
+        Assert.That(await database.ConsentOnboarding.CountAsync(), Is.Zero);
+    }
+
     [TestCase("personal-data-consent")]
     [TestCase("cookie-consent")]
     [TestCase("begin-onboarding")]
@@ -251,7 +786,7 @@ public sealed class ConsentReviewTests
             new VerificationAttemptStore(_clock), new JwtTokenService(_auth, _clock, NullLogger<JwtTokenService>.Instance),
             _auth, _clock, Consents(database), NullLogger<AuthenticationService>.Instance);
         Assert.ThrowsAsync<DbUpdateException>(() => service.VerifyCodeAsync(new()
-        { Phone = phone, Purpose = "register", Code = "0003", TermsAccepted = true, OnboardingToken = receipt }, "test", null, default));
+        { Phone = phone, Code = "0003", OnboardingToken = receipt }, "test", null, default));
         await using var check = Database();
         Assert.That(await check.Customers.AnyAsync(x => x.Phone == phone), Is.False);
         Assert.That(await check.ConsentEvents.CountAsync(), Is.Zero);
@@ -299,8 +834,7 @@ public sealed class ConsentReviewTests
             _auth, _clock, Consents(database), NullLogger<AuthenticationService>.Instance);
         var request = new RequestCodeRequest
         {
-            Phone = Phone,
-            Purpose = "register",
+            Phone = "+78880000004",
             TermsAccepted = true,
             TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id,
             PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent)
@@ -479,10 +1013,9 @@ public sealed class ConsentReviewTests
         Assert.That(await database.CustomerConsentWithdrawalRequests.CountAsync(), Is.EqualTo(1));
     }
 
-    [TestCase("request", "register", 20, "invalid_phone")]
-    [TestCase("verify", "register", 30, "onboarding_consent_expired")]
-    [TestCase("verify", "login", 30, "invalid_phone")]
-    public async Task AuthenticationIpQuotaBoundsConsentLookupsAndMalformedPhoneAttempts(string operation, string purpose, int limit, string expected)
+    [TestCase("request", 20, "invalid_phone")]
+    [TestCase("verify", 30, "invalid_phone")]
+    public async Task AuthenticationIpQuotaBoundsConsentLookupsAndMalformedPhoneAttempts(string operation, int limit, string expected)
     {
         var commands = new CountCommands();
         await using var database = Database(commands);
@@ -494,13 +1027,12 @@ public sealed class ConsentReviewTests
             if (operation == "request") await service.RequestCodeAsync(new()
             {
                 Phone = "malformed",
-                Purpose = purpose,
                 TermsAccepted = true,
                 TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id,
                 PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent)
             }, "throttle-test", default);
             else await service.VerifyCodeAsync(new()
-            { Phone = "malformed", Purpose = purpose, OnboardingToken = Guid.NewGuid().ToString("N"), Code = "0000" }, "throttle-test", null, default);
+            { Phone = "malformed", OnboardingToken = Guid.NewGuid().ToString("N"), Code = "0000" }, "throttle-test", null, default);
         }
         for (var attempt = 0; attempt < limit; attempt++) Assert.That(Assert.ThrowsAsync<ServiceException>(Attempt)!.Code, Is.EqualTo(expected));
         var before = commands.Count;
@@ -538,5 +1070,21 @@ public sealed class ConsentReviewTests
     {
         public override ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
         { action(); return ValueTask.FromResult(result); }
+    }
+
+    private sealed class PauseAfterSave : SaveChangesInterceptor
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<int> SavedChangesAsync(
+            SaveChangesCompletedEventData eventData,
+            int result,
+            CancellationToken cancellationToken = default)
+        {
+            Entered.TrySetResult();
+            await Continue.Task.WaitAsync(cancellationToken);
+            return result;
+        }
     }
 }

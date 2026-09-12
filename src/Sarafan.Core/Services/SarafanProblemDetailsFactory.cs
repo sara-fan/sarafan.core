@@ -72,10 +72,14 @@ public sealed class SarafanProblemDetailsFactory(
                 StatusCodes.Status400BadRequest,
                 "Некорректный номер телефона",
                 "Укажите корректный номер телефона."),
-            ["invalid_purpose"] = new(
+            ["invalid_auth_request"] = new(
                 StatusCodes.Status400BadRequest,
-                "Некорректное назначение запроса",
-                "Назначение запроса должно быть register или login."),
+                "Некорректный запрос входа",
+                "Отправьте только те подтверждения, которые требуются для текущего шага входа."),
+            ["authentication_requirements_changed"] = new(
+                StatusCodes.Status409Conflict,
+                "Требования входа изменились",
+                "Вернитесь к номеру телефона и продолжите вход с актуальными требованиями."),
             ["consent_required"] = new(
                 StatusCodes.Status400BadRequest,
                 "Требуется согласие",
@@ -95,7 +99,7 @@ public sealed class SarafanProblemDetailsFactory(
             ["invalid_code"] = new(
                 StatusCodes.Status401Unauthorized,
                 "Некорректный код подтверждения",
-                "Код подтверждения неверен или срок его действия истёк."),
+                "Код подтверждения неверен."),
             ["invalid_access_token"] = new(
                 StatusCodes.Status401Unauthorized,
                 "Недействительный токен доступа",
@@ -264,17 +268,35 @@ public sealed class SarafanProblemDetailsFactory(
         HttpContext context,
         int statusCode,
         string code,
-        CancellationToken cancellationToken = default, Guid? requiredDocumentId = null, LegalDocumentKind? consentKind = null)
+        CancellationToken cancellationToken = default,
+        Guid? requiredDocumentId = null,
+        LegalDocumentKind? consentKind = null,
+        AuthenticationFlowStep? nextStep = null,
+        IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds = null)
         => new(OperationLogging.RunAsync(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(WriteAsync)}",
-            () => ProblemInputs(statusCode, code), () => WriteCoreAsync(context, statusCode, code, cancellationToken, requiredDocumentId, consentKind), cancellationToken));
+            () => ProblemInputs(statusCode, code), () => WriteCoreAsync(context, statusCode, code, cancellationToken,
+                requiredDocumentId, consentKind, nextStep, requiredDocumentKinds), cancellationToken));
 
-    private async Task WriteCoreAsync(HttpContext context, int statusCode, string code, CancellationToken cancellationToken, Guid? requiredDocumentId, LegalDocumentKind? consentKind)
+    private async Task WriteCoreAsync(
+        HttpContext context,
+        int statusCode,
+        string code,
+        CancellationToken cancellationToken,
+        Guid? requiredDocumentId,
+        LegalDocumentKind? consentKind,
+        AuthenticationFlowStep? nextStep,
+        IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds)
     {
         var details = CreateCore(context, statusCode, code, null);
         if (requiredDocumentId is not null && consentKind is { } kind && Enum.IsDefined(kind))
         {
             details.Extensions["requiredDocumentId"] = requiredDocumentId;
             details.Extensions["consentKind"] = (int)kind;
+        }
+        if (nextStep is { } step && Enum.IsDefined(step))
+        {
+            details.Extensions["nextStep"] = (int)step;
+            details.Extensions["requiredDocumentKinds"] = requiredDocumentKinds?.Select(kind => (int)kind).ToArray() ?? [];
         }
         context.Response.StatusCode = details.Status!.Value;
         context.Response.ContentType = MediaType;

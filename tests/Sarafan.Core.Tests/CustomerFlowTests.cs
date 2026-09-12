@@ -5,9 +5,14 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
+using Sarafan.Core.Data;
+using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
 
 namespace Sarafan.Core.Tests;
@@ -44,7 +49,7 @@ public sealed class CustomerFlowTests
         {
             Assert.That(session.AccessToken, Is.Not.Empty);
             Assert.That(session.Customer.Phone, Is.EqualTo(phone));
-            Assert.That(session.Customer.State, Is.EqualTo("preliminary"));
+            Assert.That(session.Customer.State, Is.EqualTo(CustomerState.Preliminary));
             Assert.That(cookie, Does.StartWith("sarafan.refresh="));
         }
 
@@ -72,7 +77,7 @@ public sealed class CustomerFlowTests
         {
             Assert.That(updateResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(updated, Is.Not.Null);
-            Assert.That(updated!.State, Is.EqualTo("complete"));
+            Assert.That(updated!.State, Is.EqualTo(CustomerState.Complete));
             Assert.That(updated.Profile.FirstName, Is.EqualTo("Мария"));
             Assert.That(updated.Profile.Email, Is.EqualTo("maria@example.com"));
             Assert.That(updated.Profile.Phone, Is.EqualTo(phone));
@@ -122,7 +127,6 @@ public sealed class CustomerFlowTests
         using var wrongCode = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {
             phone,
-            purpose = "register",
             code = WrongVerificationCode(phone),
             termsAccepted = true,
             onboardingToken = onboarding
@@ -130,7 +134,6 @@ public sealed class CustomerFlowTests
         using var missingConsents = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {
             phone,
-            purpose = "register",
             code = VerificationCode(phone),
             termsAccepted = false,
             personalDataAccepted = true
@@ -139,8 +142,105 @@ public sealed class CustomerFlowTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(wrongCode.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
-            Assert.That(missingConsents.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That(missingConsents.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
         }
+    }
+
+    [Test]
+    public async Task ResolveAndReactivationPreserveTheCustomerAndInvalidateOldSessions()
+    {
+        var phone = NextPhone();
+        var authenticationOps = await _client.GetFromJsonAsync<AuthenticationOpsDto>("/api/v1/auth/ops");
+        var customerOps = await _client.GetFromJsonAsync<CustomerOpsDto>("/api/v1/customers/ops");
+        Assert.That(authenticationOps?.Steps.Select(item => item.Value), Is.EqualTo(new[] { 0, 1, 2 }));
+        Assert.That(customerOps?.States.Select(item => item.Value), Is.EqualTo(new[] { 0, 1, 2 }));
+
+        using var unknownResolve = await _client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
+        Assert.That(unknownResolve.StatusCode, Is.EqualTo(HttpStatusCode.OK),
+            await unknownResolve.Content.ReadAsStringAsync());
+        var unknownFlow = await unknownResolve.Content.ReadFromJsonAsync<PhoneResolveDto>();
+        Assert.That(unknownFlow?.NextStep, Is.EqualTo(AuthenticationFlowStep.Registration));
+        Assert.That(unknownFlow?.RequiredDocumentKinds, Is.EqualTo(new[]
+        {
+            LegalDocumentKind.UserAgreement,
+            LegalDocumentKind.PersonalDataConsent
+        }));
+
+        var (original, oldRefreshCookie) = await Register(phone);
+
+        using var activeResolve = await _client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
+        activeResolve.EnsureSuccessStatusCode();
+        var activeFlow = await activeResolve.Content.ReadFromJsonAsync<PhoneResolveDto>();
+        Assert.That(activeFlow?.NextStep, Is.EqualTo(AuthenticationFlowStep.Code));
+        Assert.That(activeFlow?.RequiredDocumentKinds, Is.Empty);
+
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var customer = await database.Customers.Include(item => item.Profile)
+                .SingleAsync(item => item.Id == original.Customer.Id);
+            customer.Profile.FirstName = "Сохранено";
+            customer.State = CustomerState.Disabled;
+            await database.SaveChangesAsync();
+        }
+
+        using var disabledResolve = await _client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
+        disabledResolve.EnsureSuccessStatusCode();
+        var disabledFlow = await disabledResolve.Content.ReadFromJsonAsync<PhoneResolveDto>();
+        Assert.That(disabledFlow?.NextStep, Is.EqualTo(AuthenticationFlowStep.Registration));
+        Assert.That(disabledFlow?.RequiredDocumentKinds, Is.EqualTo(new[] { LegalDocumentKind.PersonalDataConsent }));
+
+        var personalData = (await _client.GetFromJsonAsync<CurrentDocumentDto>(
+            $"/api/v1/legal/current/{(int)LegalDocumentKind.PersonalDataConsent}"))!.Document!;
+        using var codeRequest = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new
+        {
+            phone,
+            personalDataConsent = new
+            {
+                documentId = personalData.Id,
+                contentHash = personalData.ContentHash,
+                decision = "grant",
+                categories = Array.Empty<int>(),
+                idempotencyKey = Guid.NewGuid()
+            }
+        });
+        var receipt = (await codeRequest.Content.ReadFromJsonAsync<CodeRequestDto>())!.OnboardingToken;
+        Assert.That(receipt, Is.Not.Empty);
+
+        using var verify = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
+        {
+            phone,
+            code = VerificationCode(phone),
+            onboardingToken = receipt
+        });
+        var reactivated = await verify.Content.ReadFromJsonAsync<AuthenticationSessionDto>();
+
+        using var oldAccess = AuthorizedRequest(HttpMethod.Get, "/api/v1/customers/me", original.AccessToken);
+        using var oldAccessResponse = await _client.SendAsync(oldAccess);
+        using var oldRefresh = RequestWithCookie(HttpMethod.Post, "/api/v1/auth/refresh", oldRefreshCookie);
+        using var oldRefreshResponse = await _client.SendAsync(oldRefresh);
+        using var newAccess = AuthorizedRequest(HttpMethod.Get, "/api/v1/customers/me", reactivated!.AccessToken);
+        using var newAccessResponse = await _client.SendAsync(newAccess);
+        var preserved = await newAccessResponse.Content.ReadFromJsonAsync<CustomerDto>();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(reactivated.Customer.Id, Is.EqualTo(original.Customer.Id));
+            Assert.That(reactivated.Customer.Profile.FirstName, Is.EqualTo("Сохранено"));
+            Assert.That(reactivated.Customer.State, Is.EqualTo(CustomerState.Preliminary));
+            Assert.That(oldAccessResponse.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+            Assert.That(oldRefreshResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+            Assert.That(newAccessResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(preserved?.Id, Is.EqualTo(original.Customer.Id));
+        }
+
+        await using var verificationScope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.That(await verificationDatabase.ConsentEvents.AnyAsync(item =>
+            item.CustomerId == original.Customer.Id
+            && item.Kind == LegalDocumentKind.PersonalDataConsent
+            && item.Source == "reactivation"), Is.True);
     }
 
     [Test]
@@ -188,7 +288,6 @@ public sealed class CustomerFlowTests
         using var loginResponse = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {
             phone = nationalFormat,
-            purpose = "login",
             code = VerificationCode(phone)
         });
         var loggedIn = await loginResponse.Content.ReadFromJsonAsync<AuthenticationSessionDto>();
@@ -198,6 +297,93 @@ public sealed class CustomerFlowTests
             Assert.That(loginResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(loggedIn?.Customer.Id, Is.EqualTo(registered.Customer.Id));
             Assert.That(loggedIn?.Customer.Phone, Is.EqualTo(phone));
+        }
+    }
+
+    [Test]
+    public async Task AgreementFlow_AcceptsCurrentDocumentAndIssuesSession()
+    {
+        var phone = NextPhone();
+        int customerId;
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var customer = new Customer { Phone = phone, Profile = new CustomerProfile() };
+            database.Customers.Add(customer);
+            await database.SaveChangesAsync();
+            customerId = customer.Id;
+        }
+
+        var agreement = (await _client.GetFromJsonAsync<CurrentDocumentDto>(
+            $"/api/v1/legal/current/{(int)LegalDocumentKind.UserAgreement}"))!.Document!;
+        using var codeRequest = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new
+        {
+            phone,
+            termsAccepted = true,
+            termsDocumentId = agreement.Id
+        });
+        var receipt = await codeRequest.Content.ReadFromJsonAsync<CodeRequestDto>();
+
+        using var verify = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
+        {
+            phone,
+            code = VerificationCode(phone),
+            onboardingToken = receipt!.OnboardingToken
+        });
+        var session = await verify.Content.ReadFromJsonAsync<AuthenticationSessionDto>();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(codeRequest.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
+            Assert.That(receipt.OnboardingToken, Is.Not.Empty);
+            Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(session?.Customer.Id, Is.EqualTo(customerId));
+            Assert.That(RefreshCookie(verify), Does.StartWith("sarafan.refresh="));
+        }
+
+        await using var verificationScope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var consent = await verificationDatabase.ConsentEvents.SingleAsync(item =>
+            item.CustomerId == customerId && item.Kind == LegalDocumentKind.UserAgreement);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(consent.DocumentId, Is.EqualTo(agreement.Id));
+            Assert.That(consent.Decision, Is.EqualTo("grant"));
+            Assert.That(consent.Source, Is.EqualTo("authentication"));
+        }
+    }
+
+    [Test]
+    public async Task RegistrationReceipt_RejectsAnAccountCreatedAfterResolution()
+    {
+        var phone = NextPhone();
+        var onboarding = await ConsentTestData.Onboarding(_client, phone);
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.Customers.Add(new Customer
+            {
+                Phone = phone,
+                Profile = new CustomerProfile()
+            });
+            await database.SaveChangesAsync();
+        }
+
+        using var response = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
+        {
+            phone,
+            code = VerificationCode(phone),
+            onboardingToken = onboarding
+        });
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+            Assert.That(problem.GetProperty("code").GetString(), Is.EqualTo("authentication_requirements_changed"));
+            Assert.That(problem.GetProperty("nextStep").GetInt32(), Is.EqualTo((int)AuthenticationFlowStep.Agreement));
+            Assert.That(problem.GetProperty("requiredDocumentKinds").EnumerateArray().Select(item => item.GetInt32()),
+                Is.EqualTo(new[] { (int)LegalDocumentKind.UserAgreement }));
         }
     }
 
@@ -261,9 +447,7 @@ public sealed class CustomerFlowTests
         using var response = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
         {
             phone,
-            purpose = "register",
             code = VerificationCode(phone),
-            termsAccepted = true,
             onboardingToken = onboarding
         });
         var session = await response.Content.ReadFromJsonAsync<AuthenticationSessionDto>();

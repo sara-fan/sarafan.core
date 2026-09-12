@@ -9,6 +9,7 @@ public sealed class Customer
     public int Id { get; set; }
     public required string Phone { get; set; }
     public CustomerState State { get; set; } = CustomerState.Preliminary;
+    public int TokenVersion { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 

@@ -36,9 +36,15 @@ public sealed class ConsentOnboarding
 {
     public string TokenHash { get; set; } = "";
     public string PhoneHash { get; set; } = "";
-    public Guid PersonalDataDocumentId { get; set; }
+    public AuthenticationFlowStep Flow { get; set; } = AuthenticationFlowStep.Registration;
+    public int? TargetCustomerId { get; set; }
+    public Guid? PersonalDataDocumentId { get; set; }
     public Guid TermsDocumentId { get; set; }
-    public string PersonalDataHash { get; set; } = "";
+    public string? PersonalDataHash { get; set; }
+    public string TermsHash { get; set; } = "";
+    public bool TermsAccepted { get; set; }
+    public Guid? PersonalDataIdempotencyKey { get; set; }
+    public Guid? TermsIdempotencyKey { get; set; }
     public DateTimeOffset At { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? UsedAt { get; set; }

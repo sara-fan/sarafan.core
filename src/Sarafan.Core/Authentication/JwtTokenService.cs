@@ -20,6 +20,7 @@ public sealed record AccessTokenResult(string Token, DateTimeOffset ExpiresAt);
 public sealed class JwtTokenService(
     IOptions<AuthenticationOptions> options, TimeProvider timeProvider, ILogger<JwtTokenService> logger)
 {
+    public const string TokenVersionClaim = "token_version";
     private readonly AuthenticationOptions _options = options.Value;
     private readonly SymmetricSecurityKey _signingKey = new(Encoding.UTF8.GetBytes(options.Value.SigningKey));
 
@@ -37,7 +38,8 @@ public sealed class JwtTokenService(
             new(JwtRegisteredClaimNames.Sub, customer.Id.ToString()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
             new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-            new("role", "customer")
+            new("role", "customer"),
+            new(TokenVersionClaim, customer.TokenVersion.ToString(), ClaimValueTypes.Integer32)
         };
         var credentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(
