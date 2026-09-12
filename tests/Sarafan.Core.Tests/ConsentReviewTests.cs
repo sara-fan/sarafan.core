@@ -5,6 +5,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Data.Common;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -213,12 +214,15 @@ public sealed class ConsentReviewTests
             Code = validCode ? "0002" : "0000",
             OnboardingToken = receipt
         };
-        switch (field)
+        request.AdditionalFields = new Dictionary<string, JsonElement>
         {
-            case "termsAccepted": request.TermsAccepted = true; break;
-            case "termsDocumentId": request.TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id; break;
-            case "personalDataConsent": request.PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent); break;
-        }
+            [field] = field switch
+            {
+                "termsAccepted" => JsonSerializer.SerializeToElement(true),
+                "termsDocumentId" => JsonSerializer.SerializeToElement(_documents[LegalDocumentKind.UserAgreement].Id),
+                _ => JsonSerializer.SerializeToElement(Decision(LegalDocumentKind.PersonalDataConsent))
+            }
+        };
 
         await using var database = Database();
         var service = Authentication(database);

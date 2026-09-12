@@ -3,6 +3,10 @@
 // This file is a part of the Sarafan application
 
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 
 using Sarafan.Core.Models;
 
@@ -19,13 +23,21 @@ public class RequestCodeRequest
     public ConsentDecisionRequest? PersonalDataConsent { get; set; }
 }
 
-public sealed class VerifyCodeRequest : RequestCodeRequest
+public sealed class VerifyCodeRequest
 {
+    [Required(ErrorMessage = "Поле обязательно для заполнения.")]
+    [StringLength(64, ErrorMessage = "Длина поля не должна превышать {1} символов.")]
+    public string Phone { get; set; } = string.Empty;
+
     [Required(ErrorMessage = "Поле обязательно для заполнения.")]
     [StringLength(16, ErrorMessage = "Длина поля не должна превышать {1} символов.")]
     public string Code { get; set; } = string.Empty;
 
     [StringLength(128)] public string? OnboardingToken { get; set; }
+
+    // Keep forbidden consent values opaque until the verification code has been checked.
+    [JsonExtensionData, ValidateNever]
+    public Dictionary<string, JsonElement>? AdditionalFields { get; set; }
 }
 
 public sealed record CodeRequestDto(string? OnboardingToken);

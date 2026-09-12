@@ -2,6 +2,8 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
+using System.Text.Json;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -365,6 +367,15 @@ public sealed class AuthenticationService(
 
     private static bool HasConsentPayload(RequestCodeRequest request) =>
         request.TermsAccepted || request.TermsDocumentId.HasValue || request.PersonalDataConsent is not null;
+
+    private static bool HasConsentPayload(VerifyCodeRequest request) =>
+        request.AdditionalFields?.Any(field =>
+            field.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
+            && ((field.Key.Equals(nameof(RequestCodeRequest.TermsAccepted), StringComparison.OrdinalIgnoreCase)
+                    && field.Value.ValueKind != JsonValueKind.False)
+                || field.Key.Equals(nameof(RequestCodeRequest.TermsDocumentId), StringComparison.OrdinalIgnoreCase)
+                || field.Key.Equals(nameof(RequestCodeRequest.PersonalDataConsent), StringComparison.OrdinalIgnoreCase))) == true;
+
     private static ServiceException InvalidAuthenticationRequest() => new(StatusCodes.Status400BadRequest, "invalid_auth_request");
     private static ServiceException RequirementsChanged(AuthenticationResolution resolution) =>
         new(StatusCodes.Status409Conflict, "authentication_requirements_changed")

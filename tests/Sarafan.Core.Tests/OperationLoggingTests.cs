@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -198,7 +199,12 @@ public sealed class OperationLoggingTests
             new BackofficeUserUpdateRequest { Email = Secret, Password = Secret, Roles = [Secret] },
             new BackofficeSelfUpdateRequest { FirstName = Secret, LastName = Secret, Password = Secret },
             new RequestCodeRequest { Phone = Secret },
-            new VerifyCodeRequest { Phone = Secret, Code = Secret },
+            new VerifyCodeRequest
+            {
+                Phone = Secret,
+                Code = Secret,
+                AdditionalFields = new() { [Secret] = JsonSerializer.SerializeToElement(Secret) }
+            },
             new PhoneResolveRequest(Secret),
             new FormFile(stream, 0, 3, Secret, Secret), new FileContentResult([1, 2, 3], $"application/{Secret}"),
             problem, new ObjectResult(problem), new NoContentResult(), new EmptyResult(),
