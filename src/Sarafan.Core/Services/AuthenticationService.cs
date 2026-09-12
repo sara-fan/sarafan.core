@@ -110,6 +110,8 @@ public sealed class AuthenticationService(
         if (!await codeProvider.VerifyCodeAsync(phone, request.Code, cancellationToken))
             throw new ServiceException(StatusCodes.Status401Unauthorized, "invalid_code");
 
+        if (HasConsentPayload(request)) throw InvalidAuthenticationRequest();
+
         if (string.IsNullOrWhiteSpace(request.OnboardingToken))
         {
             return await LoginAsync(phone, remoteAddress, userAgent, cancellationToken);

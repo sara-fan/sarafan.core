@@ -181,6 +181,80 @@ public sealed class ConsentReviewTests
         Assert.That(await check.LegalDocuments.CountAsync(x => x.EffectiveAt > _clock.Now), Is.EqualTo(1));
     }
 
+    [Test, Combinatorial]
+    public async Task VerificationRejectsConsentPayloadWithoutChangingAuthenticationState(
+        [Values("termsAccepted", "termsDocumentId", "personalDataConsent")] string field,
+        [Values] bool withReceipt,
+        [Values] bool validCode)
+    {
+        string? receipt = null;
+        await using (var setup = Database())
+        {
+            if (withReceipt)
+            {
+                receipt = await Authentication(setup).RequestCodeAsync(new RequestCodeRequest
+                {
+                    Phone = Phone,
+                    TermsAccepted = true,
+                    TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id
+                }, "verify-consent-test", default);
+                Assert.That(receipt, Is.Not.Empty);
+            }
+            else
+            {
+                var onboarding = await Onboarding(setup);
+                await Consents(setup).CompleteOnboardingAsync(await setup.Customers.SingleAsync(), onboarding, default);
+            }
+        }
+
+        var request = new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = validCode ? "0002" : "0000",
+            OnboardingToken = receipt
+        };
+        switch (field)
+        {
+            case "termsAccepted": request.TermsAccepted = true; break;
+            case "termsDocumentId": request.TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id; break;
+            case "personalDataConsent": request.PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent); break;
+        }
+
+        await using var database = Database();
+        var service = Authentication(database);
+        var error = Assert.ThrowsAsync<ServiceException>(() => service.VerifyCodeAsync(
+            request, "verify-consent-test", null, default));
+
+        await using (var check = Database())
+        {
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(error!.StatusCode, Is.EqualTo(validCode ? 400 : 401));
+                Assert.That(error.Code, Is.EqualTo(validCode ? "invalid_auth_request" : "invalid_code"));
+                Assert.That(error.NextStep, Is.Null);
+                Assert.That(error.RequiredDocumentKinds, Is.Null);
+                Assert.That(await check.RefreshSessions.CountAsync(), Is.Zero);
+                Assert.That(await check.ConsentEvents.CountAsync(), Is.EqualTo(withReceipt ? 0 : 2));
+                Assert.That((await check.ConsentOnboarding.SingleAsync()).UsedAt.HasValue, Is.EqualTo(!withReceipt));
+            }
+        }
+
+        var session = await service.VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = "0002",
+            OnboardingToken = receipt
+        }, "verify-consent-test", null, default);
+        Assert.That(session.Response.Customer.Id, Is.EqualTo(_customer));
+        await using var completed = Database();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(await completed.RefreshSessions.CountAsync(), Is.EqualTo(1));
+            Assert.That(await completed.ConsentEvents.CountAsync(), Is.EqualTo(withReceipt ? 1 : 2));
+            Assert.That((await completed.ConsentOnboarding.SingleAsync()).UsedAt, Is.Not.Null);
+        }
+    }
+
     [Test]
     public async Task DirectLoginWaitsForAgreementChangeAndRejectsStaleRequirements()
     {
@@ -708,7 +782,7 @@ public sealed class ConsentReviewTests
             new VerificationAttemptStore(_clock), new JwtTokenService(_auth, _clock, NullLogger<JwtTokenService>.Instance),
             _auth, _clock, Consents(database), NullLogger<AuthenticationService>.Instance);
         Assert.ThrowsAsync<DbUpdateException>(() => service.VerifyCodeAsync(new()
-        { Phone = phone, Code = "0003", TermsAccepted = true, OnboardingToken = receipt }, "test", null, default));
+        { Phone = phone, Code = "0003", OnboardingToken = receipt }, "test", null, default));
         await using var check = Database();
         Assert.That(await check.Customers.AnyAsync(x => x.Phone == phone), Is.False);
         Assert.That(await check.ConsentEvents.CountAsync(), Is.Zero);

@@ -1,12 +1,12 @@
 # Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
 # All rights reserved.
-# This file is a part of Klinok application
+# This file is a part of the Sarafan application
 
 coverage:
   status:
     project:
       default:
-        target: 90%
+        target: 95%
         informational: false
     patch:
       default:
