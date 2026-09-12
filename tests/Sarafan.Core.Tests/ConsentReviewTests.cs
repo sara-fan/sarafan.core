@@ -371,11 +371,11 @@ public sealed class ConsentReviewTests
         await using var lockTransaction = await lockDatabase.Database.BeginTransactionAsync();
         await ConsentTransaction.Lock(lockDatabase, default);
 
-        var lockAttempt = new SignalGlobalLockAttempt();
-        await using var requestDatabase = Database(lockAttempt);
+        await using var requestDatabase = Database();
         var request = Authentication(requestDatabase).RequestCodeAsync(
             new RequestCodeRequest { Phone = Phone }, "changed-code-request-test", default);
-        await lockAttempt.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.That(await Task.WhenAny(request, Task.Delay(200)), Is.Not.SameAs(request),
+            "A receipt-creating code request must wait for the global consent lock.");
 
         var onboarding = await Onboarding(lockDatabase);
         await lockDatabase.SaveChangesAsync();
@@ -1050,22 +1050,6 @@ public sealed class ConsentReviewTests
         public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         { Count++; return ValueTask.FromResult(result); }
-    }
-
-    private sealed class SignalGlobalLockAttempt : DbCommandInterceptor
-    {
-        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<int> result,
-            CancellationToken cancellationToken = default)
-        {
-            if (command.CommandText.Contains("pg_advisory_xact_lock(938802020)", StringComparison.Ordinal))
-                Entered.TrySetResult();
-            return ValueTask.FromResult(result);
-        }
     }
 
     private sealed class FailEvidenceSave : SaveChangesInterceptor
