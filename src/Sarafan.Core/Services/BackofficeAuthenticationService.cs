@@ -88,7 +88,7 @@ public sealed class BackofficeAuthenticationService(
             .SingleOrDefaultAsync(item => item.NormalizedEmail == email, cancellationToken);
         if (user is null
             || !user.IsActive
-            || (user.IsDemo && RealOperationsEnabled())
+            || (user.IsDemo && BackofficeUserService.RealOperationsEnabled(_bootstrapOptions))
             || user.UserRoles.Count == 0
             || !VerifyPassword(request.Password, user.PasswordHash))
         {
@@ -134,7 +134,7 @@ public sealed class BackofficeAuthenticationService(
             || current.ReplacedByTokenHash is not null
             || current.ExpiresAt <= now
             || !current.BackofficeUser.IsActive
-            || (current.BackofficeUser.IsDemo && RealOperationsEnabled()))
+            || (current.BackofficeUser.IsDemo && BackofficeUserService.RealOperationsEnabled(_bootstrapOptions)))
         {
             await RevokeFamilyAsync(current.FamilyId, now, cancellationToken);
             await database.SaveChangesAsync(cancellationToken);
@@ -270,9 +270,6 @@ public sealed class BackofficeAuthenticationService(
 
     private static ServiceException InvalidRefreshToken()
         => new(StatusCodes.Status401Unauthorized, "invalid_backoffice_refresh_token");
-
-    private bool RealOperationsEnabled()
-        => _bootstrapOptions.RealOrdersEnabled || _bootstrapOptions.RealPaymentIntegrationEnabled;
 
     private static string? Limit(string? value, int length)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim()[..Math.Min(value.Trim().Length, length)];

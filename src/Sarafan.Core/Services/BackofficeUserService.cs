@@ -209,7 +209,7 @@ public sealed class BackofficeUserService(
         if (request.IsActive
             && user.IsDemo
             && string.IsNullOrWhiteSpace(request.Password)
-            && RealOperationsEnabled())
+            && RealOperationsEnabled(_bootstrapOptions))
         {
             throw new ServiceException(StatusCodes.Status409Conflict, "demo_backoffice_forbidden");
         }
@@ -409,6 +409,6 @@ public sealed class BackofficeUserService(
     private static ServiceException EmailExists()
         => new(StatusCodes.Status409Conflict, "backoffice_email_exists");
 
-    private bool RealOperationsEnabled()
-        => _bootstrapOptions.RealOrdersEnabled || _bootstrapOptions.RealPaymentIntegrationEnabled;
+    public static bool RealOperationsEnabled(BackofficeBootstrapOptions options)
+        => options.RealOrdersEnabled || options.RealPaymentIntegrationEnabled;
 }

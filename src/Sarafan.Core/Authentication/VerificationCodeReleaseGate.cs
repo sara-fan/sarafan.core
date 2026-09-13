@@ -3,6 +3,7 @@
 // This file is a part of the Sarafan application
 
 using Microsoft.Extensions.Options;
+using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Authentication;
 
@@ -14,7 +15,7 @@ public sealed class VerificationCodeReleaseGate(
 
     public void EnsureAllowed()
     {
-        if ((_options.RealOrdersEnabled || _options.RealPaymentIntegrationEnabled)
+        if (BackofficeUserService.RealOperationsEnabled(_options)
             && !provider.IsProductionReady)
         {
             throw new InvalidOperationException(

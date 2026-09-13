@@ -2,8 +2,11 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
+using Sarafan.Core.Authentication;
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
 using Sarafan.Core.Observability;
@@ -15,9 +18,25 @@ public sealed class OrderService(
     AppDbContext database,
     ConsentService consents,
     ICustomerOrderCodeGenerator codeGenerator,
+    IOptions<BackofficeBootstrapOptions> bootstrapOptions,
     ILogger<OrderService> logger)
 {
     private const int CodeAllocationAttempts = 10;
+    private readonly BackofficeBootstrapOptions _bootstrapOptions = bootstrapOptions.Value;
+
+    public Task<OrderDto> GetAsync(
+        int customerId,
+        long orderId,
+        CancellationToken cancellationToken)
+        => OperationLogging.RunAsync(
+            logger,
+            $"{typeof(OrderService).FullName}.{nameof(GetAsync)}",
+            () => LogValueSummary.Inputs(
+                (nameof(customerId), customerId),
+                (nameof(orderId), orderId),
+                (nameof(cancellationToken), cancellationToken)),
+            () => GetCoreAsync(customerId, orderId, cancellationToken),
+            cancellationToken);
 
     public Task<OrderDto> CreateAsync(
         int customerId,
@@ -37,6 +56,11 @@ public sealed class OrderService(
         Guid idempotencyKey,
         CancellationToken cancellationToken)
     {
+        if (!BackofficeUserService.RealOperationsEnabled(_bootstrapOptions))
+        {
+            throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
+        }
+
         if (idempotencyKey == Guid.Empty)
         {
             throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_idempotency_key");
@@ -89,6 +113,31 @@ public sealed class OrderService(
         throw new ServiceException(StatusCodes.Status503ServiceUnavailable, "order_number_allocation_failed");
     }
 
+    private async Task<OrderDto> GetCoreAsync(
+        int customerId,
+        long orderId,
+        CancellationToken cancellationToken)
+    {
+        if (!BackofficeUserService.RealOperationsEnabled(_bootstrapOptions))
+        {
+            throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
+        }
+
+        var order = await database.Orders
+            .AsNoTracking()
+            .Include(item => item.Customer)
+            .SingleOrDefaultAsync(
+                item => item.CustomerId == customerId && item.Id == orderId,
+                cancellationToken);
+
+        if (order is null || order.Customer is null || order.Customer.OrderCode is null)
+        {
+            throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
+        }
+
+        return ToDto(order);
+    }
+
     private static string NormalizeSourceUrl(string? sourceUrl)
     {
         var normalized = sourceUrl?.Trim();
@@ -104,11 +153,15 @@ public sealed class OrderService(
         return normalized;
     }
 
-    private static OrderDto ToDto(Allocation allocation) => new(
-        allocation.Order.Id,
-        $"{allocation.CustomerOrderCode}-{allocation.Order.CustomerOrderNumber}",
-        allocation.Order.Status,
-        allocation.Order.SourceUrl);
+    private static OrderDto ToDto(Allocation allocation) => ToDto(allocation.Order, allocation.CustomerOrderCode);
+
+    private static OrderDto ToDto(Order order) => ToDto(order, order.Customer.OrderCode!);
+
+    private static OrderDto ToDto(Order order, string customerOrderCode) => new(
+        order.Id,
+        $"{customerOrderCode}-{order.CustomerOrderNumber}",
+        order.Status,
+        order.SourceUrl);
 
     private sealed record Allocation(Order Order, string CustomerOrderCode);
 }

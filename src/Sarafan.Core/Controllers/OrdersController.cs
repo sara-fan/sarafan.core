@@ -16,6 +16,13 @@ public sealed class OrdersController(
     OrderService orders,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
+    [HttpGet("{id:long}")]
+    [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<OrderDto>> Get(
+        long id,
+        CancellationToken cancellationToken)
+        => Ok(await orders.GetAsync(CurrentCustomerId(), id, cancellationToken));
+
     [HttpPost]
     [ServiceFilter(typeof(PersonalDataConsentFilter))]
     [ProducesResponseType<OrderDto>(StatusCodes.Status201Created)]
@@ -30,6 +37,6 @@ public sealed class OrdersController(
         }
 
         var order = await orders.CreateAsync(CurrentCustomerId(), request.SourceUrl, parsedKey, cancellationToken);
-        return Created(string.Empty, order);
+        return CreatedAtAction(nameof(Get), new { id = order.Id }, order);
     }
 }

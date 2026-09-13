@@ -33,6 +33,7 @@ public sealed class OrderCreationTests
     public async Task SetUp()
     {
         await IntegrationTestEnvironment.ResetAsync();
+        await DemoteDemoBackofficeUsers();
         _app = IsolatedApp();
         _client = CreateClient(_app);
         _session = await Register(_client);
@@ -58,16 +59,21 @@ public sealed class OrderCreationTests
         var conflict = await conflictResponse.Content.ReadFromJsonAsync<SarafanProblemDetails>();
         using var secondResponse = await Create(_client, "https://shop.example/product?id=1", Guid.NewGuid());
         var second = await secondResponse.Content.ReadFromJsonAsync<OrderDto>();
+        using var getByLocation = await _client.GetAsync(firstResponse.Headers.Location!);
+        var getByLocationResponse = await getByLocation.Content.ReadFromJsonAsync<OrderDto>();
         var customer = await _client.GetFromJsonAsync<CustomerDto>("/api/v1/customers/me");
 
         using (Assert.EnterMultipleScope())
         {
             Assert.That(firstResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+            Assert.That(firstResponse.Headers.Location, Is.Not.Null);
             Assert.That(first, Is.Not.Null);
             Assert.That(first!.Id, Is.Positive);
             Assert.That(first.OrderNumber, Does.Match("^[0-9]{8}-1$"));
             Assert.That(first.Status, Is.EqualTo(OrderStatus.UnderReview));
             Assert.That(first.SourceUrl, Is.EqualTo("https://shop.example/product?id=1"));
+            Assert.That(getByLocation.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(getByLocationResponse, Is.EqualTo(first));
             Assert.That(replayResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(replay, Is.EqualTo(first));
             Assert.That(conflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
@@ -86,6 +92,16 @@ public sealed class OrderCreationTests
             Assert.That(storedCustomer.NextOrderNumber, Is.EqualTo(3));
             Assert.That(await database.Orders.CountAsync(item => item.CustomerId == storedCustomer.Id), Is.EqualTo(2));
         }
+    }
+
+    [Test]
+    public async Task Get_UnknownOrder_ReturnsNotFound()
+    {
+        using var response = await _client.GetAsync("/api/v1/orders/9223372036854775807");
+        var body = await response.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That(body?.Code, Is.EqualTo("resource_not_found"));
     }
 
     [Test]
@@ -196,6 +212,43 @@ public sealed class OrderCreationTests
         {
             services.RemoveAll<VerificationAttemptStore>();
             services.AddSingleton<VerificationAttemptStore>();
+            services.RemoveAll<IVerificationCodeProvider>();
+            services.AddSingleton<IVerificationCodeProvider>(new ProductionReadyVerificationCodeProvider());
+            services.Configure<BackofficeBootstrapOptions>(options => options.RealOrdersEnabled = true);
         }));
+
+    private static async Task DemoteDemoBackofficeUsers()
+    {
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var demoUsers = await database.BackofficeUsers
+            .Where(item => item.IsDemo)
+            .ToListAsync();
+        foreach (var user in demoUsers)
+        {
+            user.IsDemo = false;
+        }
+        await database.SaveChangesAsync();
+    }
+
+    private sealed class ProductionReadyVerificationCodeProvider : IVerificationCodeProvider
+    {
+        public bool IsProductionReady => true;
+
+        public Task RequestCodeAsync(string phone, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> VerifyCodeAsync(string phone, string? code, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var expectedCode = phone.Length >= 4 ? phone[^4..] : string.Empty;
+            return Task.FromResult(
+                expectedCode.Length == 4
+                && string.Equals(code?.Trim(), expectedCode, StringComparison.Ordinal));
+        }
+    }
 
 }

@@ -19,8 +19,7 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
 
         builder.Property(item => item.Id).HasColumnName("id");
         builder.Property(item => item.Phone).HasColumnName("phone").HasMaxLength(12).IsRequired();
-        builder.Property(item => item.OrderCode).HasColumnName("order_code").HasMaxLength(8)
-            .Metadata.SetAfterSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Throw);
+        builder.Property(item => item.OrderCode).HasColumnName("order_code").HasMaxLength(8);
         builder.Property(item => item.NextOrderNumber).HasColumnName("next_order_number").HasDefaultValue(1L);
         builder.Property(item => item.State).HasColumnName("state");
         builder.Property(item => item.TokenVersion).HasColumnName("token_version").HasDefaultValue(0);

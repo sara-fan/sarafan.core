@@ -4,6 +4,8 @@
 
 using System.ComponentModel.DataAnnotations;
 
+using Sarafan.Core.Services;
+
 namespace Sarafan.Core.Authentication;
 
 public sealed class BackofficeBootstrapOptions
@@ -25,7 +27,7 @@ public sealed class BackofficeBootstrapOptions
             return;
         }
 
-        if (RealOrdersEnabled || RealPaymentIntegrationEnabled)
+        if (BackofficeUserService.RealOperationsEnabled(this))
         {
             throw new InvalidOperationException(
                 "BackofficeBootstrap cannot be enabled with real orders or real payment integration");
