@@ -11,6 +11,7 @@ namespace Sarafan.Core.RestModels;
 public sealed record CustomerDto(
     int Id,
     string Phone,
+    string? OrderCode,
     CustomerState State,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
@@ -20,6 +21,7 @@ public sealed record CustomerDto(
     public static CustomerDto From(Customer customer, bool hasPhoto) => new(
         customer.Id,
         customer.Phone,
+        customer.OrderCode,
         customer.State,
         customer.CreatedAt,
         customer.UpdatedAt,

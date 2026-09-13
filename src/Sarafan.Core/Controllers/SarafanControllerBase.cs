@@ -95,6 +95,12 @@ public abstract class SarafanControllerBase(SarafanProblemDetailsFactory problem
             StatusCodes.Status400BadRequest,
             "invalid_photo_content");
 
+    protected ActionResult InvalidOrderIdempotencyKeyProblem()
+        => problemDetailsFactory.CreateResult(
+            HttpContext,
+            StatusCodes.Status400BadRequest,
+            "invalid_order_idempotency_key");
+
     protected int CurrentCustomerId()
     {
         var value = User.FindFirstValue(JwtRegisteredClaimNames.Sub)

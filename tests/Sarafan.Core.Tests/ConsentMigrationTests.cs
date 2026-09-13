@@ -30,11 +30,13 @@ public sealed class ConsentMigrationTests
         {
             await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(builder.ConnectionString).Options);
             var migrations = database.Database.GetMigrations().ToArray();
-            Assert.That(migrations[^3], Is.EqualTo("20260908181115_0_0_7_CustomerConsents"));
-            Assert.That(migrations[^2], Does.EndWith("_0_0_9_ConsentListPaginationIndexes"));
-            Assert.That(migrations[^1], Does.EndWith("_0_0_9_Login"));
+            var consentIndex = Array.FindIndex(migrations, migration => migration == "20260908181115_0_0_7_CustomerConsents");
+            Assert.That(consentIndex, Is.GreaterThan(0));
+            Assert.That(migrations[consentIndex + 1], Does.EndWith("_0_0_9_ConsentListPaginationIndexes"));
+            Assert.That(migrations[consentIndex + 2], Does.EndWith("_0_0_9_Login"));
+            Assert.That(migrations[consentIndex + 3], Does.EndWith("_0_0_10_Orders"));
             var migrator = database.GetService<IMigrator>();
-            await migrator.MigrateAsync(migrations[^4]);
+            await migrator.MigrateAsync(migrations[consentIndex - 1]);
             await database.Database.ExecuteSqlRawAsync("""
                 INSERT INTO customers (phone, state, created_at, updated_at)
                 VALUES ('+78889999998', 'Complete', now(), now())
@@ -56,6 +58,7 @@ public sealed class ConsentMigrationTests
             Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.legal_document_audit_events') IS NOT NULL AS \"Value\"").SingleAsync(), Is.True);
             Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.customer_consent_withdrawal_requests') IS NOT NULL AS \"Value\"").SingleAsync(), Is.True);
             Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.consent_rights_cases') IS NULL AS \"Value\"").SingleAsync(), Is.True);
+            Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.orders') IS NOT NULL AS \"Value\"").SingleAsync(), Is.True);
             Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.consent_rights_audit_events') IS NULL AS \"Value\"").SingleAsync(), Is.True);
             Assert.That(await database.Database.SqlQueryRaw<int>("""
                 SELECT COUNT(*)::int AS "Value"
@@ -161,13 +164,16 @@ public sealed class ConsentMigrationTests
                 Assert.That(saved.Phone, Is.EqualTo("+78889999998"));
                 Assert.That(saved.State, Is.EqualTo(CustomerState.Complete));
                 Assert.That(saved.TokenVersion, Is.Zero);
+                Assert.That(saved.OrderCode, Is.Null);
+                Assert.That(saved.NextOrderNumber, Is.EqualTo(1));
                 Assert.That(saved.Profile.FirstName, Is.EqualTo("Migration test"));
                 Assert.That(saved.Photo!.Content, Is.EqualTo(new byte[] { 1, 2, 3 }));
                 Assert.That(saved.RefreshSessions.Single().TokenHash, Is.EqualTo(new string('a', 64)));
             }
 
             // Schema rollback recreates an empty table; deleted consent evidence is never restored.
-            await migrator.MigrateAsync(migrations[^4]);
+            await migrator.MigrateAsync(migrations[consentIndex - 1]);
+            Assert.That(await database.Database.SqlQueryRaw<bool>("SELECT to_regclass('public.orders') IS NULL AS \"Value\"").SingleAsync(), Is.True);
             Assert.That(await database.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM customer_consents").SingleAsync(), Is.Zero);
             await migrator.MigrateAsync();
             Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);

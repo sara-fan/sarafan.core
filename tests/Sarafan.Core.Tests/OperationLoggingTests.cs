@@ -459,6 +459,14 @@ public sealed class OperationLoggingTests
         verify.EnsureSuccessStatusCode();
         var session = (await verify.Content.ReadFromJsonAsync<AuthenticationSessionDto>())!;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
+        var orderKey = Guid.NewGuid();
+        var orderSourceUrl = $"https://shop.example/product?token={Secret}";
+        using var orderRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
+        {
+            Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = orderSourceUrl })
+        };
+        orderRequest.Headers.Add("Idempotency-Key", orderKey.ToString("D"));
+        using var createOrder = await client.SendAsync(orderRequest);
         using var get = await client.GetAsync("/api/v1/customers/me");
         using var update = await client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = Secret });
         using var photo = await client.GetAsync("/api/v1/customers/me/photo");
@@ -475,6 +483,7 @@ public sealed class OperationLoggingTests
         Assert.That(orderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
+        Assert.That(createOrder.StatusCode, Is.EqualTo(HttpStatusCode.Created));
         Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(update.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(photo.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
@@ -489,6 +498,7 @@ public sealed class OperationLoggingTests
             typeof(CustomerOperationsController),
             typeof(CustomersController),
             typeof(OrderOperationsController),
+            typeof(OrdersController),
             typeof(StatusController)
         ];
         var actions = controllers.SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));
@@ -503,7 +513,7 @@ public sealed class OperationLoggingTests
             .Where(record => Equals(record.Attributes["code.function.name"], statusOperation))
             .Select(record => record.Level), Is.All.EqualTo(LogLevel.Trace));
 
-        foreach (var type in new[] { typeof(AuthenticationService), typeof(JwtTokenService) })
+        foreach (var type in new[] { typeof(AuthenticationService), typeof(JwtTokenService), typeof(OrderService) })
         {
             foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
@@ -515,7 +525,12 @@ public sealed class OperationLoggingTests
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("AuthenticationSession(tokens/customer=[redacted])")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("CustomerDto([redacted])")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
-        Assert.That(string.Join(' ', _logs.Records.Select(record => record.Message)), Does.Not.Contain(phone).And.Not.Contain(session.AccessToken));
+        Assert.That(
+            string.Join(' ', _logs.Records.Select(record => record.Message)),
+            Does.Not.Contain(phone)
+                .And.Not.Contain(session.AccessToken)
+                .And.Not.Contain(orderKey.ToString("D"))
+                .And.Not.Contain(orderSourceUrl));
         AssertPrivate();
     }
 
