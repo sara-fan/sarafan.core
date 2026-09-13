@@ -5,6 +5,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -115,19 +116,43 @@ public sealed class OrderCreationTests
 
         using var create = await Create(client, "https://shop.example/product", Guid.NewGuid());
         var createProblem = await create.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+        using var missingKey = await CreateRaw(client, null, null);
+        var missingKeyProblem = await missingKey.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+        using var malformedKey = await CreateRaw(client, "ftp://shop.example/product", "not-a-guid");
+        var malformedKeyProblem = await malformedKey.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+        using var malformedJson = await SendMalformedCreate(client);
+        var malformedJsonProblem = await malformedJson.Content.ReadFromJsonAsync<SarafanProblemDetails>();
         using var get = await client.GetAsync("/api/v1/orders/1");
         var getProblem = await get.Content.ReadFromJsonAsync<SarafanProblemDetails>();
 
         await using var scope = app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var orders = scope.ServiceProvider.GetRequiredService<OrderService>();
         var customer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == session.Customer.Id);
+        var createException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
+            customer.Id,
+            null,
+            Guid.Empty,
+            default));
+        var getException = Assert.ThrowsAsync<ServiceException>(() => orders.GetAsync(
+            customer.Id,
+            1,
+            default));
 
         using (Assert.EnterMultipleScope())
         {
             Assert.That(create.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
             Assert.That(createProblem?.Code, Is.EqualTo("resource_not_found"));
+            Assert.That(missingKey.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+            Assert.That(missingKeyProblem?.Code, Is.EqualTo("resource_not_found"));
+            Assert.That(malformedKey.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+            Assert.That(malformedKeyProblem?.Code, Is.EqualTo("resource_not_found"));
+            Assert.That(malformedJson.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+            Assert.That(malformedJsonProblem?.Code, Is.EqualTo("resource_not_found"));
             Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
             Assert.That(getProblem?.Code, Is.EqualTo("resource_not_found"));
+            Assert.That(createException?.Code, Is.EqualTo("resource_not_found"));
+            Assert.That(getException?.Code, Is.EqualTo("resource_not_found"));
             Assert.That(customer.OrderCode, Is.Null);
             Assert.That(await database.Orders.AnyAsync(item => item.CustomerId == customer.Id), Is.False);
         }
@@ -279,17 +304,33 @@ public sealed class OrderCreationTests
         return session;
     }
 
-    private static async Task<HttpResponseMessage> Create(HttpClient client, string sourceUrl, Guid? idempotencyKey)
+    private static Task<HttpResponseMessage> Create(HttpClient client, string? sourceUrl, Guid? idempotencyKey)
+        => CreateRaw(client, sourceUrl, idempotencyKey?.ToString("D"));
+
+    private static async Task<HttpResponseMessage> CreateRaw(
+        HttpClient client,
+        string? sourceUrl,
+        string? idempotencyKey)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
         {
             Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = sourceUrl })
         };
-        if (idempotencyKey.HasValue)
+        if (idempotencyKey is not null)
         {
-            request.Headers.Add("Idempotency-Key", idempotencyKey.Value.ToString("D"));
+            request.Headers.Add("Idempotency-Key", idempotencyKey);
         }
 
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendMalformedCreate(HttpClient client)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
+        {
+            Content = new StringContent("{", Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("Idempotency-Key", "not-a-guid");
         return await client.SendAsync(request);
     }
 

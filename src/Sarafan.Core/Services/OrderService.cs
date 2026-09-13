@@ -48,12 +48,12 @@ public sealed class OrderService(
             logger,
             $"{typeof(OrderService).FullName}.{nameof(CreateAsync)}",
             () => LogValueSummary.Inputs((nameof(customerId), customerId), (nameof(sourceUrl), sourceUrl), (nameof(idempotencyKey), idempotencyKey), (nameof(cancellationToken), cancellationToken)),
-            () => CreateCoreAsync(customerId, NormalizeSourceUrl(sourceUrl), idempotencyKey, cancellationToken),
+            () => CreateCoreAsync(customerId, sourceUrl, idempotencyKey, cancellationToken),
             cancellationToken);
 
     private async Task<OrderDto> CreateCoreAsync(
         int customerId,
-        string sourceUrl,
+        string? sourceUrl,
         Guid idempotencyKey,
         CancellationToken cancellationToken)
     {
@@ -62,6 +62,7 @@ public sealed class OrderService(
             throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
         }
 
+        var normalizedSourceUrl = NormalizeSourceUrl(sourceUrl);
         if (idempotencyKey == Guid.Empty)
         {
             throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_idempotency_key");
@@ -85,7 +86,7 @@ public sealed class OrderService(
                             cancellationToken);
                     if (existing is not null)
                     {
-                        if (!string.Equals(existing.SourceUrl, sourceUrl, StringComparison.Ordinal))
+                        if (!string.Equals(existing.SourceUrl, normalizedSourceUrl, StringComparison.Ordinal))
                         {
                             throw new ServiceException(StatusCodes.Status409Conflict, "order_creation_conflict");
                         }
@@ -97,7 +98,7 @@ public sealed class OrderService(
                     assignedNewCode = customer.OrderCode is null;
                     var customerOrderNumber = customer.AllocateOrderNumber(
                         customer.OrderCode ?? codeGenerator.Generate());
-                    var order = new Order(customerId, customerOrderNumber, sourceUrl, idempotencyKey);
+                    var order = new Order(customerId, customerOrderNumber, normalizedSourceUrl, idempotencyKey);
                     database.Orders.Add(order);
                     return new Allocation(order, customer.OrderCode!);
                 }, cancellationToken);

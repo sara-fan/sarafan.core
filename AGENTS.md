@@ -7,7 +7,7 @@
 - When a change introduces or changes a lasting convention, API contract, domain invariant, security/privacy rule, workflow, or test pattern, update the nearest relevant `AGENTS.md` in the same PR. Keep entries concise and reusable.
 - Otherwise, include `AGENTS.md: no durable change` in the PR description.
 - Before editing documentation, read its current revision and preserve user-authored changes. Keep product requirements in the specification and task-specific discussion in the issue.
-- Before enabling real orders or a real payment-system integration, replace and disable the predictable phone-suffix demo verification mechanism. A build/runtime environment named Production does not satisfy this requirement. Keep this release gate tracked in the [MVP delivery issue](https://github.com/sara-fan/sarafan.spec/issues/26).
+- Before enabling real orders or a real payment-system integration, replace and disable the predictable phone-suffix demo verification mechanism. A build/runtime environment named Production does not satisfy this requirement. While real operations are disabled, reject order routes before model binding or input validation with `resource_not_found`, and retain service-level guards for non-HTTP callers. Keep this release gate tracked in the [MVP delivery issue](https://github.com/sara-fan/sarafan.spec/issues/26).
 
 ## Code Standards and Requirements
 

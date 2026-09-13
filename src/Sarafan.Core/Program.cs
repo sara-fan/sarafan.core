@@ -88,6 +88,7 @@ builder.Services.AddScoped<LegalDocumentService>();
 builder.Services.AddScoped<ConsentService>();
 builder.Services.AddScoped<MandatoryCookieConsentFilter>();
 builder.Services.AddScoped<PersonalDataConsentFilter>();
+builder.Services.AddScoped<RealOperationsRequiredFilter>();
 builder.Services.AddScoped<ConsentWithdrawalRequestService>();
 builder.Services.AddScoped<ConsentRetentionService>();
 if (builder.Configuration.GetValue("Consents:RetentionWorkerEnabled", true))

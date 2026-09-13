@@ -12,6 +12,7 @@ namespace Sarafan.Core.Controllers;
 
 [Authorize]
 [Route("api/v1/orders")]
+[ServiceFilter(typeof(RealOperationsRequiredFilter), Order = int.MinValue)]
 public sealed class OrdersController(
     OrderService orders,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
