@@ -80,7 +80,14 @@ public sealed class OrderIdentityContractTests
             Assert.That(order.FindProperty(nameof(Order.LengthCm))!.GetScale(), Is.EqualTo(2));
             Assert.That(order.FindProperty(nameof(Order.Characteristics))!.GetColumnType(), Is.EqualTo("jsonb"));
             Assert.That(order.FindProperty(nameof(Order.CreationIdempotencyKey))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
+            Assert.That(order.FindProperty(nameof(Order.CreatedAt))!.GetColumnName(), Is.EqualTo("created_at"));
+            Assert.That(order.FindProperty(nameof(Order.CreatedAt))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
+            Assert.That(order.FindProperty(nameof(Order.UpdatedAt))!.GetColumnName(), Is.EqualTo("updated_at"));
+            Assert.That(order.FindProperty(nameof(Order.UpdatedAt))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Save));
             Assert.That(order.GetIndexes().Count(index => index.IsUnique), Is.EqualTo(2));
+            Assert.That(order.GetIndexes().Select(index => index.GetDatabaseName()), Does.Contain("ix_orders_created_at_id"));
+            Assert.That(order.GetIndexes().Select(index => index.GetDatabaseName()), Does.Contain("ix_orders_status_created_at_id"));
+            Assert.That(order.GetIndexes().Select(index => index.GetDatabaseName()), Does.Contain("ix_orders_updated_at_id"));
             Assert.That(order.GetForeignKeys(), Has.Count.EqualTo(2));
             Assert.That(order.GetForeignKeys(), Has.All.Property(nameof(IMutableForeignKey.DeleteBehavior)).EqualTo(DeleteBehavior.Restrict));
         }

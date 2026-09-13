@@ -110,3 +110,33 @@ public static class OrderStatusExtensions
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 }
+
+public sealed record OrderStatusFilterGroup(
+    string RouteAlias,
+    string DisplayName,
+    IReadOnlyList<OrderStatus> Statuses);
+
+public static class OrderStatusFilterGroups
+{
+    public const string Work = "work";
+    public const string InProgress = "in_progress";
+
+    public static IReadOnlyList<OrderStatusFilterGroup> Definitions { get; } =
+    [
+        new(
+            Work,
+            "В работе",
+            Enum.GetValues<OrderStatus>().Where(status => (int)status is >= 0 and <= 380).ToArray()),
+        new(
+            InProgress,
+            "Выполняется",
+            Enum.GetValues<OrderStatus>().Where(status => (int)status is >= 300 and <= 380).ToArray())
+    ];
+
+    public static bool TryGet(string? routeAlias, out OrderStatusFilterGroup? group)
+    {
+        group = Definitions.SingleOrDefault(candidate =>
+            string.Equals(candidate.RouteAlias, routeAlias, StringComparison.Ordinal));
+        return group is not null;
+    }
+}

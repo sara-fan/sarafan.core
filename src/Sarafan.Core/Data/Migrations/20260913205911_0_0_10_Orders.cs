@@ -82,7 +82,9 @@ namespace Sarafan.Core.Data.Migrations
                     quantity = table.Column<int>(type: "integer", nullable: false),
                     comment = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
                     applied_exchange_rate_history_id = table.Column<long>(type: "bigint", nullable: true),
-                    creation_idempotency_key = table.Column<Guid>(type: "uuid", nullable: false)
+                    creation_idempotency_key = table.Column<Guid>(type: "uuid", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -146,6 +148,21 @@ namespace Sarafan.Core.Data.Migrations
                 name: "ix_orders_applied_exchange_rate_history_id",
                 table: "orders",
                 column: "applied_exchange_rate_history_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_orders_created_at_id",
+                table: "orders",
+                columns: new[] { "created_at", "id" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_orders_status_created_at_id",
+                table: "orders",
+                columns: new[] { "status", "created_at", "id" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_orders_updated_at_id",
+                table: "orders",
+                columns: new[] { "updated_at", "id" });
 
             migrationBuilder.CreateIndex(
                 name: "ux_orders_creation_idempotency",

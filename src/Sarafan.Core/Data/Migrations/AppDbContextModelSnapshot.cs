@@ -886,6 +886,10 @@ namespace Sarafan.Core.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("creation_idempotency_key");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
                     b.Property<int>("CustomerId")
                         .HasColumnType("integer")
                         .HasColumnName("customer_id");
@@ -944,6 +948,10 @@ namespace Sarafan.Core.Data.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("store_name");
 
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
                     b.Property<decimal?>("WidthCm")
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)")
@@ -954,6 +962,9 @@ namespace Sarafan.Core.Data.Migrations
                     b.HasIndex("AppliedExchangeRateHistoryId")
                         .HasDatabaseName("ix_orders_applied_exchange_rate_history_id");
 
+                    b.HasIndex("CreatedAt", "Id")
+                        .HasDatabaseName("ix_orders_created_at_id");
+
                     b.HasIndex("CustomerId", "CreationIdempotencyKey")
                         .IsUnique()
                         .HasDatabaseName("ux_orders_creation_idempotency");
@@ -961,6 +972,12 @@ namespace Sarafan.Core.Data.Migrations
                     b.HasIndex("CustomerId", "CustomerOrderNumber")
                         .IsUnique()
                         .HasDatabaseName("ux_orders_customer_order_number");
+
+                    b.HasIndex("Status", "CreatedAt", "Id")
+                        .HasDatabaseName("ix_orders_status_created_at_id");
+
+                    b.HasIndex("UpdatedAt", "Id")
+                        .HasDatabaseName("ix_orders_updated_at_id");
 
                     b.ToTable("orders", null, t =>
                         {

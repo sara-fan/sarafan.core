@@ -54,12 +54,14 @@ public sealed class OrderCreationTests
     {
         Assert.That(_session.Customer.OrderCode, Is.Null);
         var firstKey = Guid.NewGuid();
+        var beforeCreate = DateTimeOffset.UtcNow;
         using var firstResponse = await Create(
             _client,
             "  https://shop.example/product?id=1  ",
             firstKey,
             quantity: 2,
             comment: "  Упаковать бережно  ");
+        var afterCreate = DateTimeOffset.UtcNow;
         var first = await firstResponse.Content.ReadFromJsonAsync<OrderDto>();
         using var replayResponse = await Create(
             _client,
@@ -123,10 +125,14 @@ public sealed class OrderCreationTests
         await using var scope = _app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var storedCustomer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == _session.Customer.Id);
+        var storedFirstOrder = await database.Orders.AsNoTracking().SingleAsync(item => item.Id == first!.Id);
         using (Assert.EnterMultipleScope())
         {
             Assert.That(storedCustomer.NextOrderNumber, Is.EqualTo(3));
             Assert.That(await database.Orders.CountAsync(item => item.CustomerId == storedCustomer.Id), Is.EqualTo(2));
+            Assert.That(storedFirstOrder.CreatedAt, Is.InRange(beforeCreate, afterCreate));
+            Assert.That(storedFirstOrder.UpdatedAt, Is.EqualTo(storedFirstOrder.CreatedAt));
+            Assert.That(storedFirstOrder.CreatedAt.Offset, Is.EqualTo(TimeSpan.Zero));
         }
     }
 
@@ -174,7 +180,8 @@ public sealed class OrderCreationTests
                 20.50m,
                 30.75m,
                 new Dictionary<string, string> { ["Цвет"] = "Синий" },
-                rate);
+                rate,
+                DateTimeOffset.UtcNow);
             await database.SaveChangesAsync();
         }
 

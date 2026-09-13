@@ -49,6 +49,8 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(item => item.AppliedExchangeRateHistoryId).HasColumnName("applied_exchange_rate_history_id");
         var idempotencyKey = builder.Property(item => item.CreationIdempotencyKey)
             .HasColumnName("creation_idempotency_key");
+        var createdAt = builder.Property(item => item.CreatedAt).HasColumnName("created_at");
+        builder.Property(item => item.UpdatedAt).HasColumnName("updated_at");
 
         customerId.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         customerOrderNumber.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
@@ -56,6 +58,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         quantity.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         comment.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         idempotencyKey.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        createdAt.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
 
         builder.HasIndex(item => new { item.CustomerId, item.CustomerOrderNumber })
             .IsUnique()
@@ -65,6 +68,12 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasDatabaseName("ux_orders_creation_idempotency");
         builder.HasIndex(item => item.AppliedExchangeRateHistoryId)
             .HasDatabaseName("ix_orders_applied_exchange_rate_history_id");
+        builder.HasIndex(item => new { item.CreatedAt, item.Id })
+            .HasDatabaseName("ix_orders_created_at_id");
+        builder.HasIndex(item => new { item.Status, item.CreatedAt, item.Id })
+            .HasDatabaseName("ix_orders_status_created_at_id");
+        builder.HasIndex(item => new { item.UpdatedAt, item.Id })
+            .HasDatabaseName("ix_orders_updated_at_id");
 
         builder.HasOne(item => item.Customer)
             .WithMany(item => item.Orders)

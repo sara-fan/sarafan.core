@@ -537,6 +537,7 @@ public sealed class ProblemDetailsContractTests
             ["invalid_photo_type"] = 400,
             ["invalid_photo_content"] = 400,
             ["invalid_order_url"] = 400,
+            ["invalid_order_list_filter"] = 400,
             ["invalid_order_idempotency_key"] = 400,
             ["order_creation_conflict"] = 409,
             ["order_number_allocation_failed"] = 503,

@@ -481,6 +481,11 @@ public sealed class OperationLoggingTests
         using var createOrder = await client.SendAsync(orderRequest);
         var createdOrder = (await createOrder.Content.ReadFromJsonAsync<OrderDto>())!;
         using var getOrder = await client.GetAsync($"/api/v1/orders/{createdOrder.Id}");
+        await using (var orderScope = app.Services.CreateAsyncScope())
+        {
+            await orderScope.ServiceProvider.GetRequiredService<OrderService>().ListForBackofficeAsync(
+                1, 10, "createdAt", "desc", Secret, null, null, null, null, default);
+        }
         using var get = await client.GetAsync("/api/v1/customers/me");
         using var update = await client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = Secret });
         using var photo = await client.GetAsync("/api/v1/customers/me/photo");

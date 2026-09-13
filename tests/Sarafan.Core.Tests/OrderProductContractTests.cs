@@ -9,6 +9,9 @@ namespace Sarafan.Core.ModelTests;
 [TestFixture]
 public sealed class OrderProductContractTests
 {
+    private static readonly DateTimeOffset CreatedAt = DateTimeOffset.Parse("2026-09-14T00:00:00Z");
+    private static readonly DateTimeOffset UpdatedAt = DateTimeOffset.Parse("2026-09-14T01:00:00Z");
+
     [Test]
     public void CurrencyCatalogue_UsesStableIsoNumericValuesAndMetadata()
     {
@@ -33,6 +36,19 @@ public sealed class OrderProductContractTests
         Assert.Throws<ArgumentOutOfRangeException>(() => NewOrder(quantity: 0));
         Assert.Throws<ArgumentException>(() => NewOrder(comment: new string('x', 2001)));
         Assert.DoesNotThrow(() => NewOrder(quantity: 1, comment: new string('x', 2000)));
+    }
+
+    [Test]
+    public void Order_NormalizesCreationAndUpdateTimesToUtcAndNeverChangesCreationTime()
+    {
+        var localCreated = new DateTimeOffset(2026, 9, 14, 3, 0, 0, TimeSpan.FromHours(3));
+        var order = new Order(1, 1, "https://shop.example/product", 1, null, Guid.NewGuid(), localCreated);
+
+        order.SetProductSnapshot(null, null, null, null, null, null, null, null, null, null,
+            new DateTimeOffset(2026, 9, 14, 4, 0, 0, TimeSpan.FromHours(3)));
+
+        Assert.That(order.CreatedAt, Is.EqualTo(DateTimeOffset.Parse("2026-09-14T00:00:00Z")));
+        Assert.That(order.UpdatedAt, Is.EqualTo(DateTimeOffset.Parse("2026-09-14T01:00:00Z")));
     }
 
     [Test]
@@ -63,7 +79,8 @@ public sealed class OrderProductContractTests
             20.50m,
             30.75m,
             characteristics,
-            rate);
+            rate,
+            UpdatedAt);
         characteristics["Цвет"] = "Красный";
 
         using (Assert.EnterMultipleScope())
@@ -79,6 +96,8 @@ public sealed class OrderProductContractTests
             Assert.That(order.Characteristics, Is.EqualTo(new Dictionary<string, string> { ["Цвет"] = "Синий" }));
             Assert.That(order.AppliedExchangeRateHistoryId, Is.EqualTo(7));
             Assert.That(order.AppliedExchangeRateHistory, Is.SameAs(rate));
+            Assert.That(order.CreatedAt, Is.EqualTo(CreatedAt));
+            Assert.That(order.UpdatedAt, Is.EqualTo(UpdatedAt));
         }
     }
 
@@ -106,10 +125,22 @@ public sealed class OrderProductContractTests
         Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), length: 1, width: 0, height: 1));
         Assert.Throws<ArgumentException>(() => Snapshot(
             NewOrder(), sellerPrice: 10, currency: Currency.Usd, rate: rubRate));
+        Assert.Throws<ArgumentOutOfRangeException>(() => NewOrder().SetProductSnapshot(
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            CreatedAt.AddTicks(-1)));
     }
 
     private static Order NewOrder(int quantity = 1, string? comment = null)
-        => new(1, 1, "https://shop.example/product", quantity, comment, Guid.NewGuid());
+        => new(1, 1, "https://shop.example/product", quantity, comment, Guid.NewGuid(), CreatedAt);
 
     private static void Snapshot(
         Order order,
@@ -129,5 +160,6 @@ public sealed class OrderProductContractTests
             width,
             height,
             null,
-            rate);
+            rate,
+            UpdatedAt);
 }
