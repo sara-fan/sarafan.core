@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 
 using Microsoft.AspNetCore.Mvc.Testing;
 
+using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
 
 namespace Sarafan.Core.Tests;
@@ -34,6 +35,11 @@ public sealed class OrderOperationsTests
             Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
             Assert.That(body, Is.Not.Null);
             Assert.That(body!.Statuses, Has.Count.EqualTo(12));
+            Assert.That(body.Currencies, Is.EqualTo(new[]
+            {
+                new EnumOpsItemDto((int)Currency.Rub, "Российский рубль", "rub"),
+                new EnumOpsItemDto((int)Currency.Usd, "Доллар США", "usd")
+            }));
         }
 
         Assert.That(body!.Statuses, Is.EqualTo(new[]

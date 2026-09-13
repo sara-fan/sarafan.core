@@ -12,7 +12,7 @@ using Sarafan.Core.Data;
 namespace Sarafan.Core.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260913093603_0_0_10_Orders")]
+    [Migration("20260913205911_0_0_10_Orders")]
     partial class _0_0_10_Orders
     {
         /// <inheritdoc />
@@ -646,10 +646,8 @@ namespace Sarafan.Core.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<string>("BaseCurrency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)")
+                    b.Property<int>("BaseCurrency")
+                        .HasColumnType("integer")
                         .HasColumnName("base_currency");
 
                     b.Property<int>("Nominal")
@@ -667,10 +665,8 @@ namespace Sarafan.Core.Data.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("provider");
 
-                    b.Property<string>("QuoteCurrency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)")
+                    b.Property<int>("QuoteCurrency")
+                        .HasColumnType("integer")
                         .HasColumnName("quote_currency");
 
                     b.Property<DateTimeOffset>("RetrievedAt")
@@ -694,9 +690,15 @@ namespace Sarafan.Core.Data.Migrations
 
                     b.ToTable("exchange_rate_history", null, t =>
                         {
+                            t.HasCheckConstraint("CK_exchange_rate_base_currency", "base_currency IN (643, 840)");
+
+                            t.HasCheckConstraint("CK_exchange_rate_distinct_currencies", "base_currency <> quote_currency");
+
                             t.HasCheckConstraint("CK_exchange_rate_nominal", "nominal BETWEEN 1 AND 1000000");
 
                             t.HasCheckConstraint("CK_exchange_rate_positive", "official_rate > 0");
+
+                            t.HasCheckConstraint("CK_exchange_rate_quote_currency", "quote_currency IN (643, 840)");
                         });
                 });
 
@@ -870,6 +872,19 @@ namespace Sarafan.Core.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<long?>("AppliedExchangeRateHistoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("applied_exchange_rate_history_id");
+
+                    b.Property<string>("Characteristics")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("characteristics");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("comment");
+
                     b.Property<Guid>("CreationIdempotencyKey")
                         .HasColumnType("uuid")
                         .HasColumnName("creation_idempotency_key");
@@ -881,6 +896,39 @@ namespace Sarafan.Core.Data.Migrations
                     b.Property<long>("CustomerOrderNumber")
                         .HasColumnType("bigint")
                         .HasColumnName("customer_order_number");
+
+                    b.Property<decimal?>("HeightCm")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("height_cm");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("image_url");
+
+                    b.Property<decimal?>("LengthCm")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("length_cm");
+
+                    b.Property<string>("ProductName")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("product_name");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<decimal?>("SellerPrice")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("seller_price");
+
+                    b.Property<int?>("SellerPriceCurrency")
+                        .HasColumnType("integer")
+                        .HasColumnName("seller_price_currency");
 
                     b.Property<string>("SourceUrl")
                         .IsRequired()
@@ -894,7 +942,20 @@ namespace Sarafan.Core.Data.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("status");
 
+                    b.Property<string>("StoreName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("store_name");
+
+                    b.Property<decimal?>("WidthCm")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("width_cm");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("AppliedExchangeRateHistoryId")
+                        .HasDatabaseName("ix_orders_applied_exchange_rate_history_id");
 
                     b.HasIndex("CustomerId", "CreationIdempotencyKey")
                         .IsUnique()
@@ -906,9 +967,19 @@ namespace Sarafan.Core.Data.Migrations
 
                     b.ToTable("orders", null, t =>
                         {
+                            t.HasCheckConstraint("ck_orders_applied_exchange_rate", "applied_exchange_rate_history_id IS NULL OR seller_price_currency IS NOT NULL");
+
                             t.HasCheckConstraint("ck_orders_creation_idempotency_key", "creation_idempotency_key <> '00000000-0000-0000-0000-000000000000'::uuid");
 
                             t.HasCheckConstraint("ck_orders_customer_order_number", "customer_order_number > 0");
+
+                            t.HasCheckConstraint("ck_orders_dimensions", "(length_cm IS NULL AND width_cm IS NULL AND height_cm IS NULL) OR (length_cm > 0 AND width_cm > 0 AND height_cm > 0)");
+
+                            t.HasCheckConstraint("ck_orders_image_url", "image_url IS NULL OR image_url ~* '^https?://' AND char_length(image_url) <= 2048");
+
+                            t.HasCheckConstraint("ck_orders_quantity", "quantity > 0");
+
+                            t.HasCheckConstraint("ck_orders_seller_price", "(seller_price IS NULL AND seller_price_currency IS NULL) OR (seller_price > 0 AND seller_price_currency IN (643, 840))");
 
                             t.HasCheckConstraint("ck_orders_source_url", "source_url ~* '^https?://' AND char_length(source_url) <= 2048");
 
@@ -1117,11 +1188,18 @@ namespace Sarafan.Core.Data.Migrations
 
             modelBuilder.Entity("Sarafan.Core.Models.Order", b =>
                 {
+                    b.HasOne("Sarafan.Core.Models.ExchangeRateHistory", "AppliedExchangeRateHistory")
+                        .WithMany()
+                        .HasForeignKey("AppliedExchangeRateHistoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Sarafan.Core.Models.Customer", "Customer")
                         .WithMany("Orders")
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("AppliedExchangeRateHistory");
 
                     b.Navigation("Customer");
                 });

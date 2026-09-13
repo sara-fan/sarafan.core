@@ -42,18 +42,28 @@ public sealed class OrderService(
     public Task<OrderDto> CreateAsync(
         int customerId,
         string? sourceUrl,
+        int? quantity,
+        string? comment,
         Guid idempotencyKey,
         CancellationToken cancellationToken)
         => OperationLogging.RunAsync(
             logger,
             $"{typeof(OrderService).FullName}.{nameof(CreateAsync)}",
-            () => LogValueSummary.Inputs((nameof(customerId), customerId), (nameof(sourceUrl), sourceUrl), (nameof(idempotencyKey), idempotencyKey), (nameof(cancellationToken), cancellationToken)),
-            () => CreateCoreAsync(customerId, sourceUrl, idempotencyKey, cancellationToken),
+            () => LogValueSummary.Inputs(
+                (nameof(customerId), customerId),
+                (nameof(sourceUrl), sourceUrl),
+                (nameof(quantity), quantity),
+                (nameof(comment), comment),
+                (nameof(idempotencyKey), idempotencyKey),
+                (nameof(cancellationToken), cancellationToken)),
+            () => CreateCoreAsync(customerId, sourceUrl, quantity, comment, idempotencyKey, cancellationToken),
             cancellationToken);
 
     private async Task<OrderDto> CreateCoreAsync(
         int customerId,
         string? sourceUrl,
+        int? quantity,
+        string? comment,
         Guid idempotencyKey,
         CancellationToken cancellationToken)
     {
@@ -63,6 +73,8 @@ public sealed class OrderService(
         }
 
         var normalizedSourceUrl = NormalizeSourceUrl(sourceUrl);
+        var normalizedQuantity = NormalizeQuantity(quantity);
+        var normalizedComment = NormalizeComment(comment);
         if (idempotencyKey == Guid.Empty)
         {
             throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_idempotency_key");
@@ -86,7 +98,9 @@ public sealed class OrderService(
                             cancellationToken);
                     if (existing is not null)
                     {
-                        if (!string.Equals(existing.SourceUrl, normalizedSourceUrl, StringComparison.Ordinal))
+                        if (!string.Equals(existing.SourceUrl, normalizedSourceUrl, StringComparison.Ordinal)
+                            || existing.Quantity != normalizedQuantity
+                            || !string.Equals(existing.Comment, normalizedComment, StringComparison.Ordinal))
                         {
                             throw new ServiceException(StatusCodes.Status409Conflict, "order_creation_conflict");
                         }
@@ -98,7 +112,13 @@ public sealed class OrderService(
                     assignedNewCode = customer.OrderCode is null;
                     var customerOrderNumber = customer.AllocateOrderNumber(
                         customer.OrderCode ?? codeGenerator.Generate());
-                    var order = new Order(customerId, customerOrderNumber, normalizedSourceUrl, idempotencyKey);
+                    var order = new Order(
+                        customerId,
+                        customerOrderNumber,
+                        normalizedSourceUrl,
+                        normalizedQuantity,
+                        normalizedComment,
+                        idempotencyKey);
                     database.Orders.Add(order);
                     return new Allocation(order, customer.OrderCode!);
                 }, cancellationToken);
@@ -128,6 +148,7 @@ public sealed class OrderService(
         var order = await database.Orders
             .AsNoTracking()
             .Include(item => item.Customer)
+            .Include(item => item.AppliedExchangeRateHistory)
             .SingleOrDefaultAsync(
                 item => item.CustomerId == customerId && item.Id == orderId,
                 cancellationToken);
@@ -155,6 +176,27 @@ public sealed class OrderService(
         return normalized;
     }
 
+    private static int NormalizeQuantity(int? quantity)
+    {
+        if (quantity is null or <= 0)
+        {
+            throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_quantity");
+        }
+
+        return quantity.Value;
+    }
+
+    private static string? NormalizeComment(string? comment)
+    {
+        var normalized = comment?.Trim();
+        if (normalized?.Length > 2000)
+        {
+            throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_comment");
+        }
+
+        return string.IsNullOrEmpty(normalized) ? null : normalized;
+    }
+
     private static OrderDto ToDto(Allocation allocation) => ToDto(allocation.Order, allocation.CustomerOrderCode);
 
     private static OrderDto ToDto(Order order) => ToDto(order, order.Customer.OrderCode!);
@@ -163,7 +205,29 @@ public sealed class OrderService(
         order.Id,
         $"{customerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
-        order.SourceUrl);
+        order.SourceUrl,
+        order.ProductName,
+        order.StoreName,
+        order.ImageUrl,
+        order.SellerPrice.HasValue && order.SellerPriceCurrency.HasValue
+            ? new OrderSellerPriceDto(order.SellerPrice.Value, order.SellerPriceCurrency.Value)
+            : null,
+        order.LengthCm.HasValue && order.WidthCm.HasValue && order.HeightCm.HasValue
+            ? new OrderDimensionsDto(order.LengthCm.Value, order.WidthCm.Value, order.HeightCm.Value)
+            : null,
+        order.Characteristics,
+        order.Quantity,
+        order.Comment,
+        order.AppliedExchangeRateHistory is { } rate
+            ? new OrderAppliedExchangeRateDto(
+                rate.Id,
+                rate.Provider,
+                rate.BaseCurrency,
+                rate.QuoteCurrency,
+                rate.Nominal,
+                rate.OfficialRate,
+                rate.SourceEffectiveDate)
+            : null);
 
     private sealed record Allocation(Order Order, string CustomerOrderCode);
 }

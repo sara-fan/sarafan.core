@@ -72,9 +72,59 @@ public sealed class OrderIdentityContractTests
             Assert.That(order.FindProperty(nameof(Order.CustomerId))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
             Assert.That(order.FindProperty(nameof(Order.CustomerOrderNumber))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
             Assert.That(order.FindProperty(nameof(Order.SourceUrl))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
+            Assert.That(order.FindProperty(nameof(Order.Quantity))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
+            Assert.That(order.FindProperty(nameof(Order.Comment))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
+            Assert.That(order.FindProperty(nameof(Order.SellerPrice))!.GetPrecision(), Is.EqualTo(10));
+            Assert.That(order.FindProperty(nameof(Order.SellerPrice))!.GetScale(), Is.EqualTo(2));
+            Assert.That(order.FindProperty(nameof(Order.LengthCm))!.GetPrecision(), Is.EqualTo(10));
+            Assert.That(order.FindProperty(nameof(Order.LengthCm))!.GetScale(), Is.EqualTo(2));
+            Assert.That(order.FindProperty(nameof(Order.Characteristics))!.GetColumnType(), Is.EqualTo("jsonb"));
             Assert.That(order.FindProperty(nameof(Order.CreationIdempotencyKey))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
             Assert.That(order.GetIndexes().Count(index => index.IsUnique), Is.EqualTo(2));
-            Assert.That(order.GetForeignKeys().Single().DeleteBehavior, Is.EqualTo(DeleteBehavior.Restrict));
+            Assert.That(order.GetForeignKeys(), Has.Count.EqualTo(2));
+            Assert.That(order.GetForeignKeys(), Has.All.Property(nameof(IMutableForeignKey.DeleteBehavior)).EqualTo(DeleteBehavior.Restrict));
+        }
+    }
+
+    [Test]
+    public void CharacteristicsMapping_RoundTripsAndComparesDictionaryValues()
+    {
+        using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=127.0.0.1;Port=1;Database=metadata;Username=unused;Password=unused")
+            .Options);
+        var property = database.Model.FindEntityType(typeof(Order))!
+            .FindProperty(nameof(Order.Characteristics))!;
+        var converter = property.GetValueConverter()!;
+        var comparer = property.GetValueComparer()!;
+        var characteristics = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["size"] = "M",
+            ["color"] = "blue"
+        };
+        var equivalent = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["color"] = "blue",
+            ["size"] = "M"
+        };
+
+        var json = (string)converter.ConvertToProvider(characteristics)!;
+        var roundTrip = (Dictionary<string, string>)converter.ConvertFromProvider(json)!;
+        var snapshot = (Dictionary<string, string>)comparer.Snapshot(characteristics)!;
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(roundTrip, Is.EqualTo(characteristics));
+            Assert.That(converter.ConvertToProvider(null), Is.Null);
+            Assert.That(comparer.Equals(characteristics, equivalent), Is.True);
+            Assert.That(comparer.Equals(characteristics, characteristics), Is.True);
+            Assert.That(comparer.Equals(characteristics, new Dictionary<string, string> { ["size"] = "L" }), Is.False);
+            Assert.That(comparer.Equals(characteristics, new Dictionary<string, string>()), Is.False);
+            Assert.That(comparer.Equals(characteristics, null), Is.False);
+            Assert.That(comparer.GetHashCode(characteristics), Is.EqualTo(comparer.GetHashCode(equivalent)));
+            Assert.That(comparer.GetHashCode(null), Is.Zero);
+            Assert.That(snapshot, Is.EqualTo(characteristics));
+            Assert.That(snapshot, Is.Not.SameAs(characteristics));
+            Assert.That(comparer.Snapshot(null), Is.Null);
         }
     }
 

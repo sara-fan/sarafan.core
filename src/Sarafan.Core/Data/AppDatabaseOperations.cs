@@ -97,8 +97,8 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
     {
         var exists = await database.ExchangeRateHistory.AnyAsync(
             item => item.Provider == "CBR"
-                && item.BaseCurrency == "USD"
-                && item.QuoteCurrency == "RUB"
+                && item.BaseCurrency == Currency.Usd
+                && item.QuoteCurrency == Currency.Rub
                 && item.SourceEffectiveDate == rate.SourceEffectiveDate,
             cancellationToken);
         if (exists)
@@ -110,8 +110,8 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
         {
             Provider = "CBR",
             Source = CbrRateClient.Endpoint,
-            BaseCurrency = "USD",
-            QuoteCurrency = "RUB",
+            BaseCurrency = Currency.Usd,
+            QuoteCurrency = Currency.Rub,
             Nominal = rate.Nominal,
             OfficialRate = rate.OfficialRate,
             SourceEffectiveDate = rate.SourceEffectiveDate,

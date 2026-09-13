@@ -9,8 +9,8 @@ public sealed class ExchangeRateHistory
     public long Id { get; set; }
     public required string Provider { get; set; }
     public required string Source { get; set; }
-    public required string BaseCurrency { get; set; }
-    public required string QuoteCurrency { get; set; }
+    public Currency BaseCurrency { get; set; }
+    public Currency QuoteCurrency { get; set; }
     public int Nominal { get; set; }
     public decimal OfficialRate { get; set; }
     public DateOnly SourceEffectiveDate { get; set; }

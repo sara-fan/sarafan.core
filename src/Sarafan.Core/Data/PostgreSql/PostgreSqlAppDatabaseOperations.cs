@@ -76,7 +76,7 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
         => await database.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO exchange_rate_history
                 (provider, source, base_currency, quote_currency, nominal, official_rate, source_effective_date, retrieved_at)
-            VALUES ({"CBR"}, {CbrRateClient.Endpoint}, {"USD"}, {"RUB"}, {rate.Nominal},
+            VALUES ({"CBR"}, {CbrRateClient.Endpoint}, {(int)Currency.Usd}, {(int)Currency.Rub}, {rate.Nominal},
                 {rate.OfficialRate}, {rate.SourceEffectiveDate}, {retrievedAt})
             ON CONFLICT (provider, base_currency, quote_currency, source_effective_date) DO NOTHING
             """, cancellationToken) == 1;

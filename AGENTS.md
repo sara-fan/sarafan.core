@@ -37,9 +37,14 @@
 
 ### Official exchange rates
 
+- Keep `Currency` append-only with ISO 4217 numeric values and publish its Core-owned Russian names and aliases through order operations and the authorized back-office status catalogue. Persist exchange-rate currency pairs as numeric enum values; clients must not infer enum labels.
 - Synchronize only the official CBR USD/RUB reference rate at startup and daily at 00:10 Europe/Moscow. Keep source-effective date separate from UTC retrieval time; use the provider/pair/date unique constraint to preserve the first observation, including across concurrent instances. Provider failures must not block startup or erase history.
 - `/api/v1/backoffice/status` is staff-authorized supplementary data, returns the latest persisted rate with its original nominal and source date, and uses `Cache-Control: no-store`. Keep public health free of FX data. Official rates are not the commercial pricing rate; do not apply spreads or alter pricing here.
 - Disable the hosted FX worker in deterministic integration tests (`ExchangeRates__Enabled=false`); never call CBR or use protected local database storage in tests.
+
+### Order product snapshots
+
+- Keep recognized product, seller-price, per-item dimension, characteristic and applied-rate data server-owned. Seller price uses `decimal(10,2)` with a currency enum; an applied rate is only a restricted reference to an immutable `ExchangeRateHistory` row whose base currency matches the seller-price currency. Customer order creation accepts only source URL, positive quantity and optional comment as product inputs.
 
 ### Controller Error Responses
 
