@@ -16,7 +16,7 @@
 - Keep `AppDbContext.OnModelCreating` as the single `ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly)` registration point. Do not add inline entity mappings, feature-specific registration helpers, partial context mapping methods, or a growing manual configuration list.
 - Put each mapped entity's complete persistence configuration in one internal sealed `<Entity>Configuration : IEntityTypeConfiguration<Entity>` class, in its own file under `Data/Configurations/<Feature>/`. New entities follow this policy immediately; entity model classes remain free of persistence-mapping attributes.
 - Use explicit table and column names, keys, lengths/types/conversions, indexes, concurrency tokens and seed data in the owning entity's configuration. Declare each relationship once, on its dependent/foreign-key entity. Avoid configuration-order dependencies and passes that silently rewrite another entity's metadata; there is no feature-specific naming convention.
-- `AppDbContextModelTests` enforce one discoverable configuration per mapped entity, order independence and equivalence with the committed migration snapshot. Their `Sarafan.Core.ModelTests` namespace keeps them outside the integration fixture's database setup. Configuration-only refactors must not create schema migrations or edit snapshots; intentional schema changes require their normal migration and verification on disposable storage.
+- `AppDbContextModelTests` enforce one discoverable configuration per mapped entity and configuration-order independence through disconnected Npgsql metadata. They must never open a connection or compare the model with a migration snapshot. Configuration-only refactors must not create schema migrations or edit snapshots; intentional schema changes retain their normal production migration and deployment review.
 
 ### Protected local database configuration
 
@@ -59,6 +59,8 @@
 
 - Maintain at least 95% patch coverage for all new or modified code.
 - Add or expand tests until the changed-code coverage target is met before handing off a change.
+- Automated tests must require no PostgreSQL instance, Docker service, environment variable or manual Visual Studio setup. Use EF Core InMemory for application-owned stateful behavior; disconnected `UseNpgsql` is allowed only for model metadata or generated-SQL inspection and must never open a connection.
+- Do not test migration execution or PostgreSQL lock, transaction, concurrency, constraint or rollback semantics. Keep production migrations and provider behavior intact, but exclude `Data/Migrations` and the thin `Data/PostgreSql` adapter from Coverlet, Visual Studio and Codecov coverage.
 - Keep convention tests that reject direct construction of controller error responses outside `SarafanControllerBase.cs` and reject RFC 9457 payload construction outside the centralized problem-details factory/service.
 
 ### Observability and Logging
@@ -125,9 +127,9 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ---
 
-**Version:** 1.14
+**Version:** 1.15
 
-**Last Updated:** 2026-09-11
+**Last Updated:** 2026-09-13
 
 **Maintained by:** Development Team
 
@@ -150,11 +152,11 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Retention runs against configured purpose-specific consent periods; never let removal of a denial revive an older permission. Withdrawal-request records are retained and do not hold or alter consent evidence. See `docs/customer-consents.md` for defaults and rollout.
 - `CustomerConsentWithdrawalRequest` contains exactly customer ID, request time and processed flag. Enforce one pending record per customer; retries return it and a new record is allowed after processing. Administrator, Shift manager and Senior operator use the dedicated withdrawal-request policy. Creating or processing a record never writes a personal-data withdrawal event, changes consent/access/account/data, or starts automation. Do not add kind/status enums, ops metadata, assignment, deadlines, notes, evidence, completion metadata, actor or request audit until a later legal/product design explicitly requires them.
 - Return the withdrawal queue and legal-document audit through the shared bounded `PagedResult<T>` envelope. Validate page/page size, filter and single-sort allowlists in Core; compute filtered totals and keep filtering, deterministic ordering, `Skip`/`Take` and field projection in `IQueryable`. Never log list searches or customer/document identifiers.
-- Integration tests require explicit `SARAFAN_TEST_POSTGRES` pointing to disposable storage and disable exchange-rate and consent-retention workers. Migration round trips use separately created test databases, so they cannot destroy another fixture's data.
+- Stateful integration tests use deterministically seeded EF Core InMemory stores and disable migrations, exchange-rate synchronization and consent-retention workers. They must not read PostgreSQL connection settings or create/drop databases.
 
 - Consent decisions must be explicit; missing `decision` never defaults to grant. For code requests, consume the IP quota, normalize the phone, consume the hashed-phone quota, re-resolve the flow and validate exactly the required documents before provider dispatch. For verification, validate the code before receipt/account requirement disclosure, then revalidate affected versions after persistence before commit. Agreement mismatches identify the agreement artifact; consent persistence failures retain server-error semantics.
 - Browser association provenance is the validated customer JWT `jti` (`AuthenticationTokenId`), identifying the exact authenticated access session that first observed a receipt. It is not an authentication credential, never comes from a request body, is not logged or exposed by customer history, and is retained with the association independently of token expiry. Preserve the first observation on retries.
-- Require `EvidenceDays >= CookieDays`. Verify duplicate decisions, single-use onboarding and competing document creations with concurrent operations in separate DbContexts on disposable databases; sequential retry tests alone do not prove the locking policy.
+- Require `EvidenceDays >= CookieDays`. Verify application-owned idempotency and state transitions sequentially in memory; PostgreSQL locking and competing-write guarantees remain production responsibilities outside the automated suite.
 
 - Return `effectiveLocalDate` and `effectiveTimeZone` (`Europe/Moscow`) alongside legal-document UTC effective instants. Registration request quotas must pass before persisting onboarding evidence. Retention evaluates latest decisions set-wise in bounded pages, never with per-event database round trips. Legal documents, their creation/deletion audit events, and processed withdrawal-request records are retained indefinitely. Worker failures include only safe `error.type`; tests freeze the numeric ID, dotted name, severity and message. Apply the 200-record history limit after merging customer and observed-browser evidence. Preserve UTF-8 text when editing through Windows shell pipelines.
 

@@ -12,6 +12,8 @@ internal static class ConsentTestData
     private static readonly SemaphoreSlim CookieLock = new(1, 1);
     private static string? _mandatoryCookie;
 
+    internal static void Reset() => _mandatoryCookie = null;
+
     internal static async Task AcceptMandatoryCookies(HttpClient client)
     {
         await CookieLock.WaitAsync();

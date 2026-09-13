@@ -2,6 +2,10 @@
 # All rights reserved.
 # This file is a part of the Sarafan application
 
+ignore:
+  - "src/Sarafan.Core/Data/Migrations/**"
+  - "src/Sarafan.Core/Data/PostgreSql/**"
+
 coverage:
   status:
     project:

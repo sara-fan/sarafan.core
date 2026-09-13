@@ -30,6 +30,6 @@ public sealed class OrdersController(
         }
 
         var order = await orders.CreateAsync(CurrentCustomerId(), request.SourceUrl, parsedKey, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, order);
+        return Created(string.Empty, order);
     }
 }

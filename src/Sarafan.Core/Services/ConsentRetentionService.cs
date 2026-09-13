@@ -17,14 +17,21 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
         $"{typeof(ConsentRetentionService).FullName}.{nameof(SweepAsync)}", () => LogValueSummary.Inputs(),
         () => ConsentTransaction.Run(database, async () =>
         {
+            var operations = AppDatabaseOperations.For(database);
             var now = clock.GetUtcNow();
-            var onboarding = await database.ConsentOnboarding.Where(x => x.ExpiresAt <= now).ExecuteDeleteAsync(token);
+            var onboarding = await operations.DeleteAsync(
+                database,
+                database.ConsentOnboarding.Where(x => x.ExpiresAt <= now),
+                token);
             var currentId = (await LegalDocumentService.CurrentEntity(database, LegalDocumentKind.PersonalDataConsent, now, token))?.Id;
             var activeIds = await database.LegalDocuments.Where(x => x.EffectiveAt <= now)
                 .GroupBy(x => new { x.Kind, x.Locale })
                 .Select(group => group.OrderByDescending(x => x.EffectiveAt).First().Id)
                 .ToArrayAsync(token);
-            await database.ConsentReplayTombstones.Where(x => !activeIds.Contains(x.DocumentId)).ExecuteDeleteAsync(token);
+            await operations.DeleteAsync(
+                database,
+                database.ConsentReplayTombstones.Where(x => !activeIds.Contains(x.DocumentId)),
+                token);
             var removed = 0;
             long afterId = 0;
             while (true)
@@ -46,7 +53,10 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
                 { KeyHash = ConsentService.ReplayKey(x.SubjectKey, x.IdempotencyKey, x.Kind), DocumentId = x.DocumentId }));
                 await database.SaveChangesAsync(token);
                 var ids = expired.Select(x => x.Id).ToArray();
-                removed += await database.ConsentEvents.Where(x => ids.Contains(x.Id)).ExecuteDeleteAsync(token);
+                removed += await operations.DeleteAsync(
+                    database,
+                    database.ConsentEvents.Where(x => ids.Contains(x.Id)),
+                    token);
             }
             return new ConsentRetentionDto(onboarding, removed);
         }, token), token);

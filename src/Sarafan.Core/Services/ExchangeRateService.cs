@@ -27,15 +27,9 @@ public sealed class ExchangeRateService(
                 var date = ExchangeRateSchedule.MoscowDate(timeProvider.GetUtcNow());
                 var rate = await cbr.GetAsync(date, cancellationToken);
                 var retrievedAt = timeProvider.GetUtcNow();
-                // The unique index arbitrates concurrent writers. Never alter the first observation.
-                var inserted = await database.Database.ExecuteSqlInterpolatedAsync($"""
-                    INSERT INTO exchange_rate_history
-                        (provider, source, base_currency, quote_currency, nominal, official_rate, source_effective_date, retrieved_at)
-                    VALUES ({"CBR"}, {CbrRateClient.Endpoint}, {"USD"}, {"RUB"}, {rate.Nominal},
-                        {rate.OfficialRate}, {rate.SourceEffectiveDate}, {retrievedAt})
-                    ON CONFLICT (provider, base_currency, quote_currency, source_effective_date) DO NOTHING
-                    """, cancellationToken);
-                SarafanEvents.ExchangeRateUpdateCompleted(logger, inserted == 1);
+                var inserted = await AppDatabaseOperations.For(database)
+                    .InsertExchangeRateAsync(database, rate, retrievedAt, cancellationToken);
+                SarafanEvents.ExchangeRateUpdateCompleted(logger, inserted);
             }, cancellationToken);
 
     public Task<ExchangeRateDto?> GetLatestAsync(CancellationToken cancellationToken)

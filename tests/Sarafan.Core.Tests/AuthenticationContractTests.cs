@@ -29,9 +29,9 @@ public sealed class AuthenticationContractTests
         Assert.That(Enum.GetValues<CustomerState>().Select(value => ((int)value, value.GetRouteAlias(), value.GetDisplayName())),
             Is.EqualTo(new[]
             {
-                (0, "preliminary", "Предварительный"),
-                (1, "complete", "Заполненный"),
-                (2, "disabled", "Отключённый")
+                (0, "preliminary", "Предварительный профиль"),
+                (1, "complete", "Заполненный профиль"),
+                (2, "disabled", "Отключённый профиль")
             }));
     }
 

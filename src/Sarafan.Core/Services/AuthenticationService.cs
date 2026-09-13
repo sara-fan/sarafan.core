@@ -125,7 +125,8 @@ public sealed class AuthenticationService(
     private async Task<AuthenticationSession> CompleteReceiptAsync(
         string phone, string receiptToken, string remoteAddress, string? userAgent, CancellationToken cancellationToken)
     {
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await AppDatabaseOperations.For(database)
+            .BeginTransactionAsync(database, cancellationToken);
         await ConsentTransaction.Lock(database, cancellationToken);
 
         var receipt = await consents.ReadAuthenticationReceiptAsync(receiptToken, phone, cancellationToken);
@@ -206,7 +207,8 @@ public sealed class AuthenticationService(
         string rawToken, string remoteAddress, string? userAgent, CancellationToken cancellationToken)
     {
         var tokenHash = JwtTokenService.HashRefreshToken(rawToken);
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await AppDatabaseOperations.For(database)
+            .BeginTransactionAsync(database, cancellationToken);
 
         var customerId = await database.RefreshSessions.AsNoTracking()
             .Where(item => item.TokenHash == tokenHash)
@@ -278,7 +280,8 @@ public sealed class AuthenticationService(
     private async Task<AuthenticationSession> LoginAsync(
         string phone, string remoteAddress, string? userAgent, CancellationToken cancellationToken)
     {
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await AppDatabaseOperations.For(database)
+            .BeginTransactionAsync(database, cancellationToken);
         await ConsentTransaction.Lock(database, cancellationToken);
 
         var resolution = await ResolveCoreAsync(phone, cancellationToken);

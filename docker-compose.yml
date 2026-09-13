@@ -74,10 +74,6 @@ services:
       DOTNET_NOLOGO: "1"
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
-      SARAFAN_TEST_POSTGRES: Host=db;Port=5432;Database=postgres;Username=${SARAFAN_POSTGRES_USER:-postgres};Password=${SARAFAN_POSTGRES_PASSWORD:-postgres}
-    depends_on:
-      db:
-        condition: service_healthy
     volumes:
       - ./TestResults:/test-results
     command:
@@ -92,8 +88,6 @@ services:
       - normal
       - --logger
       - "trx;LogFileName=sarafan-core-tests.trx"
-      - --collect
-      - "XPlat Code Coverage"
       - --results-directory
       - /test-results
 

@@ -36,6 +36,7 @@ public sealed class ProblemDetailsContractTests
     [SetUp]
     public async Task SetUp()
     {
+        await IntegrationTestEnvironment.ResetAsync();
         _client = IntegrationTestEnvironment.Factory.CreateClient(
             new WebApplicationFactoryClientOptions
             {

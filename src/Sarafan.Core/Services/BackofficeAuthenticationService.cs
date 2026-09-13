@@ -118,7 +118,8 @@ public sealed class BackofficeAuthenticationService(
     {
         var tokenHash = JwtTokenService.HashRefreshToken(rawToken);
         var now = timeProvider.GetUtcNow();
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await AppDatabaseOperations.For(database)
+            .BeginTransactionAsync(database, cancellationToken);
         var current = await database.BackofficeRefreshSessions
             .Include(item => item.BackofficeUser)
             .ThenInclude(item => item.UserRoles)

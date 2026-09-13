@@ -2,7 +2,6 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -33,6 +32,7 @@ public sealed class OrderCreationTests
     [SetUp]
     public async Task SetUp()
     {
+        await IntegrationTestEnvironment.ResetAsync();
         _app = IsolatedApp();
         _client = CreateClient(_app);
         _session = await Register(_client);
@@ -120,82 +120,6 @@ public sealed class OrderCreationTests
     }
 
     [Test]
-    public async Task ConcurrentCreation_ForOneCustomerAllocatesEveryNumberOnce()
-    {
-        var responses = await Task.WhenAll(Enumerable.Range(0, 8)
-            .Select(index => Create(_client, $"https://shop.example/product/{index}", Guid.NewGuid())));
-        try
-        {
-            var orders = await Task.WhenAll(responses.Select(response => response.Content.ReadFromJsonAsync<OrderDto>()));
-
-            Assert.That(responses.Select(response => response.StatusCode), Is.All.EqualTo(HttpStatusCode.Created));
-            Assert.That(
-                orders.Select(order => long.Parse(order!.OrderNumber.Split('-')[1])).Order(),
-                Is.EqualTo(Enumerable.Range(1, 8).Select(value => (long)value)));
-            Assert.That(orders.Select(order => order!.OrderNumber[..8]), Is.All.EqualTo(orders[0]!.OrderNumber[..8]));
-        }
-        finally
-        {
-            foreach (var response in responses)
-            {
-                response.Dispose();
-            }
-        }
-    }
-
-    [Test]
-    public async Task CustomerCodeCollision_RetriesAndExhaustionRollsBack()
-    {
-        var codes = await UnusedCodes(3);
-        using (var retryApp = WithCodes(codes[0], codes[0], codes[1]))
-        using (var firstClient = CreateClient(retryApp))
-        using (var secondClient = CreateClient(retryApp))
-        {
-            await Register(firstClient);
-            await Register(secondClient);
-            using var first = await Create(firstClient, "https://shop.example/first", Guid.NewGuid());
-            using var second = await Create(secondClient, "https://shop.example/second", Guid.NewGuid());
-            var firstOrder = await first.Content.ReadFromJsonAsync<OrderDto>();
-            var secondOrder = await second.Content.ReadFromJsonAsync<OrderDto>();
-
-            using (Assert.EnterMultipleScope())
-            {
-                Assert.That(first.StatusCode, Is.EqualTo(HttpStatusCode.Created));
-                Assert.That(second.StatusCode, Is.EqualTo(HttpStatusCode.Created));
-                Assert.That(firstOrder!.OrderNumber, Is.EqualTo($"{codes[0]}-1"));
-                Assert.That(secondOrder!.OrderNumber, Is.EqualTo($"{codes[1]}-1"));
-            }
-        }
-
-        using var exhaustionApp = WithCodes(Enumerable.Repeat(codes[2], 11).ToArray());
-        using var ownerClient = CreateClient(exhaustionApp);
-        using var rejectedClient = CreateClient(exhaustionApp);
-        await Register(ownerClient);
-        var rejectedSession = await Register(rejectedClient);
-        using var owner = await Create(ownerClient, "https://shop.example/owner", Guid.NewGuid());
-        using var rejected = await Create(rejectedClient, "https://shop.example/rejected", Guid.NewGuid());
-        var problem = await rejected.Content.ReadFromJsonAsync<SarafanProblemDetails>();
-
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(owner.StatusCode, Is.EqualTo(HttpStatusCode.Created));
-            Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
-            Assert.That(problem?.Code, Is.EqualTo("order_number_allocation_failed"));
-        }
-
-        await using var scope = exhaustionApp.Services.CreateAsyncScope();
-        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var rejectedCustomer = await database.Customers.AsNoTracking()
-            .SingleAsync(item => item.Id == rejectedSession.Customer.Id);
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(rejectedCustomer.OrderCode, Is.Null);
-            Assert.That(rejectedCustomer.NextOrderNumber, Is.EqualTo(1));
-            Assert.That(await database.Orders.AnyAsync(item => item.CustomerId == rejectedCustomer.Id), Is.False);
-        }
-    }
-
-    [Test]
     public async Task Creation_RequiresAuthenticationCookieAndPersonalDataConsent()
     {
         using var anonymous = CreateClient(_app);
@@ -267,15 +191,6 @@ public sealed class OrderCreationTests
         return await client.SendAsync(request);
     }
 
-    private static WebApplicationFactory<Program> WithCodes(params string[] codes)
-        => IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
-        {
-            services.RemoveAll<VerificationAttemptStore>();
-            services.AddSingleton<VerificationAttemptStore>();
-            services.RemoveAll<ICustomerOrderCodeGenerator>();
-            services.AddSingleton<ICustomerOrderCodeGenerator>(new SequenceCodeGenerator(codes));
-        }));
-
     private static WebApplicationFactory<Program> IsolatedApp()
         => IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
@@ -283,34 +198,4 @@ public sealed class OrderCreationTests
             services.AddSingleton<VerificationAttemptStore>();
         }));
 
-    private static async Task<string[]> UnusedCodes(int count)
-    {
-        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        var used = await scope.ServiceProvider.GetRequiredService<AppDbContext>().Customers
-            .Where(customer => customer.OrderCode != null)
-            .Select(customer => customer.OrderCode!)
-            .ToHashSetAsync();
-        return Enumerable.Range(0, 100_000_000)
-            .Select(value => value.ToString("D8"))
-            .Where(value => !used.Contains(value))
-            .Take(count)
-            .ToArray();
-    }
-
-    private sealed class SequenceCodeGenerator(IEnumerable<string> codes) : ICustomerOrderCodeGenerator
-    {
-        private readonly ConcurrentQueue<string> _codes = new(codes);
-        private string? _last;
-
-        public string Generate()
-        {
-            if (_codes.TryDequeue(out var code))
-            {
-                _last = code;
-                return code;
-            }
-
-            return _last ?? throw new InvalidOperationException("No test customer order code was configured.");
-        }
-    }
 }

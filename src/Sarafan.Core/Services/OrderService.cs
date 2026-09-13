@@ -4,8 +4,6 @@
 
 using Microsoft.EntityFrameworkCore;
 
-using Npgsql;
-
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
 using Sarafan.Core.Observability;
@@ -20,7 +18,6 @@ public sealed class OrderService(
     ILogger<OrderService> logger)
 {
     private const int CodeAllocationAttempts = 10;
-    private const string CustomerOrderCodeIndex = "ux_customers_order_code";
 
     public Task<OrderDto> CreateAsync(
         int customerId,
@@ -45,6 +42,7 @@ public sealed class OrderService(
             throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_idempotency_key");
         }
 
+        var operations = AppDatabaseOperations.For(database);
         for (var attempt = 0; attempt < CodeAllocationAttempts; attempt++)
         {
             var assignedNewCode = false;
@@ -52,9 +50,8 @@ public sealed class OrderService(
             {
                 var allocation = await consents.WithPersonalDataAsync(customerId, async () =>
                 {
-                    var customer = await database.Customers
-                        .FromSqlInterpolated($"SELECT * FROM customers WHERE id = {customerId} FOR UPDATE")
-                        .SingleOrDefaultAsync(cancellationToken)
+                    var customer = await operations
+                        .FindCustomerForUpdateAsync(database, customerId, cancellationToken)
                         ?? throw new ServiceException(StatusCodes.Status404NotFound, "customer_not_found");
                     var existing = await database.Orders
                         .SingleOrDefaultAsync(
@@ -83,7 +80,7 @@ public sealed class OrderService(
                 return ToDto(allocation);
             }
             catch (DbUpdateException exception) when (
-                assignedNewCode && IsCustomerOrderCodeCollision(exception))
+                assignedNewCode && operations.IsCustomerOrderCodeCollision(exception))
             {
                 database.ChangeTracker.Clear();
             }
@@ -106,13 +103,6 @@ public sealed class OrderService(
 
         return normalized;
     }
-
-    private static bool IsCustomerOrderCodeCollision(DbUpdateException exception)
-        => exception.InnerException is PostgresException
-        {
-            SqlState: PostgresErrorCodes.UniqueViolation,
-            ConstraintName: CustomerOrderCodeIndex
-        };
 
     private static OrderDto ToDto(Allocation allocation) => new(
         allocation.Order.Id,

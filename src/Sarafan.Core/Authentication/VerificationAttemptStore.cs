@@ -50,6 +50,15 @@ public sealed class VerificationAttemptStore(TimeProvider timeProvider)
         }
     }
 
+    internal void Reset()
+    {
+        lock (_gate)
+        {
+            _windows.Clear();
+            _operations = 0;
+        }
+    }
+
     private void RemoveExpired(DateTimeOffset now, TimeSpan window)
     {
         foreach (var pair in _windows.ToArray())

@@ -112,35 +112,26 @@ Disable bootstrap and remove its email/password variables after provisioning, th
 
 Before trying customer registration, an Administrator must publish the required legal-document versions in Back Office, with effective dates that make them current. A fresh database contains no published legal text. Ordinary customer APIs also require current mandatory куки consent; staff APIs remain independent.
 
-### Build and tests on disposable storage
+### Build and zero-setup tests
 
-Integration tests create and drop databases and require explicit `SARAFAN_TEST_POSTGRES`. Even a separate database on the protected PostgreSQL instance would write to protected storage; use a separate instance. The following test container stores its data in memory and is disposable:
-
-```powershell
-docker run --name sarafan-core-test-db --rm -d -p 127.0.0.1:55434:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres --tmpfs /var/lib/postgresql/data postgres:17
-docker exec sarafan-core-test-db pg_isready -U postgres -d postgres
-```
-
-Once PostgreSQL accepts connections:
+The automated suite uses uniquely named EF Core InMemory stores. It does not connect to PostgreSQL, start Docker, read `SARAFAN_TEST_POSTGRES`, execute migrations or require Visual Studio test settings to be selected manually. Run it directly from Test Explorer or from a shell:
 
 ```powershell
-$env:SARAFAN_TEST_POSTGRES = 'Host=127.0.0.1;Port=55434;Database=postgres;Username=postgres;Password=postgres'
 dotnet restore Sarafan.sln
 dotnet format Sarafan.sln --no-restore --verify-no-changes
 dotnet build Sarafan.sln --configuration Release --no-restore
-dotnet test Sarafan.sln --configuration Release --no-build --no-restore --collect:"XPlat Code Coverage"
-docker stop sarafan-core-test-db
-Remove-Item Env:SARAFAN_TEST_POSTGRES
+dotnet test Sarafan.sln --configuration Release --no-build --no-restore
 ```
 
-The integration fixture disables the exchange-rate and consent-retention workers. New or modified code must meet the repository's 95% patch-coverage requirement. A container-only alternative uses its own Compose project and database volume; never run it against the user's default stack:
+The in-memory host disables migrations, the exchange-rate worker and the consent-retention worker, then creates and deterministically seeds a fresh store for stateful tests. Disconnected Npgsql contexts are used only for model metadata or generated-SQL inspection and never open a connection. Migration execution and PostgreSQL lock, transaction, concurrency and constraint semantics are intentionally outside the automated-test policy.
+
+The checked-in test runsettings collect coverage without Visual Studio configuration. Migration files and the thin PostgreSQL operations adapter are excluded; new or modified application code must still meet the repository's 95% patch-coverage requirement. A container-only alternative is also independent of the database service:
 
 ```powershell
 docker compose -p sarafan-core-tests -f docker-compose.yml --profile test run --rm --build tests
-docker compose -p sarafan-core-tests -f docker-compose.yml --profile test down
 ```
 
-This alternative retains its test-only named volume and writes reports to `TestResults/`. Direct local `--wait` commands do not inherit the cloud bootstrap timeout; pass `--wait-timeout` explicitly as shown above.
+This alternative writes reports to `TestResults/`. Direct local `--wait` commands do not inherit the cloud bootstrap timeout; pass `--wait-timeout` explicitly as shown above.
 
 ## Cloud production environment
 

@@ -43,8 +43,9 @@ public sealed class OperationLoggingTests
     private ILogger<OperationLoggingTests> _logger = null!;
 
     [SetUp]
-    public void SetUp()
+    public async Task SetUp()
     {
+        await IntegrationTestEnvironment.ResetAsync();
         _logs = new LogCollector();
         _factory = LoggerFactory.Create(builder => builder.SetMinimumLevel(LogLevel.Debug).AddProvider(_logs));
         _logger = _factory.CreateLogger<OperationLoggingTests>();
