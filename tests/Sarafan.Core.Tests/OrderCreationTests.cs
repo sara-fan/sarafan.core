@@ -54,12 +54,34 @@ public sealed class OrderCreationTests
     {
         Assert.That(_session.Customer.OrderCode, Is.Null);
         var firstKey = Guid.NewGuid();
-        using var firstResponse = await Create(_client, "  https://shop.example/product?id=1  ", firstKey);
+        using var firstResponse = await Create(
+            _client,
+            "  https://shop.example/product?id=1  ",
+            firstKey,
+            quantity: 2,
+            comment: "  Упаковать бережно  ");
         var first = await firstResponse.Content.ReadFromJsonAsync<OrderDto>();
-        using var replayResponse = await Create(_client, "https://shop.example/product?id=1", firstKey);
+        using var replayResponse = await Create(
+            _client,
+            "https://shop.example/product?id=1",
+            firstKey,
+            quantity: 2,
+            comment: "Упаковать бережно");
         var replay = await replayResponse.Content.ReadFromJsonAsync<OrderDto>();
         using var conflictResponse = await Create(_client, "https://shop.example/product?id=2", firstKey);
         var conflict = await conflictResponse.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+        using var quantityConflictResponse = await Create(
+            _client,
+            "https://shop.example/product?id=1",
+            firstKey,
+            quantity: 3,
+            comment: "Упаковать бережно");
+        using var commentConflictResponse = await Create(
+            _client,
+            "https://shop.example/product?id=1",
+            firstKey,
+            quantity: 2,
+            comment: "Другой комментарий");
         using var secondResponse = await Create(_client, "https://shop.example/product?id=1", Guid.NewGuid());
         var second = await secondResponse.Content.ReadFromJsonAsync<OrderDto>();
         using var getByLocation = await _client.GetAsync(firstResponse.Headers.Location!);
@@ -75,12 +97,23 @@ public sealed class OrderCreationTests
             Assert.That(first.OrderNumber, Does.Match("^[0-9]{8}-1$"));
             Assert.That(first.Status, Is.EqualTo(OrderStatus.UnderReview));
             Assert.That(first.SourceUrl, Is.EqualTo("https://shop.example/product?id=1"));
+            Assert.That(first.Quantity, Is.EqualTo(2));
+            Assert.That(first.Comment, Is.EqualTo("Упаковать бережно"));
+            Assert.That(first.ProductName, Is.Null);
+            Assert.That(first.StoreName, Is.Null);
+            Assert.That(first.ImageUrl, Is.Null);
+            Assert.That(first.SellerPrice, Is.Null);
+            Assert.That(first.Dimensions, Is.Null);
+            Assert.That(first.Characteristics, Is.Null);
+            Assert.That(first.AppliedExchangeRate, Is.Null);
             Assert.That(getByLocation.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(getByLocationResponse, Is.EqualTo(first));
             Assert.That(replayResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(replay, Is.EqualTo(first));
             Assert.That(conflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
             Assert.That(conflict?.Code, Is.EqualTo("order_creation_conflict"));
+            Assert.That(quantityConflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+            Assert.That(commentConflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
             Assert.That(secondResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(second!.OrderNumber, Is.EqualTo(first.OrderNumber[..^1] + "2"));
             Assert.That(second.Id, Is.Not.EqualTo(first.Id));
@@ -108,6 +141,76 @@ public sealed class OrderCreationTests
     }
 
     [Test]
+    public async Task GetAndIdempotentReplay_ReturnTheServerOwnedProductSnapshotAndAppliedRate()
+    {
+        var idempotencyKey = Guid.NewGuid();
+        using var createdResponse = await Create(_client, "https://shop.example/product", idempotencyKey);
+        var created = (await createdResponse.Content.ReadFromJsonAsync<OrderDto>())!;
+
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var rate = new ExchangeRateHistory
+            {
+                Provider = "CBR",
+                Source = "test",
+                BaseCurrency = Currency.Usd,
+                QuoteCurrency = Currency.Rub,
+                Nominal = 1,
+                OfficialRate = 81.123456m,
+                SourceEffectiveDate = new DateOnly(2026, 9, 13),
+                RetrievedAt = DateTimeOffset.Parse("2026-09-13T00:00:00Z")
+            };
+            database.ExchangeRateHistory.Add(rate);
+            await database.SaveChangesAsync();
+            var order = await database.Orders.SingleAsync(item => item.Id == created.Id);
+            order.SetProductSnapshot(
+                "Товар",
+                "Магазин",
+                "https://images.example/product.jpg",
+                12.34m,
+                Currency.Usd,
+                10.25m,
+                20.50m,
+                30.75m,
+                new Dictionary<string, string> { ["Цвет"] = "Синий" },
+                rate);
+            await database.SaveChangesAsync();
+        }
+
+        using var response = await _client.GetAsync($"/api/v1/orders/{created.Id}");
+        var orderDto = await response.Content.ReadFromJsonAsync<OrderDto>();
+        using var replayResponse = await Create(_client, "https://shop.example/product", idempotencyKey);
+        var replayDto = await replayResponse.Content.ReadFromJsonAsync<OrderDto>();
+        var expectedRate = new OrderAppliedExchangeRateDto(
+            1,
+            "CBR",
+            Currency.Usd,
+            Currency.Rub,
+            1,
+            81.123456m,
+            new DateOnly(2026, 9, 13));
+
+        response.EnsureSuccessStatusCode();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(orderDto?.ProductName, Is.EqualTo("Товар"));
+            Assert.That(orderDto?.StoreName, Is.EqualTo("Магазин"));
+            Assert.That(orderDto?.ImageUrl, Is.EqualTo("https://images.example/product.jpg"));
+            Assert.That(orderDto?.SellerPrice, Is.EqualTo(new OrderSellerPriceDto(12.34m, Currency.Usd)));
+            Assert.That(orderDto?.Dimensions, Is.EqualTo(new OrderDimensionsDto(10.25m, 20.50m, 30.75m)));
+            Assert.That(orderDto?.Characteristics, Is.EqualTo(new Dictionary<string, string> { ["Цвет"] = "Синий" }));
+            Assert.That(orderDto?.AppliedExchangeRate, Is.EqualTo(expectedRate));
+            Assert.That(replayResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+            Assert.That(replayDto?.ProductName, Is.EqualTo(orderDto?.ProductName));
+            Assert.That(replayDto?.SellerPrice, Is.EqualTo(orderDto?.SellerPrice));
+            Assert.That(replayDto?.Dimensions, Is.EqualTo(orderDto?.Dimensions));
+            Assert.That(replayDto?.Characteristics, Is.EqualTo(orderDto?.Characteristics));
+            Assert.That(replayDto?.AppliedExchangeRate, Is.EqualTo(expectedRate));
+        }
+    }
+
+    [Test]
     public async Task Operations_AreHiddenWhenRealOperationsAreDisabled()
     {
         using var app = IsolatedApp(realOrdersEnabled: false);
@@ -131,6 +234,8 @@ public sealed class OrderCreationTests
         var customer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == session.Customer.Id);
         var createException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
             customer.Id,
+            null,
+            1,
             null,
             Guid.Empty,
             default));
@@ -233,6 +338,8 @@ public sealed class OrderCreationTests
         var serviceException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
             _session.Customer.Id,
             "https://shop.example/product",
+            1,
+            null,
             Guid.Empty,
             default));
         var customer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == _session.Customer.Id);
@@ -243,6 +350,63 @@ public sealed class OrderCreationTests
             Assert.That(customer.OrderCode, Is.Null);
             Assert.That(customer.NextOrderNumber, Is.EqualTo(1));
             Assert.That(await database.Orders.AnyAsync(item => item.CustomerId == customer.Id), Is.False);
+        }
+    }
+
+    [Test]
+    public async Task InvalidQuantityAndComment_ReturnValidationProblemsWithoutCreatingAnOrder()
+    {
+        using var missingQuantity = await CreateRaw(
+            _client,
+            "https://shop.example/product",
+            Guid.NewGuid().ToString("D"),
+            quantity: null);
+        using var zeroQuantity = await Create(
+            _client,
+            "https://shop.example/product",
+            Guid.NewGuid(),
+            quantity: 0);
+        using var longComment = await Create(
+            _client,
+            "https://shop.example/product",
+            Guid.NewGuid(),
+            comment: new string('x', 2001));
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(missingQuantity.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That((await missingQuantity.Content.ReadFromJsonAsync<SarafanProblemDetails>())?.Code,
+                Is.EqualTo("validation_failed"));
+            Assert.That(zeroQuantity.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That((await zeroQuantity.Content.ReadFromJsonAsync<SarafanProblemDetails>())?.Code,
+                Is.EqualTo("validation_failed"));
+            Assert.That(longComment.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That((await longComment.Content.ReadFromJsonAsync<SarafanProblemDetails>())?.Code,
+                Is.EqualTo("validation_failed"));
+        }
+
+        await using var scope = _app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var orders = scope.ServiceProvider.GetRequiredService<OrderService>();
+        var missingQuantityException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
+            _session.Customer.Id,
+            "https://shop.example/product",
+            null,
+            null,
+            Guid.NewGuid(),
+            default));
+        var longCommentException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
+            _session.Customer.Id,
+            "https://shop.example/product",
+            1,
+            new string('x', 2001),
+            Guid.NewGuid(),
+            default));
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(missingQuantityException?.Code, Is.EqualTo("invalid_order_quantity"));
+            Assert.That(longCommentException?.Code, Is.EqualTo("invalid_order_comment"));
+            Assert.That(await database.Orders.AnyAsync(item => item.CustomerId == _session.Customer.Id), Is.False);
         }
     }
 
@@ -304,17 +468,29 @@ public sealed class OrderCreationTests
         return session;
     }
 
-    private static Task<HttpResponseMessage> Create(HttpClient client, string? sourceUrl, Guid? idempotencyKey)
-        => CreateRaw(client, sourceUrl, idempotencyKey?.ToString("D"));
+    private static Task<HttpResponseMessage> Create(
+        HttpClient client,
+        string? sourceUrl,
+        Guid? idempotencyKey,
+        int? quantity = 1,
+        string? comment = null)
+        => CreateRaw(client, sourceUrl, idempotencyKey?.ToString("D"), quantity, comment);
 
     private static async Task<HttpResponseMessage> CreateRaw(
         HttpClient client,
         string? sourceUrl,
-        string? idempotencyKey)
+        string? idempotencyKey,
+        int? quantity = 1,
+        string? comment = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
         {
-            Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = sourceUrl })
+            Content = JsonContent.Create(new CreateOrderRequest
+            {
+                SourceUrl = sourceUrl,
+                Quantity = quantity,
+                Comment = comment
+            })
         };
         if (idempotencyKey is not null)
         {

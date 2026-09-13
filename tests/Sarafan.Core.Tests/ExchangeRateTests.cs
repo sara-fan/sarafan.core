@@ -8,6 +8,8 @@ using System.Net.Http.Json;
 using System.Threading.Channels;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -51,8 +53,8 @@ public sealed class ExchangeRateTests
             Assert.That(history.Id, Is.Positive);
             Assert.That(history.Provider, Is.EqualTo("CBR"));
             Assert.That(history.Source, Is.EqualTo(CbrRateClient.Endpoint));
-            Assert.That(history.BaseCurrency, Is.EqualTo("USD"));
-            Assert.That(history.QuoteCurrency, Is.EqualTo("RUB"));
+            Assert.That(history.BaseCurrency, Is.EqualTo(Currency.Usd));
+            Assert.That(history.QuoteCurrency, Is.EqualTo(Currency.Rub));
             Assert.That(history.Nominal, Is.EqualTo(Rate.Nominal));
             Assert.That(history.OfficialRate, Is.EqualTo(Rate.OfficialRate));
             Assert.That(history.SourceEffectiveDate, Is.EqualTo(Rate.SourceEffectiveDate));
@@ -75,6 +77,37 @@ public sealed class ExchangeRateTests
     }
 
     [Test]
+    public void Model_PersistsNumericCurrenciesAndMakesHistoryValuesImmutable()
+    {
+        using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=127.0.0.1;Port=1;Database=metadata;Username=unused;Password=unused")
+            .Options);
+        var entity = database.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ExchangeRateHistory))!;
+        var immutableProperties = new[]
+        {
+            nameof(ExchangeRateHistory.Provider),
+            nameof(ExchangeRateHistory.Source),
+            nameof(ExchangeRateHistory.BaseCurrency),
+            nameof(ExchangeRateHistory.QuoteCurrency),
+            nameof(ExchangeRateHistory.Nominal),
+            nameof(ExchangeRateHistory.OfficialRate),
+            nameof(ExchangeRateHistory.SourceEffectiveDate),
+            nameof(ExchangeRateHistory.RetrievedAt)
+        };
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(entity.FindProperty(nameof(ExchangeRateHistory.BaseCurrency))!.GetColumnType(), Is.EqualTo("integer"));
+            Assert.That(entity.FindProperty(nameof(ExchangeRateHistory.QuoteCurrency))!.GetColumnType(), Is.EqualTo("integer"));
+            Assert.That(
+                immutableProperties.Select(property => entity.FindProperty(property)!.GetAfterSaveBehavior()),
+                Has.All.EqualTo(PropertySaveBehavior.Throw));
+            Assert.That(entity.GetCheckConstraints().Select(constraint => constraint.Name), Does.Contain("CK_exchange_rate_base_currency"));
+            Assert.That(entity.GetCheckConstraints().Select(constraint => constraint.Name), Does.Contain("CK_exchange_rate_quote_currency"));
+        }
+    }
+
+    [Test]
     public async Task ReadIgnoresOtherPairsProvidersAndFutureDates()
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
@@ -83,8 +116,10 @@ public sealed class ExchangeRateTests
         await Service(database).SynchronizeAsync(default);
         foreach (var (provider, baseCurrency, quoteCurrency, date) in new[]
         {
-            ("other", "USD", "RUB", new DateOnly(2026, 9, 7)), ("CBR", "EUR", "RUB", new DateOnly(2026, 9, 7)),
-            ("CBR", "USD", "EUR", new DateOnly(2026, 9, 7)), ("CBR", "USD", "RUB", new DateOnly(2026, 9, 8))
+            ("other", Currency.Usd, Currency.Rub, new DateOnly(2026, 9, 7)),
+            ("CBR", (Currency)978, Currency.Rub, new DateOnly(2026, 9, 7)),
+            ("CBR", Currency.Usd, (Currency)978, new DateOnly(2026, 9, 7)),
+            ("CBR", Currency.Usd, Currency.Rub, new DateOnly(2026, 9, 8))
         }) database.ExchangeRateHistory.Add(new ExchangeRateHistory
         {
             Provider = provider,
@@ -126,7 +161,13 @@ public sealed class ExchangeRateTests
         Assert.That(status!.Service, Is.EqualTo("Sarafan.Core"));
         Assert.That(status.Status, Is.EqualTo("ok"));
         Assert.That(status.AppVersion, Is.EqualTo(VersionInfo.AppVersion));
-        Assert.That(status.ExchangeRates.Single(), Is.EqualTo(new ExchangeRateDto("CBR", "USD", "RUB", Rate.Nominal, Rate.OfficialRate, Rate.SourceEffectiveDate, Now)));
+        Assert.That(status.ExchangeRates.Single(), Is.EqualTo(new ExchangeRateDto(
+            "CBR", Currency.Usd, Currency.Rub, Rate.Nominal, Rate.OfficialRate, Rate.SourceEffectiveDate, Now)));
+        Assert.That(status.Currencies, Is.EqualTo(new[]
+        {
+            new EnumOpsItemDto(643, "Российский рубль", "rub"),
+            new EnumOpsItemDto(840, "Доллар США", "usd")
+        }));
         using var health = await client.GetAsync("/api/v1/status/status");
         Assert.That(await health.Content.ReadAsStringAsync(), Does.Not.Contain("exchangeRates"));
     }
@@ -229,8 +270,11 @@ public sealed class ExchangeRateTests
             (1701, SarafanEvents.ExchangeRateUpdateCompletedName, LogLevel.Information)
         }));
         Assert.That(LogValueSummary.Describe(Rate), Is.EqualTo("CbrRate(rate/metadata=[redacted])"));
-        Assert.That(LogValueSummary.Describe(new ExchangeRateDto("secret", "USD", "RUB", 1, 81, Rate.SourceEffectiveDate, Now)), Is.EqualTo("ExchangeRateDto(rate/metadata=[redacted])"));
-        Assert.That(LogValueSummary.Describe(new BackofficeStatus("secret", "secret", "secret", [])), Is.EqualTo("BackofficeStatus(version/rates=[redacted])"));
+        Assert.That(LogValueSummary.Describe(new ExchangeRateDto(
+            "secret", Currency.Usd, Currency.Rub, 1, 81, Rate.SourceEffectiveDate, Now)),
+            Is.EqualTo("ExchangeRateDto(rate/metadata=[redacted])"));
+        Assert.That(LogValueSummary.Describe(new BackofficeStatus("secret", "secret", "secret", [], [])),
+            Is.EqualTo("BackofficeStatus(version/rates=[redacted])"));
     }
 
     private sealed class StubClient(CbrRate rate, Exception? failure) : ICbrRateClient

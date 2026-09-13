@@ -100,6 +100,14 @@ public sealed class SarafanProblemDetailsFactory(
                 StatusCodes.Status400BadRequest,
                 "Некорректная ссылка на товар",
                 "Укажите абсолютную ссылку на страницу товара с протоколом http или https."),
+            ["invalid_order_quantity"] = new(
+                StatusCodes.Status400BadRequest,
+                "Некорректное количество товара",
+                "Укажите положительное количество товара."),
+            ["invalid_order_comment"] = new(
+                StatusCodes.Status400BadRequest,
+                "Некорректный комментарий",
+                "Комментарий не должен превышать 2000 символов."),
             ["invalid_order_idempotency_key"] = new(
                 StatusCodes.Status400BadRequest,
                 "Некорректный ключ запроса",
@@ -107,7 +115,7 @@ public sealed class SarafanProblemDetailsFactory(
             ["order_creation_conflict"] = new(
                 StatusCodes.Status409Conflict,
                 "Запрос создания заказа изменён",
-                "Повторите запрос с исходной ссылкой или новым ключом Idempotency-Key."),
+                "Повторите запрос с исходными данными заказа или новым ключом Idempotency-Key."),
             ["order_number_allocation_failed"] = new(
                 StatusCodes.Status503ServiceUnavailable,
                 "Не удалось создать номер заказа",

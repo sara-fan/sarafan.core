@@ -5,6 +5,7 @@
 using Microsoft.EntityFrameworkCore;
 
 using Sarafan.Core.Data;
+using Sarafan.Core.Models;
 using Sarafan.Core.Observability;
 using Sarafan.Core.RestModels;
 
@@ -38,7 +39,9 @@ public sealed class ExchangeRateService(
             {
                 var today = ExchangeRateSchedule.MoscowDate(timeProvider.GetUtcNow());
                 return database.ExchangeRateHistory.AsNoTracking()
-                    .Where(rate => rate.Provider == "CBR" && rate.BaseCurrency == "USD" && rate.QuoteCurrency == "RUB"
+                    .Where(rate => rate.Provider == "CBR"
+                        && rate.BaseCurrency == Currency.Usd
+                        && rate.QuoteCurrency == Currency.Rub
                         && rate.SourceEffectiveDate <= today)
                     .OrderByDescending(rate => rate.SourceEffectiveDate)
                     .Select(rate => new ExchangeRateDto(rate.Provider, rate.BaseCurrency, rate.QuoteCurrency,

@@ -26,5 +26,12 @@ public sealed class OrderOperationsController(SarafanProblemDetailsFactory probl
                 status.GetUpperStatusValue(),
                 status.GetUpperStatusDisplayName(),
                 status.GetUpperStatusRouteAlias()))
+            .ToArray(),
+        Enum.GetValues<Currency>()
+            .OrderBy(currency => (int)currency)
+            .Select(currency => new EnumOpsItemDto(
+                (int)currency,
+                currency.GetDisplayName(),
+                currency.GetRouteAlias()))
             .ToArray()));
 }

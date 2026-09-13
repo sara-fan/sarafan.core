@@ -475,7 +475,7 @@ public sealed class OperationLoggingTests
         var orderSourceUrl = $"https://shop.example/product?token={Secret}";
         using var orderRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
         {
-            Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = orderSourceUrl })
+            Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = orderSourceUrl, Quantity = 1 })
         };
         orderRequest.Headers.Add("Idempotency-Key", orderKey.ToString("D"));
         using var createOrder = await client.SendAsync(orderRequest);

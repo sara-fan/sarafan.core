@@ -2,6 +2,8 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
+using System.ComponentModel.DataAnnotations;
+
 using Sarafan.Core.Models;
 
 namespace Sarafan.Core.RestModels;
@@ -9,13 +11,42 @@ namespace Sarafan.Core.RestModels;
 public sealed class CreateOrderRequest
 {
     public string? SourceUrl { get; set; }
+
+    [Required(ErrorMessage = "Поле обязательно для заполнения.")]
+    [Range(1, int.MaxValue, ErrorMessage = "Количество должно быть положительным числом.")]
+    public int? Quantity { get; set; }
+
+    [StringLength(2000, ErrorMessage = "Длина комментария не должна превышать {1} символов.")]
+    public string? Comment { get; set; }
 }
+
+public sealed record OrderSellerPriceDto(decimal Amount, Currency Currency);
+
+public sealed record OrderDimensionsDto(decimal LengthCm, decimal WidthCm, decimal HeightCm);
+
+public sealed record OrderAppliedExchangeRateDto(
+    long Id,
+    string Provider,
+    Currency BaseCurrency,
+    Currency QuoteCurrency,
+    int Nominal,
+    decimal OfficialRate,
+    DateOnly SourceEffectiveDate);
 
 public sealed record OrderDto(
     long Id,
     string OrderNumber,
     OrderStatus Status,
-    string SourceUrl);
+    string SourceUrl,
+    string? ProductName,
+    string? StoreName,
+    string? ImageUrl,
+    OrderSellerPriceDto? SellerPrice,
+    OrderDimensionsDto? Dimensions,
+    IReadOnlyDictionary<string, string>? Characteristics,
+    int Quantity,
+    string? Comment,
+    OrderAppliedExchangeRateDto? AppliedExchangeRate);
 
 public sealed record OrderStatusOpsItemDto(
     int Value,
@@ -25,4 +56,6 @@ public sealed record OrderStatusOpsItemDto(
     string UpperStatusName,
     string UpperStatusRouteAlias);
 
-public sealed record OrderOpsDto(IReadOnlyList<OrderStatusOpsItemDto> Statuses);
+public sealed record OrderOpsDto(
+    IReadOnlyList<OrderStatusOpsItemDto> Statuses,
+    IReadOnlyList<EnumOpsItemDto> Currencies);

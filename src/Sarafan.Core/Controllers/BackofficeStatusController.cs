@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 using Sarafan.Core.Authentication;
+using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
 using Sarafan.Core.Services;
 
@@ -23,6 +24,18 @@ public sealed class BackofficeStatusController(
     public async Task<ActionResult<BackofficeStatus>> Status(CancellationToken cancellationToken)
     {
         var rate = await exchangeRates.GetLatestAsync(cancellationToken);
-        return Ok(new BackofficeStatus("Sarafan.Core", "ok", VersionInfo.AppVersion, rate is null ? [] : [rate]));
+        var currencies = Enum.GetValues<Currency>()
+            .OrderBy(currency => (int)currency)
+            .Select(currency => new EnumOpsItemDto(
+                (int)currency,
+                currency.GetDisplayName(),
+                currency.GetRouteAlias()))
+            .ToArray();
+        return Ok(new BackofficeStatus(
+            "Sarafan.Core",
+            "ok",
+            VersionInfo.AppVersion,
+            rate is null ? [] : [rate],
+            currencies));
     }
 }

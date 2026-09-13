@@ -37,7 +37,13 @@ public sealed class OrdersController(
             return InvalidOrderIdempotencyKeyProblem();
         }
 
-        var order = await orders.CreateAsync(CurrentCustomerId(), request.SourceUrl, parsedKey, cancellationToken);
+        var order = await orders.CreateAsync(
+            CurrentCustomerId(),
+            request.SourceUrl,
+            request.Quantity,
+            request.Comment,
+            parsedKey,
+            cancellationToken);
         return CreatedAtAction(nameof(Get), new { id = order.Id }, order);
     }
 }

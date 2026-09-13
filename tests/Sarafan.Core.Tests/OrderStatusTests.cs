@@ -86,6 +86,11 @@ public sealed class OrderStatusTests
                 expected.UpperStatusValue,
                 expected.UpperStatusName,
                 expected.UpperStatusRouteAlias))));
+        Assert.That(body.Currencies, Is.EqualTo(new[]
+        {
+            new EnumOpsItemDto(643, "Российский рубль", "rub"),
+            new EnumOpsItemDto(840, "Доллар США", "usd")
+        }));
     }
 
     private sealed record ExpectedStatus(
