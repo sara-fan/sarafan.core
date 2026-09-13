@@ -163,3 +163,8 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Disposing consent evidence must atomically retain a compact replay-key digest for documents that are still current; remove these tombstones after supersession, when stale-version validation rejects old grants. Tombstones contain no decision, categories, customer ID or browser receipt. Cookie idempotency keys are unique across browser subjects to prevent replay after storage loss; customer keys remain subject-scoped.
 
 - Consume every public authentication IP quota before receipt/account database lookups or phone normalization, and consume hashed canonical-phone quotas before receipt persistence or verification. Verify through the API that withdrawal-request creation and processing leave consent history/status and protected-write access unchanged.
+
+## Order statuses
+
+- Keep `OrderStatus` as the single stable, sparse numeric order-status enum. Exact execution states occupy the approved values in the `300` range; `InProgress` and `Completed` are presentation meanings, not enum members. Do not reuse unassigned values or add a status absent from the product specification.
+- Core owns the exact and upper-level Russian names and route aliases exposed by anonymous `GET /api/v1/orders/ops`. Clients consume this catalogue instead of maintaining their own mappings, and order statuses do not use a lookup table.
