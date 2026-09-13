@@ -49,6 +49,7 @@ jobs:
           --configuration Release
           --no-build
           --no-restore
+          --collect:"XPlat Code Coverage"
           --verbosity normal
 
       - name: Upload coverage reports to Codecov
