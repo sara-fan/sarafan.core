@@ -445,6 +445,7 @@ public sealed class OperationLoggingTests
         using var status = await client.GetAsync("/api/v1/status/status");
         using var authOps = await client.GetAsync("/api/v1/auth/ops");
         using var customerOps = await client.GetAsync("/api/v1/customers/ops");
+        using var orderOps = await client.GetAsync("/api/v1/orders/ops");
         using var resolve = await client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
         using var invalid = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone = "" });
         using var request = await client.PostAsJsonAsync("/api/v1/auth/code/request", await ConsentTestData.Request(client, phone));
@@ -471,6 +472,7 @@ public sealed class OperationLoggingTests
         Assert.That(invalid.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
         Assert.That(authOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(customerOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(orderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));
@@ -486,6 +488,7 @@ public sealed class OperationLoggingTests
             typeof(AuthController),
             typeof(CustomerOperationsController),
             typeof(CustomersController),
+            typeof(OrderOperationsController),
             typeof(StatusController)
         ];
         var actions = controllers.SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));
