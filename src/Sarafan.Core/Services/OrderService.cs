@@ -92,6 +92,7 @@ public sealed class OrderService(
                         .FindCustomerForUpdateAsync(database, customerId, cancellationToken)
                         ?? throw new ServiceException(StatusCodes.Status404NotFound, "customer_not_found");
                     var existing = await database.Orders
+                        .Include(order => order.AppliedExchangeRateHistory)
                         .SingleOrDefaultAsync(
                             order => order.CustomerId == customerId
                                 && order.CreationIdempotencyKey == idempotencyKey,

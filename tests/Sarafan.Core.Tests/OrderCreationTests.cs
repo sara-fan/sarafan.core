@@ -141,9 +141,10 @@ public sealed class OrderCreationTests
     }
 
     [Test]
-    public async Task Get_ReturnsTheServerOwnedProductSnapshotAndAppliedRate()
+    public async Task GetAndIdempotentReplay_ReturnTheServerOwnedProductSnapshotAndAppliedRate()
     {
-        using var createdResponse = await Create(_client, "https://shop.example/product", Guid.NewGuid());
+        var idempotencyKey = Guid.NewGuid();
+        using var createdResponse = await Create(_client, "https://shop.example/product", idempotencyKey);
         var created = (await createdResponse.Content.ReadFromJsonAsync<OrderDto>())!;
 
         await using (var scope = _app.Services.CreateAsyncScope())
@@ -179,6 +180,16 @@ public sealed class OrderCreationTests
 
         using var response = await _client.GetAsync($"/api/v1/orders/{created.Id}");
         var orderDto = await response.Content.ReadFromJsonAsync<OrderDto>();
+        using var replayResponse = await Create(_client, "https://shop.example/product", idempotencyKey);
+        var replayDto = await replayResponse.Content.ReadFromJsonAsync<OrderDto>();
+        var expectedRate = new OrderAppliedExchangeRateDto(
+            1,
+            "CBR",
+            Currency.Usd,
+            Currency.Rub,
+            1,
+            81.123456m,
+            new DateOnly(2026, 9, 13));
 
         response.EnsureSuccessStatusCode();
         using (Assert.EnterMultipleScope())
@@ -189,14 +200,13 @@ public sealed class OrderCreationTests
             Assert.That(orderDto?.SellerPrice, Is.EqualTo(new OrderSellerPriceDto(12.34m, Currency.Usd)));
             Assert.That(orderDto?.Dimensions, Is.EqualTo(new OrderDimensionsDto(10.25m, 20.50m, 30.75m)));
             Assert.That(orderDto?.Characteristics, Is.EqualTo(new Dictionary<string, string> { ["Цвет"] = "Синий" }));
-            Assert.That(orderDto?.AppliedExchangeRate, Is.EqualTo(new OrderAppliedExchangeRateDto(
-                1,
-                "CBR",
-                Currency.Usd,
-                Currency.Rub,
-                1,
-                81.123456m,
-                new DateOnly(2026, 9, 13))));
+            Assert.That(orderDto?.AppliedExchangeRate, Is.EqualTo(expectedRate));
+            Assert.That(replayResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+            Assert.That(replayDto?.ProductName, Is.EqualTo(orderDto?.ProductName));
+            Assert.That(replayDto?.SellerPrice, Is.EqualTo(orderDto?.SellerPrice));
+            Assert.That(replayDto?.Dimensions, Is.EqualTo(orderDto?.Dimensions));
+            Assert.That(replayDto?.Characteristics, Is.EqualTo(orderDto?.Characteristics));
+            Assert.That(replayDto?.AppliedExchangeRate, Is.EqualTo(expectedRate));
         }
     }
 
