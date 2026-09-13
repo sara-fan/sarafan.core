@@ -30,7 +30,7 @@ public sealed class OrderService(
         => OperationLogging.RunAsync(
             logger,
             $"{typeof(OrderService).FullName}.{nameof(CreateAsync)}",
-            () => "customer=[redacted]; sourceUrl=[redacted]; idempotencyKey=[redacted]",
+            () => LogValueSummary.Inputs((nameof(customerId), customerId), (nameof(sourceUrl), sourceUrl), (nameof(idempotencyKey), idempotencyKey), (nameof(cancellationToken), cancellationToken)),
             () => CreateCoreAsync(customerId, NormalizeSourceUrl(sourceUrl), idempotencyKey, cancellationToken),
             cancellationToken);
 
