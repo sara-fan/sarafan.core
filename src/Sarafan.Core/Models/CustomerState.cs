@@ -15,9 +15,9 @@ public static class CustomerStateExtensions
 {
     public static string GetDisplayName(this CustomerState state) => state switch
     {
-        CustomerState.Preliminary => "Предварительный",
-        CustomerState.Complete => "Заполненный",
-        CustomerState.Disabled => "Отключённый",
+        CustomerState.Preliminary => "Предварительный профиль",
+        CustomerState.Complete => "Заполненный профиль",
+        CustomerState.Disabled => "Отключённый профиль",
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, null)
     };
 

@@ -96,6 +96,22 @@ public sealed class SarafanProblemDetailsFactory(
                 StatusCodes.Status400BadRequest,
                 "Некорректное содержимое фотографии",
                 "Содержимое фотографии не соответствует указанному формату."),
+            ["invalid_order_url"] = new(
+                StatusCodes.Status400BadRequest,
+                "Некорректная ссылка на товар",
+                "Укажите абсолютную ссылку на страницу товара с протоколом http или https."),
+            ["invalid_order_idempotency_key"] = new(
+                StatusCodes.Status400BadRequest,
+                "Некорректный ключ запроса",
+                "Передайте непустой UUID в заголовке Idempotency-Key."),
+            ["order_creation_conflict"] = new(
+                StatusCodes.Status409Conflict,
+                "Запрос создания заказа изменён",
+                "Повторите запрос с исходной ссылкой или новым ключом Idempotency-Key."),
+            ["order_number_allocation_failed"] = new(
+                StatusCodes.Status503ServiceUnavailable,
+                "Не удалось создать номер заказа",
+                "Повторите попытку создания заказа позже."),
             ["invalid_code"] = new(
                 StatusCodes.Status401Unauthorized,
                 "Некорректный код подтверждения",

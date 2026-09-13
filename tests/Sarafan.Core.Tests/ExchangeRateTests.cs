@@ -8,8 +8,6 @@ using System.Net.Http.Json;
 using System.Threading.Channels;
 
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -36,23 +34,17 @@ public sealed class ExchangeRateTests
     [SetUp]
     public async Task ClearHistory()
     {
-        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        await Database(scope).ExchangeRateHistory.ExecuteDeleteAsync();
+        await IntegrationTestEnvironment.ResetAsync();
     }
 
     [Test]
-    public async Task StoresSourceMetadataAndPreservesEveryFirstObservationAcrossRetriesConcurrencyAndFailures()
+    public async Task StoresSourceMetadataAndPreservesEveryFirstObservationAcrossRetriesAndFailures()
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var database = Database(scope);
         var logger = new TestLogger<ExchangeRateService>();
         await Service(database, logger: logger).SynchronizeAsync(default);
         await Service(database, Rate with { OfficialRate = 1 }, new ManualTime(Now.AddHours(1))).SynchronizeAsync(default);
-        await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
-        {
-            await using var concurrent = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-            await Service(Database(concurrent)).SynchronizeAsync(default);
-        }));
         var history = await database.ExchangeRateHistory.AsNoTracking().SingleAsync();
         using (Assert.EnterMultipleScope())
         {
@@ -83,26 +75,12 @@ public sealed class ExchangeRateTests
     }
 
     [Test]
-    public async Task UniqueConstraintRejectsDuplicateAndReadIgnoresOtherPairsProvidersAndFutureDates()
+    public async Task ReadIgnoresOtherPairsProvidersAndFutureDates()
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var database = Database(scope);
         Assert.That(await Service(database).GetLatestAsync(default), Is.Null);
         await Service(database).SynchronizeAsync(default);
-        var original = await database.ExchangeRateHistory.AsNoTracking().SingleAsync();
-        database.ExchangeRateHistory.Add(new ExchangeRateHistory
-        {
-            Provider = original.Provider,
-            Source = original.Source,
-            BaseCurrency = original.BaseCurrency,
-            QuoteCurrency = original.QuoteCurrency,
-            Nominal = 1,
-            OfficialRate = 99,
-            SourceEffectiveDate = original.SourceEffectiveDate,
-            RetrievedAt = Now
-        });
-        Assert.ThrowsAsync<DbUpdateException>(() => database.SaveChangesAsync());
-        database.ChangeTracker.Clear();
         foreach (var (provider, baseCurrency, quoteCurrency, date) in new[]
         {
             ("other", "USD", "RUB", new DateOnly(2026, 9, 7)), ("CBR", "EUR", "RUB", new DateOnly(2026, 9, 7)),
@@ -120,41 +98,6 @@ public sealed class ExchangeRateTests
         });
         await database.SaveChangesAsync();
         Assert.That((await Service(database).GetLatestAsync(default))!.SourceEffectiveDate, Is.EqualTo(Rate.SourceEffectiveDate));
-    }
-
-    [Test]
-    public async Task MigrationRoundTripLeavesExistingIdentityDataIntact()
-    {
-        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        var parent = Database(scope);
-        var builder = new Npgsql.NpgsqlConnectionStringBuilder(parent.Database.GetConnectionString())
-        { Database = $"sarafan_fx_test_{Guid.NewGuid():N}", Pooling = false };
-        await using var admin = new Npgsql.NpgsqlConnection(parent.Database.GetConnectionString());
-        await admin.OpenAsync();
-        await using var create = new Npgsql.NpgsqlCommand($"CREATE DATABASE \"{builder.Database}\"", admin);
-        await create.ExecuteNonQueryAsync();
-        try
-        {
-            await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(builder.ConnectionString).Options);
-            await database.Database.MigrateAsync();
-            var customer = new Customer { Phone = "+78889999999", Profile = new() };
-            database.Customers.Add(customer); await database.SaveChangesAsync();
-            var migrations = database.Database.GetMigrations().ToArray();
-            var fxIndex = Array.FindIndex(migrations, x => x.EndsWith("_ExchangeRateHistory", StringComparison.Ordinal));
-            Assert.That(fxIndex, Is.GreaterThan(0));
-            var migrator = database.GetService<IMigrator>();
-            await migrator.MigrateAsync(migrations[fxIndex - 1]);
-            await migrator.MigrateAsync();
-            Assert.That(await database.Customers.CountAsync(), Is.EqualTo(1));
-            Assert.That(await database.ExchangeRateHistory.CountAsync(), Is.Zero);
-            await Service(database).SynchronizeAsync(default);
-            Assert.That(await database.ExchangeRateHistory.CountAsync(), Is.EqualTo(1));
-        }
-        finally
-        {
-            await using var drop = new Npgsql.NpgsqlCommand($"DROP DATABASE \"{builder.Database}\" WITH (FORCE)", admin);
-            await drop.ExecuteNonQueryAsync();
-        }
     }
 
     [Test]

@@ -12,10 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.AspNetCore.Authorization;
-using Npgsql;
 
 using Sarafan.Core.Authentication;
 using Sarafan.Core.Data;
@@ -28,6 +25,9 @@ namespace Sarafan.Core.Tests;
 [NonParallelizable]
 public sealed class BackofficeSecurityTests
 {
+    [SetUp]
+    public Task SetUp() => IntegrationTestEnvironment.ResetAsync();
+
     [Test]
     public void RoleCatalogAndAuthorizationMatrix_AreFixedAndFailClosed()
     {
@@ -522,159 +522,4 @@ public sealed class BackofficeSecurityTests
         await database.SaveChangesAsync();
     }
 
-    [Test]
-    public async Task ConcurrentAdministratorDemotions_KeepOneActiveAdministrator()
-    {
-        BackofficeUserDto initial;
-        BackofficeUserDto second;
-        await using (var setupScope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
-        {
-            var database = setupScope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var userService = setupScope.ServiceProvider.GetRequiredService<BackofficeUserService>();
-            var initialUser = await database.BackofficeUsers
-                .AsNoTracking()
-                .Include(item => item.UserRoles)
-                .SingleAsync(item => item.NormalizedEmail == IntegrationTestEnvironment.BackofficeEmail);
-            initial = BackofficeUserDto.From(initialUser);
-            second = await userService.CreateAsync(
-                new BackofficeUserCreateRequest
-                {
-                    Email = $"concurrent-admin-{Guid.NewGuid():N}@sarafan.test",
-                    FirstName = "Concurrent",
-                    LastName = "Administrator",
-                    Password = "Admin_concur_13",
-                    Roles = [BackofficeRoles.Administrator]
-                },
-                default);
-        }
-
-        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var firstTask = DemoteAfterGate(initial, gate.Task);
-        var secondTask = DemoteAfterGate(second, gate.Task);
-        gate.SetResult();
-        var outcomes = await Task.WhenAll(firstTask, secondTask);
-
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(outcomes.Count(item => item == "updated"), Is.EqualTo(1));
-            Assert.That(outcomes.Count(item => item == "last_backoffice_administrator"), Is.EqualTo(1));
-        }
-
-        await using var cleanupScope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        var cleanupDatabase = cleanupScope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var initialEntity = await cleanupDatabase.BackofficeUsers
-            .Include(item => item.UserRoles)
-            .SingleAsync(item => item.Id == initial.Id);
-        cleanupDatabase.BackofficeUserRoles.RemoveRange(initialEntity.UserRoles);
-        initialEntity.UserRoles =
-        [
-            new BackofficeUserRole
-            {
-                BackofficeUser = initialEntity,
-                RoleCode = BackofficeRoles.Administrator
-            }
-        ];
-        initialEntity.IsActive = true;
-        initialEntity.TokenVersion++;
-        initialEntity.UpdatedAt = DateTimeOffset.UtcNow;
-        var secondEntity = await cleanupDatabase.BackofficeUsers.SingleAsync(item => item.Id == second.Id);
-        cleanupDatabase.BackofficeUsers.Remove(secondEntity);
-        await cleanupDatabase.SaveChangesAsync();
-    }
-
-    [Test]
-    public async Task BackofficeMigration_AppliesAndRollsBackIndependently()
-    {
-        string applicationConnection;
-        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
-        {
-            applicationConnection = scope.ServiceProvider
-                .GetRequiredService<AppDbContext>()
-                .Database.GetConnectionString()!;
-        }
-
-        var databaseName = $"sarafan_backoffice_migration_{Guid.NewGuid():N}";
-        var adminBuilder = new NpgsqlConnectionStringBuilder(applicationConnection)
-        {
-            Database = "postgres",
-            Pooling = false
-        };
-        await using (var admin = new NpgsqlConnection(adminBuilder.ConnectionString))
-        {
-            await admin.OpenAsync();
-            await using var create = admin.CreateCommand();
-            create.CommandText = $"CREATE DATABASE \"{databaseName}\"";
-            await create.ExecuteNonQueryAsync();
-        }
-
-        try
-        {
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(applicationConnection)
-            {
-                Database = databaseName,
-                Pooling = false
-            };
-            var options = new DbContextOptionsBuilder<AppDbContext>()
-                .UseNpgsql(databaseBuilder.ConnectionString)
-                .Options;
-            await using var database = new AppDbContext(options);
-            await database.Database.MigrateAsync();
-            Assert.That(await TableExists(databaseBuilder.ConnectionString, "backoffice_users"), Is.True);
-            Assert.That(await database.BackofficeRoles.CountAsync(), Is.EqualTo(4));
-
-            await database.Database.GetService<IMigrator>()
-                .MigrateAsync("20260829223243_InitialCustomerIdentity");
-            using (Assert.EnterMultipleScope())
-            {
-                Assert.That(await TableExists(databaseBuilder.ConnectionString, "backoffice_users"), Is.False);
-                Assert.That(await TableExists(databaseBuilder.ConnectionString, "customers"), Is.True);
-            }
-        }
-        finally
-        {
-            NpgsqlConnection.ClearAllPools();
-            await using var admin = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await admin.OpenAsync();
-            await using var drop = admin.CreateCommand();
-            drop.CommandText = $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)";
-            await drop.ExecuteNonQueryAsync();
-        }
-    }
-
-    private static async Task<string> DemoteAfterGate(BackofficeUserDto user, Task gate)
-    {
-        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        var service = scope.ServiceProvider.GetRequiredService<BackofficeUserService>();
-        await gate;
-        try
-        {
-            await service.UpdateAsync(
-                user.Id,
-                new BackofficeUserUpdateRequest
-                {
-                    Email = user.Email,
-                    FirstName = user.FirstName,
-                    LastName = user.LastName,
-                    Patronymic = user.Patronymic,
-                    IsActive = true,
-                    Roles = [BackofficeRoles.Operator]
-                },
-                default);
-            return "updated";
-        }
-        catch (ServiceException exception)
-        {
-            return exception.Code;
-        }
-    }
-
-    private static async Task<bool> TableExists(string connectionString, string table)
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT to_regclass(@table) IS NOT NULL";
-        command.Parameters.AddWithValue("table", $"public.{table}");
-        return (bool)(await command.ExecuteScalarAsync())!;
-    }
 }

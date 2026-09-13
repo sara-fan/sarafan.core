@@ -9,8 +9,6 @@ namespace Sarafan.Core.Services;
 
 internal static class ConsentTransaction
 {
-    private const int CustomerLockNamespace = 938802021;
-
     internal static async Task<T> Run<T>(AppDbContext database, Func<Task<T>> action, CancellationToken token, Func<Task>? beforeCommit = null)
     {
         if (database.Database.CurrentTransaction is not null)
@@ -20,7 +18,8 @@ internal static class ConsentTransaction
             if (beforeCommit is not null) await beforeCommit();
             return result;
         }
-        await using var transaction = await database.Database.BeginTransactionAsync(token);
+        await using var transaction = await AppDatabaseOperations.For(database)
+            .BeginTransactionAsync(database, token);
         await Lock(database, token);
         try
         {
@@ -33,10 +32,9 @@ internal static class ConsentTransaction
         catch (DbUpdateConcurrencyException) { throw new ServiceException(409, "consent_conflict"); }
     }
 
-    internal static Task Lock(AppDbContext database, CancellationToken token) => database.Database.ExecuteSqlRawAsync(
-        "SELECT pg_advisory_xact_lock(938802020)", token);
+    internal static Task Lock(AppDbContext database, CancellationToken token)
+        => AppDatabaseOperations.For(database).LockConsentsAsync(database, token);
 
     internal static Task LockCustomer(AppDbContext database, int customerId, CancellationToken token) =>
-        database.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT pg_advisory_xact_lock({CustomerLockNamespace}, {customerId})", token);
+        AppDatabaseOperations.For(database).LockCustomerAsync(database, customerId, token);
 }

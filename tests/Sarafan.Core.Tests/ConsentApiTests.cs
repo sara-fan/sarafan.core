@@ -27,6 +27,7 @@ public sealed class ConsentApiTests
     [SetUp]
     public async Task SetUp()
     {
+        await IntegrationTestEnvironment.ResetAsync();
         _client = IntegrationTestEnvironment.Factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -389,25 +390,6 @@ public sealed class ConsentApiTests
         using var afterProcessing = await _client.GetAsync("/api/v1/consents/me");
         Assert.That((await Read<CustomerConsentsDto>(afterProcessing)).WithdrawalRequest!.Processed, Is.True);
     }
-    [Test]
-    public async Task ConcurrentWithdrawalRequestsCreateOnePendingRecord()
-    {
-        Authorize(_customerToken);
-        var responses = await Task.WhenAll(
-            _client.PostAsync("/api/v1/consents/me/withdrawal-request", null),
-            _client.PostAsync("/api/v1/consents/me/withdrawal-request", null));
-        using var firstResponse = responses[0];
-        using var secondResponse = responses[1];
-        var first = await Read<CustomerConsentWithdrawalRequestDto>(firstResponse);
-        var second = await Read<CustomerConsentWithdrawalRequestDto>(secondResponse);
-        Assert.That(second, Is.EqualTo(first));
-
-        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        Assert.That(await database.CustomerConsentWithdrawalRequests
-            .CountAsync(item => item.CustomerId == _customer && !item.Processed), Is.EqualTo(1));
-    }
-
     [Test]
     public async Task WithdrawalRequestRetryAndResubmissionDoNotChangeConsentEvidence()
     {

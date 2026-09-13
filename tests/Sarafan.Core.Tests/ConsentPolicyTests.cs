@@ -4,7 +4,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -21,7 +20,6 @@ public sealed class ConsentPolicyTests
 {
     private AsyncServiceScope _scope;
     private AppDbContext _db = null!;
-    private IDbContextTransaction _transaction = null!;
     private TestClock _clock = null!;
     private ConsentOptions _options = null!;
     private LegalDocumentService _documents = null!;
@@ -35,9 +33,9 @@ public sealed class ConsentPolicyTests
     [SetUp]
     public async Task SetUp()
     {
+        await IntegrationTestEnvironment.ResetAsync();
         _scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         _db = _scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        _transaction = await _db.Database.BeginTransactionAsync();
         _clock = new() { Now = DateTimeOffset.UtcNow.AddDays(1) };
         _options = new ConsentOptions();
         _documents = new(_db, _clock, NullLogger<LegalDocumentService>.Instance);
@@ -51,7 +49,7 @@ public sealed class ConsentPolicyTests
         _customer = customer.Id;
     }
     [TearDown]
-    public async Task TearDown() { await _transaction.RollbackAsync(); await _transaction.DisposeAsync(); await _scope.DisposeAsync(); }
+    public async Task TearDown() => await _scope.DisposeAsync();
 
     private async Task<LegalDocumentDto> CreateDocument(LegalDocumentKind kind = LegalDocumentKind.PersonalDataConsent, string? version = null, DateOnly? effectiveDate = null)
     {
@@ -362,7 +360,9 @@ public sealed class ConsentPolicyTests
     [Test]
     public async Task WithdrawalRequestListFiltersSortsAndPaginatesOnTheServer()
     {
-        await _db.CustomerConsentWithdrawalRequests.ExecuteDeleteAsync();
+        _db.CustomerConsentWithdrawalRequests.RemoveRange(
+            await _db.CustomerConsentWithdrawalRequests.ToListAsync());
+        await _db.SaveChangesAsync();
         var customers = Enumerable.Range(2, 12)
             .Select(value => new Customer { Phone = $"+788800000{value:00}", Profile = new() })
             .ToArray();

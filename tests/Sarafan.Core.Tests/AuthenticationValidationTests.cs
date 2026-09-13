@@ -28,6 +28,7 @@ public sealed class AuthenticationValidationTests
     [SetUp]
     public async Task SetUp()
     {
+        await IntegrationTestEnvironment.ResetAsync();
         _provider = new RecordingCodeProvider();
         _app = IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {

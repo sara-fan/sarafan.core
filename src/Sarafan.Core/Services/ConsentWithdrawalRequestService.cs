@@ -65,8 +65,9 @@ public sealed class ConsentWithdrawalRequestService(
                 throw new ServiceException(400, "invalid_consent_withdrawal_request_filter");
 
             var query = database.CustomerConsentWithdrawalRequests.AsNoTracking()
-                .Where(item => (processed == null || item.Processed == processed)
-                    && (search == null || EF.Functions.Like(item.CustomerId.ToString(), $"%{search}%")));
+                .Where(item => processed == null || item.Processed == processed);
+            if (search is not null)
+                query = AppDatabaseOperations.For(database).ApplyWithdrawalSearch(query, search);
             var total = await query.CountAsync(token);
             var descending = sortOrderKey == "desc";
             var ordered = (sortByKey, descending) switch
@@ -120,10 +121,11 @@ public sealed class ConsentWithdrawalRequestService(
         {
             if (request.RequestedAt.Offset != TimeSpan.Zero || request.RequestedAt.Ticks % 10 != 0)
                 throw new ServiceException(404, "consent_withdrawal_request_not_found");
-            var updated = await database.CustomerConsentWithdrawalRequests
-                .Where(candidate => candidate.CustomerId == request.CustomerId
-                    && candidate.RequestedAt == request.RequestedAt)
-                .ExecuteUpdateAsync(properties => properties.SetProperty(candidate => candidate.Processed, true), token);
+            var updated = await AppDatabaseOperations.For(database).MarkWithdrawalProcessedAsync(
+                database,
+                database.CustomerConsentWithdrawalRequests.Where(candidate => candidate.CustomerId == request.CustomerId
+                    && candidate.RequestedAt == request.RequestedAt),
+                token);
             if (updated == 0) throw new ServiceException(404, "consent_withdrawal_request_not_found");
             return new CustomerConsentWithdrawalRequestDto(request.CustomerId, request.RequestedAt, true);
         }, token), token, request);

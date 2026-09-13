@@ -20,7 +20,6 @@ public sealed class BackofficeUserService(
     TimeProvider timeProvider,
     ILogger<BackofficeUserService> logger)
 {
-    private const string AdministratorMutationLockSql = "SELECT pg_advisory_xact_lock(1397301386)";
     private readonly BackofficeBootstrapOptions _bootstrapOptions = bootstrapOptions.Value;
 
     public Task<IReadOnlyList<BackofficeUserDto>> ListAsync(CancellationToken cancellationToken)
@@ -181,7 +180,8 @@ public sealed class BackofficeUserService(
         BackofficeUserUpdateRequest request,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await AppDatabaseOperations.For(database)
+            .BeginTransactionAsync(database, cancellationToken);
         await AcquireAdministratorMutationLockAsync(cancellationToken);
         var roles = NormalizeRoles(request.Roles);
         var user = await FindUserAsync(id, true, cancellationToken);
@@ -194,6 +194,13 @@ public sealed class BackofficeUserService(
 
         var email = NormalizeEmail(request.Email);
         var normalizedEmail = NormalizeEmailKey(email);
+        if (await database.BackofficeUsers.AnyAsync(
+                item => item.Id != id && item.NormalizedEmail == normalizedEmail,
+                cancellationToken))
+        {
+            throw EmailExists();
+        }
+
         var roleChanged = !user.UserRoles.Select(item => item.RoleCode).ToHashSet(StringComparer.Ordinal)
             .SetEquals(roles);
         var securityChanged = user.NormalizedEmail != normalizedEmail
@@ -202,7 +209,7 @@ public sealed class BackofficeUserService(
         if (request.IsActive
             && user.IsDemo
             && string.IsNullOrWhiteSpace(request.Password)
-            && RealOperationsEnabled())
+            && RealOperationsEnabled(_bootstrapOptions))
         {
             throw new ServiceException(StatusCodes.Status409Conflict, "demo_backoffice_forbidden");
         }
@@ -279,7 +286,8 @@ public sealed class BackofficeUserService(
 
     private async Task DisableCoreAsync(int id, CancellationToken cancellationToken)
     {
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await AppDatabaseOperations.For(database)
+            .BeginTransactionAsync(database, cancellationToken);
         await AcquireAdministratorMutationLockAsync(cancellationToken);
         var user = await FindUserAsync(id, true, cancellationToken);
         if (!user.IsActive)
@@ -344,9 +352,8 @@ public sealed class BackofficeUserService(
     }
 
     private Task AcquireAdministratorMutationLockAsync(CancellationToken cancellationToken)
-        => database.Database.ExecuteSqlRawAsync(
-            AdministratorMutationLockSql,
-            cancellationToken);
+        => AppDatabaseOperations.For(database)
+            .LockAdministratorMutationsAsync(database, cancellationToken);
 
     private static IReadOnlySet<string> NormalizeRoles(IReadOnlyCollection<string>? roles)
     {
@@ -402,6 +409,6 @@ public sealed class BackofficeUserService(
     private static ServiceException EmailExists()
         => new(StatusCodes.Status409Conflict, "backoffice_email_exists");
 
-    private bool RealOperationsEnabled()
-        => _bootstrapOptions.RealOrdersEnabled || _bootstrapOptions.RealPaymentIntegrationEnabled;
+    public static bool RealOperationsEnabled(BackofficeBootstrapOptions options)
+        => options.RealOrdersEnabled || options.RealPaymentIntegrationEnabled;
 }

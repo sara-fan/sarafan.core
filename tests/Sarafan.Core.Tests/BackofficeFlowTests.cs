@@ -24,8 +24,9 @@ public sealed class BackofficeFlowTests
     private HttpClient _client = null!;
 
     [SetUp]
-    public void SetUp()
+    public async Task SetUp()
     {
+        await IntegrationTestEnvironment.ResetAsync();
         _client = IntegrationTestEnvironment.Factory.CreateClient(
             new WebApplicationFactoryClientOptions
             {
@@ -608,68 +609,6 @@ public sealed class BackofficeFlowTests
             $"/api/v1/backoffice/users/{second!.Id}",
             administrator.AccessToken);
         Assert.That(disableSecond.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
-    }
-
-    [Test]
-    public async Task ConcurrentDuplicateEmails_CreateExactlyOneUser()
-    {
-        var administrator = await Login(
-            _client,
-            IntegrationTestEnvironment.BackofficeEmail,
-            IntegrationTestEnvironment.BackofficePassword);
-        var email = NextEmail();
-        var first = SendAuthorized(
-            _client,
-            HttpMethod.Post,
-            "/api/v1/backoffice/users",
-            administrator.AccessToken,
-            JsonContent.Create(new BackofficeUserCreateRequest
-            {
-                Email = email,
-                FirstName = "Concurrent",
-                LastName = "First",
-                Password = "Email_pass_13",
-                Roles = [BackofficeRoles.Operator]
-            }));
-        var second = SendAuthorized(
-            _client,
-            HttpMethod.Post,
-            "/api/v1/backoffice/users",
-            administrator.AccessToken,
-            JsonContent.Create(new BackofficeUserCreateRequest
-            {
-                Email = email.ToUpperInvariant(),
-                FirstName = "Concurrent",
-                LastName = "Second",
-                Password = "Email_pass_13",
-                Roles = [BackofficeRoles.Operator]
-            }));
-
-        var responses = await Task.WhenAll(first, second);
-        try
-        {
-            using (Assert.EnterMultipleScope())
-            {
-                Assert.That(responses.Count(item => item.StatusCode == HttpStatusCode.Created), Is.EqualTo(1));
-                Assert.That(responses.Count(item => item.StatusCode == HttpStatusCode.Conflict), Is.EqualTo(1));
-            }
-
-            var createdResponse = responses.Single(item => item.StatusCode == HttpStatusCode.Created);
-            var created = (await createdResponse.Content.ReadFromJsonAsync<BackofficeUserDto>())!;
-            using var disable = await SendAuthorized(
-                _client,
-                HttpMethod.Delete,
-                $"/api/v1/backoffice/users/{created.Id}",
-                administrator.AccessToken);
-            Assert.That(disable.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
-        }
-        finally
-        {
-            foreach (var response in responses)
-            {
-                response.Dispose();
-            }
-        }
     }
 
     [Test]

@@ -39,8 +39,7 @@ public sealed class BackofficeJwtBearerEvents(
             .Where(item => item.Id == userId)
             .Select(item => new { item.IsActive, item.IsDemo, item.TokenVersion })
             .SingleOrDefaultAsync(context.HttpContext.RequestAborted);
-        var realOperationsEnabled = bootstrapOptions.Value.RealOrdersEnabled
-            || bootstrapOptions.Value.RealPaymentIntegrationEnabled;
+        var realOperationsEnabled = BackofficeUserService.RealOperationsEnabled(bootstrapOptions.Value);
         if (current is null
             || !current.IsActive
             || (current.IsDemo && realOperationsEnabled)

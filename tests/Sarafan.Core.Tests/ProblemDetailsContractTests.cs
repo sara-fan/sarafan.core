@@ -36,6 +36,7 @@ public sealed class ProblemDetailsContractTests
     [SetUp]
     public async Task SetUp()
     {
+        await IntegrationTestEnvironment.ResetAsync();
         _client = IntegrationTestEnvironment.Factory.CreateClient(
             new WebApplicationFactoryClientOptions
             {
@@ -535,6 +536,10 @@ public sealed class ProblemDetailsContractTests
             ["invalid_photo_size"] = 400,
             ["invalid_photo_type"] = 400,
             ["invalid_photo_content"] = 400,
+            ["invalid_order_url"] = 400,
+            ["invalid_order_idempotency_key"] = 400,
+            ["order_creation_conflict"] = 409,
+            ["order_number_allocation_failed"] = 503,
             ["invalid_code"] = 401,
             ["invalid_access_token"] = 401,
             ["invalid_refresh_token"] = 401,

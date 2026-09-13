@@ -79,12 +79,14 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
     public Task<bool> DeleteAsync(Guid id, int actor, CancellationToken token) => Run(nameof(DeleteAsync),
         () => ConsentTransaction.Run(database, async () =>
         {
+            var operations = AppDatabaseOperations.For(database);
             var document = await database.LegalDocuments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token)
                 ?? throw new ServiceException(404, "legal_document_not_found");
             var now = clock.GetUtcNow();
-            var deleted = await database.LegalDocuments
-                .Where(x => x.Id == id && x.EffectiveAt > now)
-                .ExecuteDeleteAsync(token);
+            var deleted = await operations.DeleteAsync(
+                database,
+                database.LegalDocuments.Where(x => x.Id == id && x.EffectiveAt > now),
+                token);
             if (deleted == 0)
                 throw new ServiceException(409, "legal_document_already_effective");
             database.LegalDocumentAuditEvents.Add(Audit(document, actor, DeletedAction, now));
@@ -107,10 +109,10 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
         var searchedId = Guid.TryParse(search, out var parsedDocumentId) ? parsedDocumentId : (Guid?)null;
         var query = database.LegalDocumentAuditEvents.AsNoTracking().Where(x =>
             (kind == null || x.Kind == kind) && (action == null || x.Action == action)
-            && (documentId == null || x.DocumentId == documentId)
-            && (search == null || EF.Functions.ILike(x.Title, $"%{search}%")
-                || EF.Functions.ILike(x.DisplayVersion, $"%{search}%")
-                || searchedId != null && x.DocumentId == searchedId));
+            && (documentId == null || x.DocumentId == documentId));
+        if (search is not null)
+            query = AppDatabaseOperations.For(database)
+                .ApplyLegalDocumentAuditSearch(query, search, searchedId);
         var total = await query.CountAsync(token);
         var descending = sortOrderKey == "desc";
         var ordered = (sortByKey, descending) switch

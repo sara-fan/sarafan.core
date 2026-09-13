@@ -81,7 +81,7 @@ public sealed class BackofficeBootstrapService(
 
     private async Task EnsureReleaseGateCoreAsync(CancellationToken cancellationToken)
     {
-        if (!_options.RealOrdersEnabled && !_options.RealPaymentIntegrationEnabled)
+        if (!BackofficeUserService.RealOperationsEnabled(_options))
         {
             return;
         }
