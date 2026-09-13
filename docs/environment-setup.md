@@ -120,7 +120,7 @@ The automated suite uses uniquely named EF Core InMemory stores. It does not con
 dotnet restore Sarafan.sln
 dotnet format Sarafan.sln --no-restore --verify-no-changes
 dotnet build Sarafan.sln --configuration Release --no-restore
-dotnet test Sarafan.sln --configuration Release --no-build --no-restore
+dotnet test Sarafan.sln --configuration Release --no-build --no-restore --collect:"XPlat Code Coverage"
 ```
 
 The in-memory host disables migrations, the exchange-rate worker and the consent-retention worker, then creates and deterministically seeds a fresh store for stateful tests. Disconnected Npgsql contexts are used only for model metadata or generated-SQL inspection and never open a connection. Migration execution and PostgreSQL lock, transaction, concurrency and constraint semantics are intentionally outside the automated-test policy.
