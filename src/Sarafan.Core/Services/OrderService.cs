@@ -18,6 +18,7 @@ public sealed class OrderService(
     AppDbContext database,
     ConsentService consents,
     ICustomerOrderCodeGenerator codeGenerator,
+    ICustomerOrderCodeCollisionDetector collisionDetector,
     IOptions<BackofficeBootstrapOptions> bootstrapOptions,
     ILogger<OrderService> logger)
 {
@@ -104,7 +105,7 @@ public sealed class OrderService(
                 return ToDto(allocation);
             }
             catch (DbUpdateException exception) when (
-                assignedNewCode && operations.IsCustomerOrderCodeCollision(exception))
+                assignedNewCode && collisionDetector.IsCollision(exception))
             {
                 database.ChangeTracker.Clear();
             }

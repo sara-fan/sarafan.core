@@ -80,6 +80,7 @@ builder.Services.AddSingleton<VerificationCodeReleaseGate>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddSingleton<ICustomerOrderCodeGenerator, CustomerOrderCodeGenerator>();
+builder.Services.AddScoped<ICustomerOrderCodeCollisionDetector, CustomerOrderCodeCollisionDetector>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddOptions<ConsentOptions>().Bind(builder.Configuration.GetSection(ConsentOptions.SectionName))
     .ValidateDataAnnotations().ValidateOnStart();

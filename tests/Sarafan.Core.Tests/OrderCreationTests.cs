@@ -7,8 +7,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -105,6 +107,82 @@ public sealed class OrderCreationTests
     }
 
     [Test]
+    public async Task Operations_AreHiddenWhenRealOperationsAreDisabled()
+    {
+        using var app = IsolatedApp(realOrdersEnabled: false);
+        using var client = CreateClient(app);
+        var session = await Register(client);
+
+        using var create = await Create(client, "https://shop.example/product", Guid.NewGuid());
+        var createProblem = await create.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+        using var get = await client.GetAsync("/api/v1/orders/1");
+        var getProblem = await get.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var customer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == session.Customer.Id);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(create.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+            Assert.That(createProblem?.Code, Is.EqualTo("resource_not_found"));
+            Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+            Assert.That(getProblem?.Code, Is.EqualTo("resource_not_found"));
+            Assert.That(customer.OrderCode, Is.Null);
+            Assert.That(await database.Orders.AnyAsync(item => item.CustomerId == customer.Id), Is.False);
+        }
+    }
+
+    [Test]
+    public async Task CodeCollision_RetriesAndEventuallyCreatesOrder()
+    {
+        var collisions = new CollisionHarness();
+        using var app = IsolatedApp(collisions: collisions);
+        using var client = CreateClient(app);
+        await Register(client);
+        collisions.FailNext(2);
+
+        using var response = await Create(client, "https://shop.example/product", Guid.NewGuid());
+        var order = await response.Content.ReadFromJsonAsync<OrderDto>();
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+            Assert.That(order?.OrderNumber, Does.Match("^[0-9]{8}-1$"));
+            Assert.That(collisions.FailuresThrown, Is.EqualTo(2));
+            Assert.That(collisions.CollisionsClassified, Is.EqualTo(2));
+        }
+    }
+
+    [Test]
+    public async Task CodeCollision_ExhaustionReturnsServiceUnavailableWithoutPersistingIdentity()
+    {
+        var collisions = new CollisionHarness();
+        using var app = IsolatedApp(collisions: collisions);
+        using var client = CreateClient(app);
+        var session = await Register(client);
+        collisions.FailNext(10);
+
+        using var response = await Create(client, "https://shop.example/product", Guid.NewGuid());
+        var problem = await response.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var customer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == session.Customer.Id);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+            Assert.That(problem?.Code, Is.EqualTo("order_number_allocation_failed"));
+            Assert.That(collisions.FailuresThrown, Is.EqualTo(10));
+            Assert.That(collisions.CollisionsClassified, Is.EqualTo(10));
+            Assert.That(customer.OrderCode, Is.Null);
+            Assert.That(customer.NextOrderNumber, Is.EqualTo(1));
+            Assert.That(await database.Orders.AnyAsync(item => item.CustomerId == customer.Id), Is.False);
+        }
+    }
+
+    [Test]
     public async Task InvalidKeyAndUrl_DoNotAssignIdentityOrConsumeNumber()
     {
         using var missingKey = await Create(_client, "https://shop.example/product", null);
@@ -126,9 +204,17 @@ public sealed class OrderCreationTests
 
         await using var scope = _app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var orders = scope.ServiceProvider.GetRequiredService<OrderService>();
+        var serviceException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
+            _session.Customer.Id,
+            "https://shop.example/product",
+            Guid.Empty,
+            default));
         var customer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == _session.Customer.Id);
         using (Assert.EnterMultipleScope())
         {
+            Assert.That(serviceException?.StatusCode, Is.EqualTo(StatusCodes.Status400BadRequest));
+            Assert.That(serviceException?.Code, Is.EqualTo("invalid_order_idempotency_key"));
             Assert.That(customer.OrderCode, Is.Null);
             Assert.That(customer.NextOrderNumber, Is.EqualTo(1));
             Assert.That(await database.Orders.AnyAsync(item => item.CustomerId == customer.Id), Is.False);
@@ -207,14 +293,26 @@ public sealed class OrderCreationTests
         return await client.SendAsync(request);
     }
 
-    private static WebApplicationFactory<Program> IsolatedApp()
+    private static WebApplicationFactory<Program> IsolatedApp(
+        bool realOrdersEnabled = true,
+        CollisionHarness? collisions = null)
         => IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<VerificationAttemptStore>();
             services.AddSingleton<VerificationAttemptStore>();
             services.RemoveAll<IVerificationCodeProvider>();
             services.AddSingleton<IVerificationCodeProvider>(new ProductionReadyVerificationCodeProvider());
-            services.Configure<BackofficeBootstrapOptions>(options => options.RealOrdersEnabled = true);
+            services.Configure<BackofficeBootstrapOptions>(options =>
+            {
+                options.RealOrdersEnabled = realOrdersEnabled;
+                options.RealPaymentIntegrationEnabled = false;
+            });
+            if (collisions is not null)
+            {
+                services.AddDbContext<AppDbContext>(options => options.AddInterceptors(collisions));
+                services.RemoveAll<ICustomerOrderCodeCollisionDetector>();
+                services.AddSingleton<ICustomerOrderCodeCollisionDetector>(collisions);
+            }
         }));
 
     private static async Task DemoteDemoBackofficeUsers()
@@ -248,6 +346,45 @@ public sealed class OrderCreationTests
             return Task.FromResult(
                 expectedCode.Length == 4
                 && string.Equals(code?.Trim(), expectedCode, StringComparison.Ordinal));
+        }
+    }
+
+    private sealed class CollisionHarness : SaveChangesInterceptor, ICustomerOrderCodeCollisionDetector
+    {
+        private int _remainingFailures;
+
+        public int FailuresThrown { get; private set; }
+        public int CollisionsClassified { get; private set; }
+
+        public void FailNext(int count) => _remainingFailures = count;
+
+        public bool IsCollision(DbUpdateException exception)
+        {
+            CollisionsClassified++;
+            return true;
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            eventData.Context?.ChangeTracker.DetectChanges();
+            var assignsOrderCode = eventData.Context?.ChangeTracker
+                .Entries<Customer>()
+                .Any(entry => entry.State == EntityState.Modified
+                    && entry.Property(item => item.OrderCode).IsModified
+                    && entry.Property(item => item.OrderCode).OriginalValue is null
+                    && entry.Property(item => item.OrderCode).CurrentValue is not null) == true;
+            if (_remainingFailures > 0 && assignsOrderCode)
+            {
+                _remainingFailures--;
+                FailuresThrown++;
+                throw new DbUpdateException("Simulated customer order-code collision.");
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
 

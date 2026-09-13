@@ -30,6 +30,31 @@ namespace Sarafan.Core.Data.Migrations
                 maxLength: 8,
                 nullable: true);
 
+            migrationBuilder.Sql(
+                """
+                CREATE FUNCTION enforce_customer_order_code_immutable()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $function$
+                BEGIN
+                    IF OLD.order_code IS NOT NULL
+                       AND NEW.order_code IS DISTINCT FROM OLD.order_code THEN
+                        RAISE EXCEPTION USING
+                            ERRCODE = '23514',
+                            CONSTRAINT = 'ck_customers_order_code_immutable',
+                            MESSAGE = 'customer order_code cannot be changed after assignment';
+                    END IF;
+
+                    RETURN NEW;
+                END;
+                $function$;
+
+                CREATE TRIGGER trg_customers_order_code_immutable
+                BEFORE UPDATE OF order_code ON customers
+                FOR EACH ROW
+                EXECUTE FUNCTION enforce_customer_order_code_immutable();
+                """);
+
             migrationBuilder.CreateTable(
                 name: "orders",
                 columns: table => new
@@ -92,6 +117,12 @@ namespace Sarafan.Core.Data.Migrations
         {
             migrationBuilder.DropTable(
                 name: "orders");
+
+            migrationBuilder.Sql(
+                """
+                DROP TRIGGER IF EXISTS trg_customers_order_code_immutable ON customers;
+                DROP FUNCTION IF EXISTS enforce_customer_order_code_immutable();
+                """);
 
             migrationBuilder.DropIndex(
                 name: "ux_customers_order_code",
