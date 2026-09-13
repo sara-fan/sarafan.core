@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting) -->
+<!-- All rights reserved. -->
+<!-- This file is a part of the Sarafan application -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <ExcludeByFile>**/Migrations/*.cs,**/PostgreSql/*.cs</ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+      <DataCollector friendlyName="Code Coverage">
+        <Configuration>
+          <CodeCoverage>
+            <Sources>
+              <Exclude>
+                <Source>.*[/\\]Migrations[/\\].*\.cs$</Source>
+                <Source>.*[/\\]PostgreSql[/\\].*\.cs$</Source>
+              </Exclude>
+            </Sources>
+          </CodeCoverage>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
