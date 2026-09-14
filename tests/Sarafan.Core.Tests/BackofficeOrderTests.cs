@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -183,8 +184,27 @@ public sealed class BackofficeOrderTests
         }
     }
 
+    [TestCase("createdat", "createdAt")]
+    [TestCase("CREATEDAT", "createdAt")]
+    [TestCase(" orderNUMBER ", "orderNumber")]
+    public async Task List_NormalizesSortKeysAndReturnsTheirCanonicalNames(string requested, string expected)
+    {
+        using var response = await SendAsAdministratorAsync(
+            $"/api/v1/backoffice/orders?sortBy={Uri.EscapeDataString(requested)}&sortOrder=ASC");
+        var body = await response.Content.ReadFromJsonAsync<BackofficeOrderPageDto>();
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(body!.Sorting.SortBy, Is.EqualTo(expected));
+        Assert.That(body.Sorting.SortOrder, Is.EqualTo("asc"));
+    }
+
     [TestCase("page=0")]
+    [TestCase("page=abc")]
+    [TestCase("page=")]
+    [TestCase("page=1&page=2")]
     [TestCase("pageSize=101")]
+    [TestCase("pageSize=abc")]
+    [TestCase("pageSize=")]
     [TestCase("sortBy=id")]
     [TestCase("sortOrder=sideways")]
     [TestCase("status=999")]
@@ -230,7 +250,7 @@ public sealed class BackofficeOrderTests
         foreach (var path in new[]
                  {
                      "/api/v1/backoffice/orders/ops",
-                     "/api/v1/backoffice/orders?page=0&statusGroup=unknown"
+                     "/api/v1/backoffice/orders?page=abc&pageSize=&statusGroup=unknown"
                  })
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, path);
@@ -239,6 +259,25 @@ public sealed class BackofficeOrderTests
             var problem = await response.Content.ReadFromJsonAsync<SarafanProblemDetails>();
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound), path);
             Assert.That(problem!.Code, Is.EqualTo("resource_not_found"), path);
+        }
+
+        await using var scope = hiddenApp.Services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<OrderService>();
+        var exception = Assert.ThrowsAsync<ServiceException>(() => service.ListForBackofficeAsync(
+            0,
+            10,
+            "createdAt",
+            "desc",
+            null,
+            null,
+            "unknown",
+            null,
+            null,
+            default));
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(exception!.StatusCode, Is.EqualTo(StatusCodes.Status404NotFound));
+            Assert.That(exception.Code, Is.EqualTo("resource_not_found"));
         }
     }
 

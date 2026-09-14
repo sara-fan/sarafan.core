@@ -2,6 +2,8 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
+using System.Globalization;
+
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -28,8 +30,6 @@ public sealed class BackofficeOrdersController(
     [HttpGet]
     [ProducesResponseType<BackofficeOrderPageDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<BackofficeOrderPageDto>> List(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
         [FromQuery] string sortBy = "createdAt",
         [FromQuery] string sortOrder = "desc",
         [FromQuery] string? search = null,
@@ -39,8 +39,8 @@ public sealed class BackofficeOrdersController(
         [FromQuery] string? createdTo = null,
         CancellationToken cancellationToken = default)
         => Ok(await orders.ListForBackofficeAsync(
-            page,
-            pageSize,
+            ParseListInteger(Request.Query, "page", 1),
+            ParseListInteger(Request.Query, "pageSize", 10),
             sortBy,
             sortOrder,
             search,
@@ -49,4 +49,20 @@ public sealed class BackofficeOrdersController(
             createdFrom,
             createdTo,
             cancellationToken));
+
+    private static int ParseListInteger(IQueryCollection query, string name, int defaultValue)
+    {
+        if (!query.TryGetValue(name, out var values))
+        {
+            return defaultValue;
+        }
+
+        if (values.Count != 1
+            || !int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+        {
+            throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_list_filter");
+        }
+
+        return parsed;
+    }
 }

@@ -108,6 +108,19 @@ public sealed class Order
                 "The order update time cannot precede its previous update time.");
         }
 
+        if (normalizedUpdatedAt == UpdatedAt)
+        {
+            if (UpdatedAt == DateTimeOffset.MaxValue)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(updatedAt),
+                    updatedAt,
+                    "The order update time cannot advance beyond its maximum value.");
+            }
+
+            normalizedUpdatedAt = UpdatedAt.AddTicks(1);
+        }
+
         ProductName = productName;
         StoreName = storeName;
         ImageUrl = imageUrl;

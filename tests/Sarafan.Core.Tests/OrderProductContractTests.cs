@@ -52,6 +52,21 @@ public sealed class OrderProductContractTests
     }
 
     [Test]
+    public void ProductSnapshot_AdvancesUpdateTimeWhenTheProvidedTimeEqualsTheCurrentTime()
+    {
+        var order = NewOrder();
+
+        order.SetProductSnapshot(
+            null, null, null, null, null, null, null, null, null, null, CreatedAt);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(order.CreatedAt, Is.EqualTo(CreatedAt));
+            Assert.That(order.UpdatedAt, Is.EqualTo(CreatedAt.AddTicks(1)));
+        }
+    }
+
+    [Test]
     public void ProductSnapshot_AcceptsCompleteRecognizedDataAndCopiesCharacteristics()
     {
         var order = NewOrder();
@@ -137,6 +152,20 @@ public sealed class OrderProductContractTests
             null,
             null,
             CreatedAt.AddTicks(-1)));
+        var maximumTimestampOrder = new Order(
+            1, 1, "https://shop.example/product", 1, null, Guid.NewGuid(), DateTimeOffset.MaxValue);
+        Assert.Throws<ArgumentOutOfRangeException>(() => maximumTimestampOrder.SetProductSnapshot(
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            DateTimeOffset.MaxValue));
     }
 
     private static Order NewOrder(int quantity = 1, string? comment = null)

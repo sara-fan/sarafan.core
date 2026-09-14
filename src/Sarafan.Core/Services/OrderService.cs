@@ -197,7 +197,18 @@ public sealed class OrderService(
         }
 
         var normalizedSearch = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
-        var sortByKey = sortBy?.Trim();
+        var sortByKey = sortBy?.Trim().ToLowerInvariant() switch
+        {
+            "ordernumber" => "orderNumber",
+            "status" => "status",
+            "productname" => "productName",
+            "storename" => "storeName",
+            "sellerprice" => "sellerPrice",
+            "quantity" => "quantity",
+            "createdat" => "createdAt",
+            "updatedat" => "updatedAt",
+            _ => null
+        };
         var sortOrderKey = sortOrder?.Trim().ToLowerInvariant();
         var normalizedStatusGroup = string.IsNullOrWhiteSpace(statusGroup)
             ? null
@@ -215,24 +226,12 @@ public sealed class OrderService(
         }
         var validCreatedFrom = TryParseListDate(createdFrom, out var createdFromValue);
         var validCreatedTo = TryParseListDate(createdTo, out var createdToValue);
-        var sortKeys = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "orderNumber",
-            "status",
-            "productName",
-            "storeName",
-            "sellerPrice",
-            "quantity",
-            "createdAt",
-            "updatedAt"
-        };
         OrderStatusFilterGroup? selectedGroup = null;
         var hasStatusGroup = normalizedStatusGroup is not null
             && OrderStatusFilterGroups.TryGet(normalizedStatusGroup, out selectedGroup);
         if (page < 1
             || pageSize is < 1 or > 100
             || sortByKey is null
-            || !sortKeys.Contains(sortByKey)
             || sortOrderKey is not ("asc" or "desc")
             || normalizedSearch is { Length: > MaximumSearchLength }
             || !validStatus
