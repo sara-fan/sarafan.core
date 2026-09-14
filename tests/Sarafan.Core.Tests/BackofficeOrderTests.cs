@@ -208,6 +208,7 @@ public sealed class BackofficeOrderTests
     [TestCase("statusGroup=unknown")]
     [TestCase("status=300&statusGroup=work")]
     [TestCase("createdFrom=2026-09-14&createdTo=2026-09-13")]
+    [TestCase("createdFrom=0001-01-01")]
     [TestCase("createdFrom=not-a-date")]
     [TestCase("createdTo=2026-02-30")]
     public async Task List_RejectsInvalidFiltersWithStableProblem(string query)

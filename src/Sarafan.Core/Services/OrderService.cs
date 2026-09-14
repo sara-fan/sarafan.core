@@ -226,6 +226,7 @@ public sealed class OrderService(
             || !validCreatedFrom
             || !validCreatedTo
             || createdFromValue > createdToValue
+            || createdFromValue == DateOnly.MinValue
             || createdToValue == DateOnly.MaxValue)
         {
             throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_list_filter");
