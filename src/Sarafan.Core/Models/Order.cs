@@ -110,7 +110,7 @@ public sealed class Order
 
         if (normalizedUpdatedAt == UpdatedAt)
         {
-            if (UpdatedAt > DateTimeOffset.MaxValue.AddTicks(-10))
+            if (UpdatedAt > DateTimeOffset.MaxValue.AddMicroseconds(-1))
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(updatedAt),

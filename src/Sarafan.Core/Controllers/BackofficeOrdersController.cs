@@ -29,8 +29,8 @@ public sealed class BackofficeOrdersController(
     [HttpGet]
     [ProducesResponseType<BackofficeOrderPageDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<BackofficeOrderPageDto>> List(
-        [FromQuery(Name = "page")] string? page = null,
-        [FromQuery(Name = "pageSize")] string? pageSize = null,
+        [FromQuery(Name = "page")] string[]? page = null,
+        [FromQuery(Name = "pageSize")] string[]? pageSize = null,
         [FromQuery] string sortBy = "createdAt",
         [FromQuery] string sortOrder = "desc",
         [FromQuery] string? search = null,
@@ -40,8 +40,8 @@ public sealed class BackofficeOrdersController(
         [FromQuery] string? createdTo = null,
         CancellationToken cancellationToken = default)
         => Ok(await orders.ListForBackofficeAsync(
-            ParseListInteger(Request.Query, "page", 1),
-            ParseListInteger(Request.Query, "pageSize", 10),
+            ParseListInteger(page, 1),
+            ParseListInteger(pageSize, 10),
             sortBy,
             sortOrder,
             search,
@@ -51,14 +51,14 @@ public sealed class BackofficeOrdersController(
             createdTo,
             cancellationToken));
 
-    private static int ParseListInteger(IQueryCollection query, string name, int defaultValue)
+    private static int ParseListInteger(string[]? values, int defaultValue)
     {
-        if (!query.TryGetValue(name, out var values))
+        if (values is null)
         {
             return defaultValue;
         }
 
-        if (values.Count != 1
+        if (values.Length != 1
             || !int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
         {
             throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_list_filter");

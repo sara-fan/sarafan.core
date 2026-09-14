@@ -474,11 +474,18 @@ public sealed class OperationLoggingTests
         using var createOrder = await client.SendAsync(orderRequest);
         var createdOrder = (await createOrder.Content.ReadFromJsonAsync<OrderDto>())!;
         using var getOrder = await client.GetAsync($"/api/v1/orders/{createdOrder.Id}");
-        await using (var orderScope = app.Services.CreateAsyncScope())
+        var customerToken = session.AccessToken;
+        using var backofficeLogin = await client.PostAsJsonAsync("/api/v1/backoffice/auth/login", new BackofficeLoginRequest
         {
-            await orderScope.ServiceProvider.GetRequiredService<OrderService>().ListForBackofficeAsync(
-                1, 10, "createdAt", "desc", Secret, null, null, null, null, default);
-        }
+            Email = IntegrationTestEnvironment.BackofficeEmail,
+            Password = IntegrationTestEnvironment.BackofficePassword
+        });
+        backofficeLogin.EnsureSuccessStatusCode();
+        var administrator = (await backofficeLogin.Content.ReadFromJsonAsync<BackofficeAuthenticationSessionDto>())!;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", administrator.AccessToken);
+        using var backofficeOrderOps = await client.GetAsync("/api/v1/backoffice/orders/ops");
+        using var backofficeOrders = await client.GetAsync("/api/v1/backoffice/orders?page=1&pageSize=10&sortBy=createdAt&sortOrder=desc");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", customerToken);
         using var get = await client.GetAsync("/api/v1/customers/me");
         using var update = await client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = Secret });
         using var photo = await client.GetAsync("/api/v1/customers/me/photo");
@@ -497,6 +504,8 @@ public sealed class OperationLoggingTests
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(createOrder.StatusCode, Is.EqualTo(HttpStatusCode.Created));
         Assert.That(getOrder.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(backofficeOrderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(backofficeOrders.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(update.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(photo.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
@@ -519,6 +528,8 @@ public sealed class OperationLoggingTests
         {
             AssertBoundary($"{action.DeclaringType!.FullName}.{action.Name}");
         }
+        AssertBoundary($"{typeof(BackofficeOrdersController).FullName}.{nameof(BackofficeOrdersController.Operations)}");
+        AssertBoundary($"{typeof(BackofficeOrdersController).FullName}.{nameof(BackofficeOrdersController.List)}");
 
         var statusOperation = $"{typeof(StatusController).FullName}.{nameof(StatusController.Status)}";
         Assert.That(_logs.Records
@@ -646,6 +657,8 @@ public sealed class OperationLoggingTests
 
         var messages = string.Join(' ', _logs.Records.Select(record => record.Message));
         Assert.That(messages, Does.Not.Contain(email).And.Not.Contain(password).And.Not.Contain(administrator.AccessToken));
+        Assert.That(messages, Does.Contain("page=[redacted]"));
+        Assert.That(messages, Does.Contain("pageSize=[redacted]"));
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
         AssertPrivate();
     }
