@@ -109,6 +109,22 @@ public static class OrderStatusExtensions
         OrderStatus.Cancelled => status.GetRouteAlias(),
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
+
+    public static bool IsTerminal(this OrderStatus status) => status switch
+    {
+        OrderStatus.Received or OrderStatus.Cancelled => true,
+        OrderStatus.UnderReview or
+        OrderStatus.QuoteReady or
+        OrderStatus.QuoteExpired or
+        OrderStatus.Paid or
+        OrderStatus.PurchasingItem or
+        OrderStatus.DeliveringToUsWarehouse or
+        OrderStatus.DeliveredToUsWarehouse or
+        OrderStatus.DeliveringToRussia or
+        OrderStatus.DeliveredToRussianWarehouse or
+        OrderStatus.DeliveringInRussia => false,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+    };
 }
 
 public sealed record OrderStatusFilterGroup(

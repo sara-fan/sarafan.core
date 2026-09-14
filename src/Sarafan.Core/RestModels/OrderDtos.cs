@@ -66,7 +66,8 @@ public sealed record OrderStatusOpsItemDto(
     string RouteAlias,
     int UpperStatusValue,
     string UpperStatusName,
-    string UpperStatusRouteAlias);
+    string UpperStatusRouteAlias,
+    bool IsTerminal);
 
 public sealed record OrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,
