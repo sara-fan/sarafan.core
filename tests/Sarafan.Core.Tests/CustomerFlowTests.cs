@@ -34,7 +34,6 @@ public sealed class CustomerFlowTests
                 AllowAutoRedirect = false,
                 HandleCookies = false
             });
-        await ConsentTestData.AcceptMandatoryCookies(_client);
     }
 
     [TearDown]
@@ -95,7 +94,6 @@ public sealed class CustomerFlowTests
         Assert.That(photoPutResponse.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
 
         using var restartedClient = IntegrationTestEnvironment.Factory.CreateClient();
-        await ConsentTestData.AcceptMandatoryCookies(restartedClient);
         using var getRequest = AuthorizedRequest(HttpMethod.Get, "/api/v1/customers/me", session.AccessToken);
         using var getResponse = await restartedClient.SendAsync(getRequest);
         var persisted = await getResponse.Content.ReadFromJsonAsync<CustomerDto>();

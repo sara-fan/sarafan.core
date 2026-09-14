@@ -42,7 +42,6 @@ public sealed class AuthenticationValidationTests
             AllowAutoRedirect = false,
             HandleCookies = false
         });
-        await ConsentTestData.AcceptMandatoryCookies(_client);
     }
 
     [TearDown]

@@ -27,7 +27,6 @@ public sealed class ConsentReviewTests
     private IOptions<AuthenticationOptions> _auth = null!;
     private readonly Dictionary<LegalDocumentKind, LegalDocumentDto> _documents = [];
     private const string Phone = "+78880000002";
-    private const string Browser = "separate-review-browser-receipt-at-least-32-characters";
     private int _customer;
     private int _actor;
 
@@ -57,7 +56,7 @@ public sealed class ConsentReviewTests
         _customer = await database.Customers.Select(x => x.Id).SingleAsync();
         _actor = actor.Id;
         _documents.Clear();
-        foreach (var kind in new[] { LegalDocumentKind.PersonalDataConsent, LegalDocumentKind.UserAgreement, LegalDocumentKind.CookieConsent })
+        foreach (var kind in new[] { LegalDocumentKind.PersonalDataConsent, LegalDocumentKind.UserAgreement })
             _documents[kind] = await CreateDocument(database, kind);
     }
 
@@ -95,24 +94,20 @@ public sealed class ConsentReviewTests
             EffectiveDate = effectiveDate ?? ConsentCalendar.LocalDate(_clock.Now)
         }, _actor, default);
     private ConsentDecisionRequest Decision(LegalDocumentKind kind) => new()
-    { DocumentId = _documents[kind].Id, ContentHash = _documents[kind].ContentHash, Decision = "grant", IdempotencyKey = Guid.NewGuid(), Categories = kind == LegalDocumentKind.CookieConsent ? [CookieCategory.Mandatory] : [] };
+    { DocumentId = _documents[kind].Id, ContentHash = _documents[kind].ContentHash, Decision = "grant", IdempotencyKey = Guid.NewGuid() };
     private Task<string> Onboarding(AppDbContext database) => Consents(database).BeginOnboardingAsync(Phone, _documents[LegalDocumentKind.UserAgreement].Id, Decision(LegalDocumentKind.PersonalDataConsent), default);
 
 
     [TestCase(LegalDocumentKind.PersonalDataConsent)]
-    [TestCase(LegalDocumentKind.CookieConsent)]
     public async Task ExactRetryAfterVersionChangeReturnsStatusWithoutNewEvidence(LegalDocumentKind kind)
     {
         await using var database = Database();
         var request = Decision(kind);
         var service = Consents(database);
-        if (kind == LegalDocumentKind.CookieConsent) await service.DecideCookiesAsync(Browser, request, default);
-        else await service.DecidePersonalDataAsync(_customer, request, default);
+        await service.DecidePersonalDataAsync(_customer, request, default);
         _clock.Now = ConsentCalendar.Midnight(ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
         await CreateDocument(database, kind);
-        var status = kind == LegalDocumentKind.CookieConsent
-            ? (await service.DecideCookiesAsync(Browser, request, default)).Status
-            : (await service.DecidePersonalDataAsync(_customer, request, default)).Statuses.Single().Status;
+        var status = (await service.DecidePersonalDataAsync(_customer, request, default)).Statuses.Single().Status;
         Assert.That(status, Is.EqualTo("renewal-required"));
         Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(1));
     }
@@ -220,7 +215,6 @@ public sealed class ConsentReviewTests
                     DocumentId = existing.DocumentId,
                     ContentHash = existing.ContentHash,
                     Decision = "grant",
-                    Categories = [],
                     IdempotencyKey = existingKey
                 }
             }, "idempotent-reactivation-test", default))!;
@@ -273,7 +267,6 @@ public sealed class ConsentReviewTests
                     DocumentId = refusal.DocumentId,
                     ContentHash = refusal.ContentHash,
                     Decision = "grant",
-                    Categories = [],
                     IdempotencyKey = conflictingKey
                 }
             }, "conflicting-reactivation-test", default))!;
@@ -340,27 +333,7 @@ public sealed class ConsentReviewTests
         Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);
     }
 
-    [Test]
-    public async Task AssociationRequiresAndPreservesAuthenticatedTokenProvenance()
-    {
-        await using var database = Database();
-        var service = Consents(database);
-        await service.DecideCookiesAsync(Browser, Decision(LegalDocumentKind.CookieConsent), default);
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.AssociateBrowserAsync(_customer, Browser, Guid.Empty, default))!.Code, Is.EqualTo("invalid_access_token"));
-        var tokenId = Guid.NewGuid();
-        await service.AssociateBrowserAsync(_customer, Browser, tokenId, default);
-        await service.AssociateBrowserAsync(_customer, Browser, Guid.NewGuid(), default);
-        Assert.That((await database.ConsentAssociations.SingleAsync()).AuthenticationTokenId, Is.EqualTo(tokenId));
-    }
 
-    [TestCase(179, false)]
-    [TestCase(180, true)]
-    [TestCase(181, true)]
-    public void EvidenceRetentionCoversCookieValidity(int evidenceDays, bool valid)
-    {
-        var options = new ConsentOptions { CookieDays = 180, EvidenceDays = evidenceDays };
-        Assert.That(Validator.TryValidateObject(options, new ValidationContext(options), [], true), Is.EqualTo(valid));
-    }
 
 
     [Test]
@@ -368,7 +341,7 @@ public sealed class ConsentReviewTests
     {
         await using var database = Database();
         var date = ConsentCalendar.LocalDate(_clock.Now).AddDays(2);
-        var future = await CreateDocument(database, LegalDocumentKind.CookieConsent, date);
+        var future = await CreateDocument(database, LegalDocumentKind.PrivacyPolicy, date);
         Assert.That(future.EffectiveLocalDate, Is.EqualTo(date));
         Assert.That(future.EffectiveAt, Is.EqualTo(ConsentCalendar.Midnight(date)));
         Assert.That(future.EffectiveTimeZone, Is.EqualTo("Europe/Moscow"));
@@ -417,7 +390,7 @@ public sealed class ConsentReviewTests
     }
 
     [Test]
-    public async Task CombinedCustomerAndBrowserHistoryReturnsOnlyTheLatest200Records()
+    public async Task CustomerHistoryReturnsOnlyTheLatest200Records()
     {
         await using var database = Database();
         for (var index = 0; index < 201; index++)
@@ -435,61 +408,21 @@ public sealed class ConsentReviewTests
                 RetainUntil = _clock.Now.AddDays(1000)
             };
             database.ConsentEvents.Add(Evidence(LegalDocumentKind.PersonalDataConsent, 0));
-            database.ConsentAssociations.Add(new ConsentAssociation
-            { Event = Evidence(LegalDocumentKind.CookieConsent, 1), CustomerId = _customer, AssociatedAt = _clock.Now, AuthenticationTokenId = Guid.NewGuid() });
         }
         await database.SaveChangesAsync();
         var history = (await Consents(database).CustomerAsync(_customer, default)).History;
         Assert.That(history, Has.Length.EqualTo(200));
-        Assert.That(history.Count(x => x.Scope == "customer"), Is.EqualTo(100));
-        Assert.That(history.Count(x => x.Scope == "observed-browser"), Is.EqualTo(100));
         Assert.That(history.Select(x => x.At), Is.Ordered.Descending);
-        Assert.That(history.Last().At, Is.EqualTo(_clock.Now.AddSeconds(202 - 500)).Within(TimeSpan.FromMicroseconds(1)));
+        Assert.That(history.Last().At, Is.EqualTo(_clock.Now.AddSeconds(2 - 500)).Within(TimeSpan.FromMicroseconds(1)));
     }
 
-    [TestCase("refuse")]
-    [TestCase("withdraw")]
-    [TestCase("grant")]
-    public async Task CookieRetentionCannotReviveAnOlderUnexpiredGrantAfterConfigurationChanges(string denial)
-    {
-        await using var database = Database();
-        var settings = new ConsentOptions { CookieDays = 365, EvidenceDays = 1095 };
-        Assert.That(Validator.TryValidateObject(settings, new ValidationContext(settings), [], true), Is.True);
-        var longRetention = new ConsentService(database, _clock, Options.Create(settings), _auth, NullLogger<ConsentService>.Instance);
-        await longRetention.DecideCookiesAsync(Browser, Decision(LegalDocumentKind.CookieConsent), default);
-        _clock.Now = _clock.Now.AddDays(10);
-        var shorterRetention = new ConsentService(database, _clock, Options.Create(new ConsentOptions { CookieDays = 180, EvidenceDays = 180 }), _auth, NullLogger<ConsentService>.Instance);
-        var request = Decision(LegalDocumentKind.CookieConsent);
-        request.Decision = denial;
-        request.Categories = denial == "grant" ? [CookieCategory.Mandatory] : [];
-        await shorterRetention.DecideCookiesAsync(Browser, request, default);
-        _clock.Now = _clock.Now.AddDays(181);
-        var retention = new ConsentRetentionService(database, _clock, NullLogger<ConsentRetentionService>.Instance);
-        await retention.SweepAsync(default);
-        Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(2));
-        var status = await shorterRetention.CookieStatusAsync(Browser, default);
-        Assert.That(status.Status, Is.Not.EqualTo("current"));
-        Assert.That(status.Categories, Is.Empty);
-        _clock.Now = _clock.Now.AddDays(1100);
-        await retention.SweepAsync(default);
-        Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);
-        Assert.That((await shorterRetention.CookieStatusAsync(Browser, default)).Categories, Is.Empty);
-    }
 
-    [TestCase(LegalDocumentKind.CookieConsent)]
     [TestCase(LegalDocumentKind.PersonalDataConsent)]
     public async Task DisposedEvidenceCannotBeReplayedAndMarkersExpireWithTheirDocument(LegalDocumentKind kind)
     {
         await using var database = Database();
         var request = Decision(kind);
         var service = Consents(database);
-        if (kind == LegalDocumentKind.CookieConsent)
-        {
-            await service.DecideCookiesAsync(Browser, request, default);
-            var error = Assert.ThrowsAsync<ServiceException>(() => service.DecideCookiesAsync("different-browser-with-at-least-32-characters", request, default));
-            Assert.That(error!.Code, Is.EqualTo("consent_conflict"));
-        }
-        else
         {
             await service.DecidePersonalDataAsync(_customer, request, default);
             var refusal = Decision(kind); refusal.Decision = "refuse";
@@ -499,20 +432,13 @@ public sealed class ConsentReviewTests
         var retention = new ConsentRetentionService(database, _clock, NullLogger<ConsentRetentionService>.Instance);
         await retention.SweepAsync(default);
         Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);
-        Assert.That(await database.ConsentReplayTombstones.CountAsync(), Is.EqualTo(kind == LegalDocumentKind.CookieConsent ? 1 : 2));
+        Assert.That(await database.ConsentReplayTombstones.CountAsync(), Is.EqualTo(2));
         var replay = Assert.ThrowsAsync<ServiceException>(async () =>
         {
-            if (kind == LegalDocumentKind.CookieConsent) await service.DecideCookiesAsync(Browser, request, default);
-            else await service.DecidePersonalDataAsync(_customer, request, default);
+            await service.DecidePersonalDataAsync(_customer, request, default);
         });
         Assert.That(replay!.Code, Is.EqualTo("consent_conflict"));
-        if (kind == LegalDocumentKind.CookieConsent)
-        {
-            Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.DecideCookiesAsync("different-browser-with-at-least-32-characters", request, default))!.Code, Is.EqualTo("consent_conflict"));
-            Assert.That((await service.CookieStatusAsync(Browser, default)).Categories, Is.Empty);
-            await service.DecideCookiesAsync(Browser, Decision(kind), default);
-        }
-        else await service.DecidePersonalDataAsync(_customer, Decision(kind), default);
+        await service.DecidePersonalDataAsync(_customer, Decision(kind), default);
         Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(1));
         _clock.Now = ConsentCalendar.Midnight(ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
         await CreateDocument(database, kind);
@@ -520,8 +446,7 @@ public sealed class ConsentReviewTests
         Assert.That(await database.ConsentReplayTombstones.CountAsync(), Is.Zero);
         var stale = Assert.ThrowsAsync<ServiceException>(async () =>
         {
-            if (kind == LegalDocumentKind.CookieConsent) await service.DecideCookiesAsync(Browser, request, default);
-            else await service.DecidePersonalDataAsync(_customer, request, default);
+            await service.DecidePersonalDataAsync(_customer, request, default);
         });
         Assert.That(stale!.Code, Is.EqualTo("consent_version_changed"));
         Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(1));

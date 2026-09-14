@@ -28,7 +28,6 @@ public sealed class ConsentPolicyTests
     private ConsentRetentionService _retention = null!;
     private int _customer;
     private int _admin;
-    private const string Browser = "browser-test-receipt-at-least-thirty-two-characters";
 
     [SetUp]
     public async Task SetUp()
@@ -70,15 +69,12 @@ public sealed class ConsentPolicyTests
         _clock.Now = _clock.Now.AddSeconds(1);
         return await CreateDocument(kind);
     }
-    private static ConsentDecisionRequest Decision(LegalDocumentDto doc, string decision = "grant", params CookieCategory[] categories)
+    private static ConsentDecisionRequest Decision(LegalDocumentDto doc, string decision = "grant")
         => new()
         {
             DocumentId = doc.Id,
             ContentHash = doc.ContentHash,
             Decision = decision,
-            Categories = categories.Length == 0 && decision == "grant" && doc.Kind == LegalDocumentKind.CookieConsent
-                ? [CookieCategory.Mandatory]
-                : categories,
             IdempotencyKey = Guid.NewGuid()
         };
     private static void Reject(Func<Task> action, string code) => Assert.That(async () => await action(), Throws.TypeOf<ServiceException>().With.Property("Code").EqualTo(code));
@@ -88,8 +84,7 @@ public sealed class ConsentPolicyTests
     {
         var expected = new[]
         {
-            (LegalDocumentKind.CookieConsent, 0, "Согласие на использование куки", "cookie-consent"),
-            (LegalDocumentKind.PersonalDataConsent, 1, "Согласие на обработку персональных данных", "personal-data-consent"),
+            (LegalDocumentKind.PersonalDataConsent, 1, "Согласие на хранение и обработку персональных данных", "personal-data-consent"),
             (LegalDocumentKind.UserAgreement, 2, "Пользовательское соглашение", "user-agreement"),
             (LegalDocumentKind.OrderRules, 3, "Правила заказа товаров", "order-rules"),
             (LegalDocumentKind.PrivacyPolicy, 4, "Политика обработки персональных данных", "privacy-policy")
@@ -100,12 +95,6 @@ public sealed class ConsentPolicyTests
         Assert.That(operations.Select(item => item.Name), Is.EqualTo(expected.Select(item => item.Item3)));
         Assert.That(operations.Select(item => item.RouteAlias), Is.EqualTo(expected.Select(item => item.Item4)));
         Assert.That(operations.Select(item => item.RouteAlias).Distinct().Count(), Is.EqualTo(expected.Length));
-        var categories = LegalDocumentService.Operations().CookieCategories;
-        Assert.That(categories, Has.Count.EqualTo(1));
-        Assert.That(categories.Single(), Is.EqualTo(new CookieCategoryOpsItemDto(0, "Обязательные", true)));
-        Assert.That((int)CookieCategory.Mandatory, Is.Zero);
-        Assert.That(CookieCategory.Mandatory.GetDisplayName(), Is.EqualTo("Обязательные"));
-        Assert.That(CookieCategory.Mandatory.IsRequired(), Is.True);
         foreach (var item in expected)
         {
             Assert.That((int)item.Item1, Is.EqualTo(item.Item2));
@@ -125,8 +114,6 @@ public sealed class ConsentPolicyTests
         var key = Guid.Parse("12345678-1234-1234-1234-1234567890ab");
         static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
-        Assert.That(ConsentService.ReplayKey("customer:42", key, LegalDocumentKind.CookieConsent),
-            Is.EqualTo(Hash("browser:12345678-1234-1234-1234-1234567890ab:0")));
         Assert.That(ConsentService.ReplayKey("customer:42", key, LegalDocumentKind.PersonalDataConsent),
             Is.EqualTo(Hash("customer:42:12345678-1234-1234-1234-1234567890ab:1")));
     }
@@ -253,60 +240,7 @@ public sealed class ConsentPolicyTests
         request.DisplayVersion = "v1";
     }
 
-    [Test]
-    public async Task BrowserChoices_AreIdempotent_Expire_AndNeverBecomeAccountAuthorization()
-    {
-        var doc = await CreateCurrent(LegalDocumentKind.CookieConsent);
-        Assert.That((await _consents.CookieStatusAsync(null, default)).Status, Is.EqualTo("missing"));
-        Assert.That(doc.CookieCategories, Is.EqualTo(new[] { CookieCategory.Mandatory }));
-        var grant = Decision(doc);
-        await _consents.DecideCookiesAsync(Browser, grant, default); await _db.SaveChangesAsync();
-        Assert.That((await _consents.CookieStatusAsync(Browser, default)).Categories, Is.EqualTo(new[] { CookieCategory.Mandatory }));
-        await _consents.DecideCookiesAsync(Browser, grant, default); await _db.SaveChangesAsync();
-        Assert.That(await _db.ConsentEvents.CountAsync(x => x.IdempotencyKey == grant.IdempotencyKey), Is.EqualTo(1));
-        grant.Categories = [];
-        Reject(() => _consents.DecideCookiesAsync(Browser, grant, default), "consent_conflict");
-        Reject(() => _consents.DecideCookiesAsync("short", Decision(doc), default), "invalid_consent_decision");
-        Reject(() => _consents.DecideCookiesAsync(Browser, Decision(doc, "grant", (CookieCategory)99), default), "invalid_consent_categories");
-        Reject(() => _consents.DecideCookiesAsync(Browser, Decision(doc, "refuse", CookieCategory.Mandatory), default), "invalid_consent_categories");
-        Reject(() => _consents.DecideCookiesAsync(Browser, Decision(doc, "grant", CookieCategory.Mandatory, CookieCategory.Mandatory), default), "invalid_consent_categories");
-        var missingMandatory = Decision(doc); missingMandatory.Categories = [];
-        Reject(() => _consents.DecideCookiesAsync(Browser, missingMandatory, default), "invalid_consent_categories");
-        var invalid = Decision(doc); invalid.IdempotencyKey = Guid.Empty;
-        Reject(() => _consents.DecideCookiesAsync(Browser, invalid, default), "invalid_consent_decision");
-        await _consents.AssociateBrowserAsync(_customer, null, Guid.NewGuid(), default);
-        await _consents.AssociateBrowserAsync(_customer, Browser, Guid.NewGuid(), default); await _db.SaveChangesAsync();
-        await _consents.AssociateBrowserAsync(_customer, Browser, Guid.NewGuid(), default); await _db.SaveChangesAsync();
-        var mine = await _consents.CustomerAsync(_customer, default);
-        Assert.That(mine.History.Single().Scope, Is.EqualTo("observed-browser"));
-        Assert.That(mine.Statuses[0].Status, Is.EqualTo("missing"));
-        Assert.That((await _consents.CookieStatusAsync("another-browser-with-at-least-thirty-two-characters", default)).Categories, Is.Empty);
-        _clock.Now = _clock.Now.AddDays(_options.CookieDays);
-        Assert.That((await _consents.CookieStatusAsync(Browser, default)).Status, Is.EqualTo("renewal-required"));
-        await CreateCurrent(LegalDocumentKind.CookieConsent);
-        await _consents.DecideCookiesAsync(Browser, Decision(doc, "withdraw"), default); await _db.SaveChangesAsync();
-        // The old grant can still be withdrawn, while the replacement requires a fresh decision.
-        Assert.That((await _consents.CookieStatusAsync(Browser, default)).Status, Is.EqualTo("renewal-required"));
-        Assert.That(await _db.ConsentEvents.AnyAsync(x => x.DocumentId == doc.Id && x.Decision == "withdraw"), Is.True);
-        var wrong = Decision(doc, "withdraw"); wrong.ContentHash = "wrong";
-        Reject(() => _consents.DecideCookiesAsync(Browser, wrong, default), "invalid_consent_decision");
-    }
 
-    [Test]
-    public async Task CookieWithdrawal_RequiresANewDecisionAfterExpiryOrReplacement()
-    {
-        var doc = await CreateCurrent(LegalDocumentKind.CookieConsent);
-        await _consents.DecideCookiesAsync(Browser, Decision(doc), default); await _db.SaveChangesAsync();
-        await _consents.DecideCookiesAsync(Browser, Decision(doc, "withdraw"), default); await _db.SaveChangesAsync();
-        Assert.That((await _consents.CookieStatusAsync(Browser, default)).Status, Is.EqualTo("withdrawn"));
-        _clock.Now = _clock.Now.AddDays(180);
-        Assert.That((await _consents.CookieStatusAsync(Browser, default)).Status, Is.EqualTo("renewal-required"));
-        await _consents.DecideCookiesAsync(Browser, Decision(doc, "withdraw"), default); await _db.SaveChangesAsync();
-        await CreateCurrent(LegalDocumentKind.CookieConsent);
-        var status = await _consents.CookieStatusAsync(Browser, default);
-        Assert.That(status.Status, Is.EqualTo("renewal-required"));
-        Assert.That(status.Categories, Is.Empty);
-    }
 
     [Test]
     public async Task WithdrawalRequest_IsQueueOnly_Idempotent_AndAllowsANewRequestAfterProcessing()
@@ -319,8 +253,6 @@ public sealed class ConsentPolicyTests
         await _consents.DecidePersonalDataAsync(_customer, Decision(document, "refuse"), default); await _db.SaveChangesAsync();
         Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses[0].Status, Is.EqualTo("refused"));
         Reject(() => _consents.DecidePersonalDataAsync(_customer, Decision(document, "withdraw"), default), "invalid_consent_decision");
-        Reject(() => _consents.DecidePersonalDataAsync(_customer, Decision(document, "grant", CookieCategory.Mandatory), default),
-            "invalid_consent_decision");
         var grant = Decision(document);
         await _consents.DecidePersonalDataAsync(_customer, grant, default); await _db.SaveChangesAsync();
         await _consents.DecidePersonalDataAsync(_customer, grant, default);
@@ -512,15 +444,15 @@ public sealed class ConsentPolicyTests
     [Test]
     public async Task Retention_ContinuesPastAFullPageOfExpiredEvidence()
     {
-        var cookies = await CreateCurrent(LegalDocumentKind.CookieConsent);
+        var agreement = await CreateCurrent(LegalDocumentKind.UserAgreement);
         for (var i = 0; i < 1000; i++)
             _db.ConsentEvents.Add(new()
             {
                 CustomerId = _customer,
                 SubjectKey = $"customer:{_customer}",
-                DocumentId = cookies.Id,
-                ContentHash = cookies.ContentHash,
-                Kind = LegalDocumentKind.CookieConsent,
+                DocumentId = agreement.Id,
+                ContentHash = agreement.ContentHash,
+                Kind = LegalDocumentKind.UserAgreement,
                 Decision = "refuse",
                 Source = "test",
                 IdempotencyKey = Guid.NewGuid(),
@@ -530,10 +462,10 @@ public sealed class ConsentPolicyTests
         await _db.SaveChangesAsync();
         var expired = new ConsentEvent
         {
-            SubjectKey = "browser:expired-test",
-            DocumentId = cookies.Id,
-            ContentHash = cookies.ContentHash,
-            Kind = LegalDocumentKind.CookieConsent,
+            SubjectKey = $"customer:{_customer}",
+            DocumentId = agreement.Id,
+            ContentHash = agreement.ContentHash,
+            Kind = LegalDocumentKind.UserAgreement,
             Decision = "refuse",
             Source = "test",
             IdempotencyKey = Guid.NewGuid(),
@@ -547,13 +479,16 @@ public sealed class ConsentPolicyTests
         Assert.That(await _db.ConsentEvents.CountAsync(x => x.CustomerId == _customer), Is.Zero);
     }
 
-    [Test]
-    public void ConsentOptions_RequireEvidenceRetentionToCoverCookieValidity()
+    [TestCase(0, false)]
+    [TestCase(1, true)]
+    [TestCase(3650, true)]
+    [TestCase(3651, false)]
+    public void ConsentOptions_ValidateEvidenceRetentionRange(int days, bool valid)
     {
-        var context = new System.ComponentModel.DataAnnotations.ValidationContext(_options);
-        Assert.That(_options.Validate(context), Is.Empty);
-        _options.EvidenceDays = _options.CookieDays - 1;
-        Assert.That(_options.Validate(context), Is.Not.Empty);
+        _options.EvidenceDays = days;
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        Assert.That(System.ComponentModel.DataAnnotations.Validator.TryValidateObject(_options,
+            new System.ComponentModel.DataAnnotations.ValidationContext(_options), results, true), Is.EqualTo(valid));
     }
 
     [TestCase("<script>alert(1)</script>", "legal_document_html_not_allowed")]

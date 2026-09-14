@@ -11,7 +11,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[CookieConsentNotRequired, Authorize(Policy = BackofficePolicies.ManageLegalDocuments), Route("api/v1/backoffice/legal-documents")]
+[Authorize(Policy = BackofficePolicies.ManageLegalDocuments), Route("api/v1/backoffice/legal-documents")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [RequestSizeLimit(400 * 1024)]
 public sealed class BackofficeLegalDocumentsController(LegalDocumentService documents, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)

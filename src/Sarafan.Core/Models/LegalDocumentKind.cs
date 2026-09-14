@@ -6,7 +6,7 @@ namespace Sarafan.Core.Models;
 
 public enum LegalDocumentKind
 {
-    CookieConsent = 0,
+    // Value 0 is retired and must never be reused.
     PersonalDataConsent = 1,
     UserAgreement = 2,
     OrderRules = 3,
@@ -17,8 +17,7 @@ public static class LegalDocumentKindExtensions
 {
     public static string GetDisplayName(this LegalDocumentKind kind) => kind switch
     {
-        LegalDocumentKind.CookieConsent => "Согласие на использование куки",
-        LegalDocumentKind.PersonalDataConsent => "Согласие на обработку персональных данных",
+        LegalDocumentKind.PersonalDataConsent => "Согласие на хранение и обработку персональных данных",
         LegalDocumentKind.UserAgreement => "Пользовательское соглашение",
         LegalDocumentKind.OrderRules => "Правила заказа товаров",
         LegalDocumentKind.PrivacyPolicy => "Политика обработки персональных данных",
@@ -27,7 +26,6 @@ public static class LegalDocumentKindExtensions
 
     public static string GetRouteAlias(this LegalDocumentKind kind) => kind switch
     {
-        LegalDocumentKind.CookieConsent => "cookie-consent",
         LegalDocumentKind.PersonalDataConsent => "personal-data-consent",
         LegalDocumentKind.UserAgreement => "user-agreement",
         LegalDocumentKind.OrderRules => "order-rules",

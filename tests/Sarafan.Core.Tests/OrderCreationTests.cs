@@ -175,7 +175,6 @@ public sealed class OrderCreationTests
         using var otherResponse = await otherClient.GetAsync("/api/v1/orders");
         var otherItems = await otherResponse.Content.ReadFromJsonAsync<CustomerOrderListItemDto[]>();
         using var anonymousClient = CreateClient(_app);
-        await ConsentTestData.AcceptMandatoryCookies(anonymousClient);
         using var anonymousResponse = await anonymousClient.GetAsync("/api/v1/orders");
 
         response.EnsureSuccessStatusCode();
@@ -449,10 +448,9 @@ public sealed class OrderCreationTests
     }
 
     [Test]
-    public async Task Creation_RequiresAuthenticationCookieAndPersonalDataConsent()
+    public async Task Creation_RequiresAuthenticationAndPersonalDataConsentButNoCookieConsent()
     {
         using var anonymous = CreateClient(_app);
-        await ConsentTestData.AcceptMandatoryCookies(anonymous);
         using var anonymousResponse = await Create(anonymous, "https://shop.example/product", Guid.NewGuid());
 
         using var noCookie = CreateClient(_app);
@@ -475,7 +473,7 @@ public sealed class OrderCreationTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(anonymousResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
-            Assert.That(noCookieResponse.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+            Assert.That(noCookieResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(noConsentResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
             Assert.That(noConsent?.Code, Is.EqualTo("personal_data_consent_required"));
         }
@@ -490,7 +488,6 @@ public sealed class OrderCreationTests
 
     private static async Task<AuthenticationSessionDto> Register(HttpClient client)
     {
-        await ConsentTestData.AcceptMandatoryCookies(client);
         var sequence = Interlocked.Increment(ref _phoneSequence);
         var phone = $"+79996{sequence:D6}";
         var onboarding = await ConsentTestData.Onboarding(client, phone);

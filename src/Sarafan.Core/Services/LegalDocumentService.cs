@@ -66,7 +66,6 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
                 SourceHash = prepared.SourceHash,
                 ContentHash = prepared.ContentHash,
                 RendererVersion = prepared.RendererVersion,
-                CookieCategories = prepared.CookieCategories,
                 CreatedBy = actor,
                 CreatedAt = now,
                 EffectiveAt = prepared.EffectiveAt
@@ -223,11 +222,8 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
         if (request.EffectiveDate == default || request.EffectiveDate < ConsentCalendar.LocalDate(now))
             throw new ServiceException(400, "invalid_effective_date");
         var rendered = ConsentDocumentRenderer.Render(request.Source, request.FileName);
-        var cookieCategories = kind == LegalDocumentKind.CookieConsent
-            ? Enum.GetValues<CookieCategory>().Where(category => category.IsRequired()).OrderBy(category => (int)category).ToArray()
-            : [];
         return new PreparedDocument(kind, request.Locale, request.Title.Trim(), displayVersion,
-            cookieCategories, ConsentCalendar.Midnight(request.EffectiveDate), rendered.Html,
+            ConsentCalendar.Midnight(request.EffectiveDate), rendered.Html,
             rendered.SourceHash, rendered.ContentHash, ConsentDocumentRenderer.Version);
     }
 
@@ -261,20 +257,16 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
 
     internal static LegalDocumentDto ToDto(LegalDocument row, DateTimeOffset now, bool administrator = false) => new(
         row.Id, row.Kind, row.Locale, row.Title, row.DisplayVersion, row.Html, row.SourceHash, row.ContentHash,
-        row.RendererVersion, row.CookieCategories, row.EffectiveAt, row.CreatedAt, administrator ? row.CreatedBy : null,
+        row.RendererVersion, row.EffectiveAt, row.CreatedAt, administrator ? row.CreatedBy : null,
         ConsentCalendar.LocalDate(row.EffectiveAt), ConsentCalendar.TimeZoneId, administrator ? row.EffectiveAt > now : null);
 
     public static LegalDocumentOpsDto Operations() => new(
         Enum.GetValues<LegalDocumentKind>()
             .OrderBy(kind => (int)kind)
             .Select(kind => new LegalDocumentOpsItemDto((int)kind, kind.GetDisplayName(), kind.GetRouteAlias()))
-            .ToArray(),
-        Enum.GetValues<CookieCategory>()
-            .OrderBy(category => (int)category)
-            .Select(category => new CookieCategoryOpsItemDto((int)category, category.GetDisplayName(), category.IsRequired()))
             .ToArray());
 
     private sealed record PreparedDocument(LegalDocumentKind Kind, string Locale, string Title, string DisplayVersion,
-        CookieCategory[] CookieCategories, DateTimeOffset EffectiveAt, string Html, string SourceHash,
+        DateTimeOffset EffectiveAt, string Html, string SourceHash,
         string ContentHash, string RendererVersion);
 }

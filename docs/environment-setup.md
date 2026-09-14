@@ -109,7 +109,7 @@ docker compose -p sarafan-core-dev -f docker-compose.yml run --rm --no-deps -e B
 
 Disable bootstrap and remove its email/password variables after provisioning, then start the native API if applicable. Verify staff login and change the initial password; the account remains marked as demo until its password changes. The normal Docker API service keeps bootstrap disabled. Cloud equivalents are listed below.
 
-Before trying customer registration, an Administrator must publish the required legal-document versions in Back Office, with effective dates that make them current. A fresh database contains no published legal text. Ordinary customer APIs also require current mandatory куки consent; staff APIs remain independent.
+Before trying customer registration, an Administrator must publish the required legal-document versions in Back Office, with effective dates that make them current. A fresh database contains no published legal text. Registration retains its personal-data consent and agreement requirements, and protected customer writes still require current personal-data consent. Customer APIs no longer require technical-cookie consent or a cookie-consent document; session restoration is independent of cookie-consent evidence and legal-document availability. Authentication cookies and staff authentication remain unchanged.
 
 ### Build and zero-setup tests
 

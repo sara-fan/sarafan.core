@@ -13,7 +13,6 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[CookieConsentNotRequired]
 [Authorize(Policy = BackofficePolicies.ManualQuotes)]
 [Route("api/v1/backoffice/orders")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
