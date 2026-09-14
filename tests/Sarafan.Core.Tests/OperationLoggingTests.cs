@@ -550,6 +550,7 @@ public sealed class OperationLoggingTests
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("status=400")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("AuthenticationSession(tokens/customer=[redacted])")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("CustomerDto([redacted])")), Is.True);
+        Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("CustomerOrderListItemDto collection(count=")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
         Assert.That(
             string.Join(' ', _logs.Records.Select(record => record.Message)),
