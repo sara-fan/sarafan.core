@@ -31,4 +31,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Sarafan.Core.Tests" />
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\iana-tlds.txt" />
+  </ItemGroup>
 </Project>

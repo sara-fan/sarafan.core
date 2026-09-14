@@ -9,7 +9,13 @@ namespace Sarafan.Core.Services;
 
 internal static class OrderOperationsCatalog
 {
-    public static OrderOpsDto CreatePublic() => new(Statuses(), Currencies());
+    public static OrderOpsDto CreatePublic() => new(
+        Statuses(),
+        Currencies(),
+        new ProductSourceUrlOpsDto(
+            ProductSourceUrl.MaximumLength,
+            IanaTopLevelDomains.ListVersion,
+            IanaTopLevelDomains.All));
 
     public static BackofficeOrderOpsDto CreateBackoffice() => new(
         Statuses(),

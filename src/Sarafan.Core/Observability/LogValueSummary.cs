@@ -35,6 +35,8 @@ internal static class LogValueSummary
         BackofficeUserUpdateRequest => "BackofficeUserUpdateRequest(identity/password/roles=[redacted])",
         BackofficeSelfUpdateRequest => "BackofficeSelfUpdateRequest(identity/password=[redacted])",
         CustomerProfileUpdateRequest => "CustomerProfileUpdateRequest([redacted])",
+        ProductPreviewRequest => "ProductPreviewRequest(sourceUrl=[redacted])",
+        ProductPreviewDto => "ProductPreviewDto(sourceUrl=[redacted]; outcome=manual_review)",
         CreateOrderRequest request =>
             $"CreateOrderRequest(sourceUrl/comment=[redacted]; quantity={request.Quantity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "null"})",
         BackofficeUserDto => "BackofficeUserDto([redacted])",

@@ -42,7 +42,7 @@ public sealed class OrderProductContractTests
     public void Order_NormalizesCreationAndUpdateTimesToUtcAndNeverChangesCreationTime()
     {
         var localCreated = new DateTimeOffset(2026, 9, 14, 3, 0, 0, TimeSpan.FromHours(3));
-        var order = new Order(1, 1, "https://shop.example/product", 1, null, Guid.NewGuid(), localCreated);
+        var order = new Order(1, 1, "https://shop.example.com/product", 1, null, Guid.NewGuid(), localCreated);
 
         order.SetProductSnapshot(null, null, null, null, null, null, null, null, null, null,
             new DateTimeOffset(2026, 9, 14, 4, 0, 0, TimeSpan.FromHours(3)));
@@ -164,7 +164,7 @@ public sealed class OrderProductContractTests
             null,
             CreatedAt.AddMicroseconds(-1)));
         var maximumTimestampOrder = new Order(
-            1, 1, "https://shop.example/product", 1, null, Guid.NewGuid(), DateTimeOffset.MaxValue);
+            1, 1, "https://shop.example.com/product", 1, null, Guid.NewGuid(), DateTimeOffset.MaxValue);
         Assert.Throws<ArgumentOutOfRangeException>(() => maximumTimestampOrder.SetProductSnapshot(
             null,
             null,
@@ -180,7 +180,7 @@ public sealed class OrderProductContractTests
     }
 
     private static Order NewOrder(int quantity = 1, string? comment = null)
-        => new(1, 1, "https://shop.example/product", quantity, comment, Guid.NewGuid(), CreatedAt);
+        => new(1, 1, "https://shop.example.com/product", quantity, comment, Guid.NewGuid(), CreatedAt);
 
     private static void Snapshot(
         Order order,

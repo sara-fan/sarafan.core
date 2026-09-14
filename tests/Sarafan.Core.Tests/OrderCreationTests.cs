@@ -57,7 +57,7 @@ public sealed class OrderCreationTests
         var beforeCreate = DateTimeOffset.UtcNow;
         using var firstResponse = await Create(
             _client,
-            "  https://shop.example/product?id=1  ",
+            "  https://shop.example.com/product?id=1  ",
             firstKey,
             quantity: 2,
             comment: "  Упаковать бережно  ");
@@ -65,26 +65,26 @@ public sealed class OrderCreationTests
         var first = await firstResponse.Content.ReadFromJsonAsync<OrderDto>();
         using var replayResponse = await Create(
             _client,
-            "https://shop.example/product?id=1",
+            "https://shop.example.com/product?id=1",
             firstKey,
             quantity: 2,
             comment: "Упаковать бережно");
         var replay = await replayResponse.Content.ReadFromJsonAsync<OrderDto>();
-        using var conflictResponse = await Create(_client, "https://shop.example/product?id=2", firstKey);
+        using var conflictResponse = await Create(_client, "https://shop.example.com/product?id=2", firstKey);
         var conflict = await conflictResponse.Content.ReadFromJsonAsync<SarafanProblemDetails>();
         using var quantityConflictResponse = await Create(
             _client,
-            "https://shop.example/product?id=1",
+            "https://shop.example.com/product?id=1",
             firstKey,
             quantity: 3,
             comment: "Упаковать бережно");
         using var commentConflictResponse = await Create(
             _client,
-            "https://shop.example/product?id=1",
+            "https://shop.example.com/product?id=1",
             firstKey,
             quantity: 2,
             comment: "Другой комментарий");
-        using var secondResponse = await Create(_client, "https://shop.example/product?id=1", Guid.NewGuid());
+        using var secondResponse = await Create(_client, "https://shop.example.com/product?id=1", Guid.NewGuid());
         var second = await secondResponse.Content.ReadFromJsonAsync<OrderDto>();
         using var getByLocation = await _client.GetAsync(firstResponse.Headers.Location!);
         var getByLocationResponse = await getByLocation.Content.ReadFromJsonAsync<OrderDto>();
@@ -98,7 +98,7 @@ public sealed class OrderCreationTests
             Assert.That(first!.Id, Is.Positive);
             Assert.That(first.OrderNumber, Does.Match("^[0-9]{8}-1$"));
             Assert.That(first.Status, Is.EqualTo(OrderStatus.UnderReview));
-            Assert.That(first.SourceUrl, Is.EqualTo("https://shop.example/product?id=1"));
+            Assert.That(first.SourceUrl, Is.EqualTo("https://shop.example.com/product?id=1"));
             Assert.That(first.Quantity, Is.EqualTo(2));
             Assert.That(first.Comment, Is.EqualTo("Упаковать бережно"));
             Assert.That(first.ProductName, Is.Null);
@@ -141,9 +141,9 @@ public sealed class OrderCreationTests
     {
         using var emptyResponse = await _client.GetAsync("/api/v1/orders");
         var emptyItems = await emptyResponse.Content.ReadFromJsonAsync<CustomerOrderListItemDto[]>();
-        using var firstResponse = await Create(_client, "https://shop.example/first", Guid.NewGuid(), quantity: 2);
+        using var firstResponse = await Create(_client, "https://shop.example.com/first", Guid.NewGuid(), quantity: 2);
         var first = (await firstResponse.Content.ReadFromJsonAsync<OrderDto>())!;
-        using var secondResponse = await Create(_client, "https://shop.example/second", Guid.NewGuid());
+        using var secondResponse = await Create(_client, "https://shop.example.com/second", Guid.NewGuid());
         var second = (await secondResponse.Content.ReadFromJsonAsync<OrderDto>())!;
 
         await using (var scope = _app.Services.CreateAsyncScope())
@@ -167,7 +167,7 @@ public sealed class OrderCreationTests
 
         using var otherClient = CreateClient(_app);
         await Register(otherClient);
-        using var otherCreate = await Create(otherClient, "https://other.example/product", Guid.NewGuid());
+        using var otherCreate = await Create(otherClient, "https://other.example.com/product", Guid.NewGuid());
         var other = (await otherCreate.Content.ReadFromJsonAsync<OrderDto>())!;
 
         using var response = await _client.GetAsync("/api/v1/orders");
@@ -214,7 +214,7 @@ public sealed class OrderCreationTests
     public async Task GetAndIdempotentReplay_ReturnTheServerOwnedProductSnapshotAndAppliedRate()
     {
         var idempotencyKey = Guid.NewGuid();
-        using var createdResponse = await Create(_client, "https://shop.example/product", idempotencyKey);
+        using var createdResponse = await Create(_client, "https://shop.example.com/product", idempotencyKey);
         var created = (await createdResponse.Content.ReadFromJsonAsync<OrderDto>())!;
 
         await using (var scope = _app.Services.CreateAsyncScope())
@@ -251,7 +251,7 @@ public sealed class OrderCreationTests
 
         using var response = await _client.GetAsync($"/api/v1/orders/{created.Id}");
         var orderDto = await response.Content.ReadFromJsonAsync<OrderDto>();
-        using var replayResponse = await Create(_client, "https://shop.example/product", idempotencyKey);
+        using var replayResponse = await Create(_client, "https://shop.example.com/product", idempotencyKey);
         var replayDto = await replayResponse.Content.ReadFromJsonAsync<OrderDto>();
         var expectedRate = new OrderAppliedExchangeRateDto(
             1,
@@ -287,7 +287,7 @@ public sealed class OrderCreationTests
     {
         Assert.That(_app.Services.GetRequiredService<IVerificationCodeProvider>(),
             Is.TypeOf<PhoneSuffixVerificationCodeProvider>());
-        using var create = await Create(_client, "https://shop.example/product", Guid.NewGuid());
+        using var create = await Create(_client, "https://shop.example.com/product", Guid.NewGuid());
         var order = await create.Content.ReadFromJsonAsync<OrderDto>();
         using var get = await _client.GetAsync($"/api/v1/orders/{order!.Id}");
         var stored = await get.Content.ReadFromJsonAsync<OrderDto>();
@@ -309,7 +309,7 @@ public sealed class OrderCreationTests
         await Register(client);
         collisions.FailNext(2);
 
-        using var response = await Create(client, "https://shop.example/product", Guid.NewGuid());
+        using var response = await Create(client, "https://shop.example.com/product", Guid.NewGuid());
         var order = await response.Content.ReadFromJsonAsync<OrderDto>();
 
         using (Assert.EnterMultipleScope())
@@ -330,7 +330,7 @@ public sealed class OrderCreationTests
         var session = await Register(client);
         collisions.FailNext(10);
 
-        using var response = await Create(client, "https://shop.example/product", Guid.NewGuid());
+        using var response = await Create(client, "https://shop.example.com/product", Guid.NewGuid());
         var problem = await response.Content.ReadFromJsonAsync<SarafanProblemDetails>();
 
         await using var scope = app.Services.CreateAsyncScope();
@@ -352,9 +352,13 @@ public sealed class OrderCreationTests
     [Test]
     public async Task InvalidKeyAndUrl_DoNotAssignIdentityOrConsumeNumber()
     {
-        using var missingKey = await Create(_client, "https://shop.example/product", null);
-        using var emptyKey = await Create(_client, "https://shop.example/product", Guid.Empty);
-        using var invalidUrl = await Create(_client, "ftp://shop.example/product", Guid.NewGuid());
+        using var missingKey = await Create(_client, "https://shop.example.com/product", null);
+        using var emptyKey = await Create(_client, "https://shop.example.com/product", Guid.Empty);
+        using var invalidUrl = await Create(_client, "xxxx", Guid.NewGuid());
+        using var credentialUrl = await Create(
+            _client,
+            "https://alice:secret@shop.example.com/product",
+            Guid.NewGuid());
 
         using (Assert.EnterMultipleScope())
         {
@@ -367,6 +371,9 @@ public sealed class OrderCreationTests
             Assert.That(invalidUrl.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
             Assert.That((await invalidUrl.Content.ReadFromJsonAsync<SarafanProblemDetails>())?.Code,
                 Is.EqualTo("invalid_order_url"));
+            Assert.That(credentialUrl.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That((await credentialUrl.Content.ReadFromJsonAsync<SarafanProblemDetails>())?.Code,
+                Is.EqualTo("invalid_order_url"));
         }
 
         await using var scope = _app.Services.CreateAsyncScope();
@@ -374,7 +381,7 @@ public sealed class OrderCreationTests
         var orders = scope.ServiceProvider.GetRequiredService<OrderService>();
         var serviceException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
             _session.Customer.Id,
-            "https://shop.example/product",
+            "https://shop.example.com/product",
             1,
             null,
             Guid.Empty,
@@ -395,17 +402,17 @@ public sealed class OrderCreationTests
     {
         using var missingQuantity = await CreateRaw(
             _client,
-            "https://shop.example/product",
+            "https://shop.example.com/product",
             Guid.NewGuid().ToString("D"),
             quantity: null);
         using var zeroQuantity = await Create(
             _client,
-            "https://shop.example/product",
+            "https://shop.example.com/product",
             Guid.NewGuid(),
             quantity: 0);
         using var longComment = await Create(
             _client,
-            "https://shop.example/product",
+            "https://shop.example.com/product",
             Guid.NewGuid(),
             comment: new string('x', 2001));
 
@@ -427,14 +434,14 @@ public sealed class OrderCreationTests
         var orders = scope.ServiceProvider.GetRequiredService<OrderService>();
         var missingQuantityException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
             _session.Customer.Id,
-            "https://shop.example/product",
+            "https://shop.example.com/product",
             null,
             null,
             Guid.NewGuid(),
             default));
         var longCommentException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
             _session.Customer.Id,
-            "https://shop.example/product",
+            "https://shop.example.com/product",
             1,
             new string('x', 2001),
             Guid.NewGuid(),
@@ -451,11 +458,11 @@ public sealed class OrderCreationTests
     public async Task Creation_RequiresAuthenticationAndPersonalDataConsentButNoCookieConsent()
     {
         using var anonymous = CreateClient(_app);
-        using var anonymousResponse = await Create(anonymous, "https://shop.example/product", Guid.NewGuid());
+        using var anonymousResponse = await Create(anonymous, "https://shop.example.com/product", Guid.NewGuid());
 
         using var noCookie = CreateClient(_app);
         noCookie.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _session.AccessToken);
-        using var noCookieResponse = await Create(noCookie, "https://shop.example/product", Guid.NewGuid());
+        using var noCookieResponse = await Create(noCookie, "https://shop.example.com/product", Guid.NewGuid());
 
         var document = (await _client.GetFromJsonAsync<CurrentDocumentDto>(
             $"/api/v1/legal/current/{(int)LegalDocumentKind.PersonalDataConsent}"))!.Document!;
@@ -467,7 +474,7 @@ public sealed class OrderCreationTests
             IdempotencyKey = Guid.NewGuid()
         });
         withdrawal.EnsureSuccessStatusCode();
-        using var noConsentResponse = await Create(_client, "https://shop.example/product", Guid.NewGuid());
+        using var noConsentResponse = await Create(_client, "https://shop.example.com/product", Guid.NewGuid());
         var noConsent = await noConsentResponse.Content.ReadFromJsonAsync<SarafanProblemDetails>();
 
         using (Assert.EnterMultipleScope())

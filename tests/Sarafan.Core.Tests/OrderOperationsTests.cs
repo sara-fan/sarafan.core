@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
+using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Tests;
 
@@ -16,6 +17,17 @@ namespace Sarafan.Core.Tests;
 [NonParallelizable]
 public sealed class OrderOperationsTests
 {
+    [Test]
+    public void IanaSuffixValidation_AllowsAtMostOneTerminalRootDot()
+    {
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(IanaTopLevelDomains.HasValidSuffix("shop.example.com"), Is.True);
+            Assert.That(IanaTopLevelDomains.HasValidSuffix("shop.example.com."), Is.True);
+            Assert.That(IanaTopLevelDomains.HasValidSuffix("shop.example.com.."), Is.False);
+        }
+    }
+
     [Test]
     public async Task Operations_ReturnsTheCanonicalStatusCatalogueWithoutConsentOrAuthentication()
     {
@@ -40,6 +52,14 @@ public sealed class OrderOperationsTests
                 new EnumOpsItemDto((int)Currency.Rub, "Российский рубль", "rub"),
                 new EnumOpsItemDto((int)Currency.Usd, "Доллар США", "usd")
             }));
+            Assert.That(body.ProductSourceUrl.MaximumLength, Is.EqualTo(2048));
+            Assert.That(body.ProductSourceUrl.TopLevelDomainListVersion, Is.EqualTo("2026091400"));
+            Assert.That(body.ProductSourceUrl.TopLevelDomains, Has.Count.GreaterThan(1000));
+            Assert.That(body.ProductSourceUrl.TopLevelDomains, Does.Contain("COM"));
+            Assert.That(body.ProductSourceUrl.TopLevelDomains, Does.Contain("XN--P1AI"));
+            Assert.That(body.ProductSourceUrl.TopLevelDomains, Does.Not.Contain("INVALID"));
+            Assert.That(body.ProductSourceUrl.TopLevelDomains, Is.Ordered);
+            Assert.That(body.ProductSourceUrl.TopLevelDomains, Is.Unique);
         }
 
         Assert.That(body!.Statuses, Is.EqualTo(new[]
