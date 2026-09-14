@@ -31,22 +31,22 @@ public sealed class BackofficeOrdersController(
     public async Task<ActionResult<BackofficeOrderPageDto>> List(
         [FromQuery(Name = "page")] string[]? page = null,
         [FromQuery(Name = "pageSize")] string[]? pageSize = null,
-        [FromQuery] string sortBy = "createdAt",
-        [FromQuery] string sortOrder = "desc",
+        [FromQuery(Name = "sortBy")] string[]? sortBy = null,
+        [FromQuery(Name = "sortOrder")] string[]? sortOrder = null,
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
-        [FromQuery] string? statusGroup = null,
+        // statusGroup is resolved manually from Request.Query to preserve explicit empty values.
         [FromQuery] string? createdFrom = null,
         [FromQuery] string? createdTo = null,
         CancellationToken cancellationToken = default)
         => Ok(await orders.ListForBackofficeAsync(
             ParseListInteger(page, 1),
             ParseListInteger(pageSize, 10),
-            sortBy,
-            sortOrder,
+            ParseListString(sortBy, "createdAt"),
+            ParseListString(sortOrder, "desc"),
             search,
             status,
-            statusGroup,
+            ParseOptionalQueryValue(Request.Query, "statusGroup"),
             createdFrom,
             createdTo,
             cancellationToken));
@@ -65,5 +65,35 @@ public sealed class BackofficeOrdersController(
         }
 
         return parsed;
+    }
+
+    private static string ParseListString(string[]? values, string defaultValue)
+    {
+        if (values is null)
+        {
+            return defaultValue;
+        }
+
+        if (values.Length != 1)
+        {
+            throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_list_filter");
+        }
+
+        return values[0];
+    }
+
+    private static string? ParseOptionalQueryValue(IQueryCollection query, string key)
+    {
+        if (!query.TryGetValue(key, out var values))
+        {
+            return null;
+        }
+
+        if (values.Count != 1)
+        {
+            throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_list_filter");
+        }
+
+        return values[0];
     }
 }

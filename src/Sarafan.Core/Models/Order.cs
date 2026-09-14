@@ -35,7 +35,7 @@ public sealed class Order
         Quantity = quantity;
         Comment = comment;
         CreationIdempotencyKey = creationIdempotencyKey;
-        CreatedAt = createdAt.ToUniversalTime();
+        CreatedAt = NormalizeToPostgresTimestamp(createdAt);
         UpdatedAt = CreatedAt;
     }
 
@@ -99,7 +99,7 @@ public sealed class Order
             throw new ArgumentException("The applied exchange rate base currency must match the seller price currency.");
         }
 
-        var normalizedUpdatedAt = updatedAt.ToUniversalTime();
+        var normalizedUpdatedAt = NormalizeToPostgresTimestamp(updatedAt);
         if (normalizedUpdatedAt < UpdatedAt)
         {
             throw new ArgumentOutOfRangeException(
@@ -133,5 +133,11 @@ public sealed class Order
         AppliedExchangeRateHistory = appliedExchangeRateHistory;
         AppliedExchangeRateHistoryId = appliedExchangeRateHistory?.Id;
         UpdatedAt = normalizedUpdatedAt;
+    }
+
+    private static DateTimeOffset NormalizeToPostgresTimestamp(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        return new DateTimeOffset(utc.Ticks - utc.Ticks % 10, TimeSpan.Zero);
     }
 }

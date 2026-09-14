@@ -67,6 +67,17 @@ public sealed class OrderProductContractTests
     }
 
     [Test]
+    public void ProductSnapshot_AdvancesUpdateTimeForSubMicrosecondDeltas()
+    {
+        var order = NewOrder();
+
+        order.SetProductSnapshot(
+            null, null, null, null, null, null, null, null, null, null, CreatedAt.AddTicks(1));
+
+        Assert.That(order.UpdatedAt, Is.EqualTo(CreatedAt.AddMicroseconds(1)));
+    }
+
+    [Test]
     public void ProductSnapshot_AcceptsCompleteRecognizedDataAndCopiesCharacteristics()
     {
         var order = NewOrder();
@@ -151,7 +162,7 @@ public sealed class OrderProductContractTests
             null,
             null,
             null,
-            CreatedAt.AddTicks(-1)));
+            CreatedAt.AddMicroseconds(-1)));
         var maximumTimestampOrder = new Order(
             1, 1, "https://shop.example/product", 1, null, Guid.NewGuid(), DateTimeOffset.MaxValue);
         Assert.Throws<ArgumentOutOfRangeException>(() => maximumTimestampOrder.SetProductSnapshot(

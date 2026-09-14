@@ -196,9 +196,7 @@ public sealed class OrderService(
             _ => null
         };
         var sortOrderKey = sortOrder?.Trim().ToLowerInvariant();
-        var normalizedStatusGroup = string.IsNullOrWhiteSpace(statusGroup)
-            ? null
-            : statusGroup.Trim().ToLowerInvariant();
+        var normalizedStatusGroup = statusGroup is null ? null : statusGroup.Trim().ToLowerInvariant();
         var validStatus = true;
         OrderStatus? statusValue = null;
         if (status is not null)
