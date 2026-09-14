@@ -439,18 +439,11 @@ public sealed class OperationLoggingTests
     public async Task HttpFlow_LogsEveryControllerActionAndServiceBoundaryWithSafeOutputs()
     {
         using var app = IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder =>
-            builder
-                .ConfigureLogging(logging => logging
-                    .AddProvider(_logs)
-                    .AddFilter<LogCollector>(null, LogLevel.Debug)
-                    .AddFilter<LogCollector>(
-                        typeof(ControllerLoggingFilter).FullName!, LogLevel.Trace))
-                .ConfigureServices(services =>
-                {
-                    services.RemoveAll<IVerificationCodeProvider>();
-                    services.AddSingleton<IVerificationCodeProvider>(new ProductionReadyVerificationCodeProvider());
-                    services.Configure<BackofficeBootstrapOptions>(options => options.RealOrdersEnabled = true);
-                }));
+            builder.ConfigureLogging(logging => logging
+                .AddProvider(_logs)
+                .AddFilter<LogCollector>(null, LogLevel.Debug)
+                .AddFilter<LogCollector>(
+                    typeof(ControllerLoggingFilter).FullName!, LogLevel.Trace)));
         using var client = app.CreateClient();
         await ConsentTestData.AcceptMandatoryCookies(client);
         var phone = $"+79994{Random.Shared.Next(100000, 999999)}";
@@ -575,6 +568,8 @@ public sealed class OperationLoggingTests
 
         using var me = await client.GetAsync("/api/v1/backoffice/auth/me");
         using var roles = await client.GetAsync("/api/v1/backoffice/roles");
+        using var orderOps = await client.GetAsync("/api/v1/backoffice/orders/ops");
+        using var orders = await client.GetAsync("/api/v1/backoffice/orders?page=1&pageSize=10&sortBy=createdAt&sortOrder=desc");
         using var operations = await client.GetAsync("/api/v1/backoffice/users/ops");
         using var users = await client.GetAsync("/api/v1/backoffice/users");
         var email = $"{Guid.NewGuid():N}@sarafan.test";
@@ -615,7 +610,7 @@ public sealed class OperationLoggingTests
             await scope.ServiceProvider.GetRequiredService<BackofficeBootstrapService>().ProvisionAsync(default);
         }
 
-        Assert.That(new[] { me, roles, operations, users, get, update, updateSelf, refresh },
+        Assert.That(new[] { me, roles, orderOps, orders, operations, users, get, update, updateSelf, refresh },
             Is.All.Matches<HttpResponseMessage>(response => response.IsSuccessStatusCode));
         Assert.That(disable.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
         Assert.That(logout.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
@@ -624,7 +619,8 @@ public sealed class OperationLoggingTests
         [
             typeof(BackofficeAuthController),
             typeof(BackofficeUsersController),
-            typeof(BackofficeRolesController)
+            typeof(BackofficeRolesController),
+            typeof(BackofficeOrdersController)
         ];
         foreach (var action in controllers.SelectMany(type =>
                      type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)))
@@ -785,26 +781,6 @@ public sealed class OperationLoggingTests
             user.IsDemo = false;
         }
         await database.SaveChangesAsync();
-    }
-
-    private sealed class ProductionReadyVerificationCodeProvider : IVerificationCodeProvider
-    {
-        public bool IsProductionReady => true;
-
-        public Task RequestCodeAsync(string phone, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> VerifyCodeAsync(string phone, string? code, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var expectedCode = phone.Length >= 4 ? phone[^4..] : string.Empty;
-            return Task.FromResult(
-                expectedCode.Length == 4
-                && string.Equals(code?.Trim(), expectedCode, StringComparison.Ordinal));
-        }
     }
 
     private sealed class LogCollector : ILoggerProvider, ISupportExternalScope

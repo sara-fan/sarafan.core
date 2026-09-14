@@ -6,9 +6,7 @@ using System.Globalization;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
-using Sarafan.Core.Authentication;
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
 using Sarafan.Core.Observability;
@@ -21,13 +19,11 @@ public sealed class OrderService(
     ConsentService consents,
     ICustomerOrderCodeGenerator codeGenerator,
     ICustomerOrderCodeCollisionDetector collisionDetector,
-    IOptions<BackofficeBootstrapOptions> bootstrapOptions,
     TimeProvider timeProvider,
     ILogger<OrderService> logger)
 {
     private const int CodeAllocationAttempts = 10;
     private const int MaximumSearchLength = 2048;
-    private readonly BackofficeBootstrapOptions _bootstrapOptions = bootstrapOptions.Value;
 
     public Task<OrderDto> GetAsync(
         int customerId,
@@ -109,11 +105,6 @@ public sealed class OrderService(
         Guid idempotencyKey,
         CancellationToken cancellationToken)
     {
-        if (!BackofficeUserService.RealOperationsEnabled(_bootstrapOptions))
-        {
-            throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
-        }
-
         var normalizedSourceUrl = NormalizeSourceUrl(sourceUrl);
         var normalizedQuantity = NormalizeQuantity(quantity);
         var normalizedComment = NormalizeComment(comment);
@@ -191,11 +182,6 @@ public sealed class OrderService(
         string? createdTo,
         CancellationToken cancellationToken)
     {
-        if (!BackofficeUserService.RealOperationsEnabled(_bootstrapOptions))
-        {
-            throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
-        }
-
         var normalizedSearch = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         var sortByKey = sortBy?.Trim().ToLowerInvariant() switch
         {
@@ -349,11 +335,6 @@ public sealed class OrderService(
         long orderId,
         CancellationToken cancellationToken)
     {
-        if (!BackofficeUserService.RealOperationsEnabled(_bootstrapOptions))
-        {
-            throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
-        }
-
         var order = await database.Orders
             .AsNoTracking()
             .Include(item => item.Customer)

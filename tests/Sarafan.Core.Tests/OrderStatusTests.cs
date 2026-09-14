@@ -25,7 +25,7 @@ public sealed class OrderStatusTests
         new(OrderStatus.DeliveredToUsWarehouse, 330, "Получен на складе в США", "delivered_to_us_warehouse", 300, "Выполняется", "in_progress"),
         new(OrderStatus.DeliveringToRussia, 340, "Доставляем в Россию", "delivering_to_russia", 300, "Выполняется", "in_progress"),
         new(OrderStatus.DeliveredToRussianWarehouse, 360, "Получен на складе в России", "delivered_to_russian_warehouse", 300, "Выполняется", "in_progress"),
-        new(OrderStatus.DeliveringInRussia, 380, "Доставка по России", "delivering_in_russia", 300, "Выполняется", "in_progress"),
+        new(OrderStatus.DeliveringInRussia, 380, "Доставляем по России", "delivering_in_russia", 300, "Выполняется", "in_progress"),
         new(OrderStatus.Received, 400, "Получен", "received", 400, "Завершён", "completed"),
         new(OrderStatus.Cancelled, 500, "Отменён", "cancelled", 500, "Отменён", "cancelled")
     ];

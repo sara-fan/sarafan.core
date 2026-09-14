@@ -36,7 +36,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveredToUsWarehouse => "Получен на складе в США",
         OrderStatus.DeliveringToRussia => "Доставляем в Россию",
         OrderStatus.DeliveredToRussianWarehouse => "Получен на складе в России",
-        OrderStatus.DeliveringInRussia => "Доставка по России",
+        OrderStatus.DeliveringInRussia => "Доставляем по России",
         OrderStatus.Received => "Получен",
         OrderStatus.Cancelled => "Отменён",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)

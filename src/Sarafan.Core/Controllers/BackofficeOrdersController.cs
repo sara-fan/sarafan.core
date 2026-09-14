@@ -17,7 +17,6 @@ namespace Sarafan.Core.Controllers;
 [Authorize(Policy = BackofficePolicies.ManualQuotes)]
 [Route("api/v1/backoffice/orders")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-[ServiceFilter(typeof(RealOperationsRequiredFilter), Order = int.MinValue)]
 public sealed class BackofficeOrdersController(
     OrderService orders,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
@@ -30,6 +29,8 @@ public sealed class BackofficeOrdersController(
     [HttpGet]
     [ProducesResponseType<BackofficeOrderPageDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<BackofficeOrderPageDto>> List(
+        [FromQuery(Name = "page")] string? page = null,
+        [FromQuery(Name = "pageSize")] string? pageSize = null,
         [FromQuery] string sortBy = "createdAt",
         [FromQuery] string sortOrder = "desc",
         [FromQuery] string? search = null,

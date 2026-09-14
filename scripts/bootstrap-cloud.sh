@@ -53,8 +53,6 @@ readonly BACKOFFICE_JWT_SECRET="${SARAFAN_BACKOFFICE_JWT_SECRET:-}"
 [[ "$BACKOFFICE_JWT_SECRET" != "$JWT_SECRET" ]] \
   || fail "SARAFAN_BACKOFFICE_JWT_SECRET must differ from SARAFAN_JWT_SECRET"
 if [[ "${SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED:-false}" == true ]]; then
-  [[ "${SARAFAN_REAL_ORDERS_ENABLED:-false}" != true ]] \
-    || fail "Back-office demo bootstrap cannot run with real orders enabled"
   [[ "${SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED:-false}" != true ]] \
     || fail "Back-office demo bootstrap cannot run with real payment integration enabled"
   [[ -n "${SARAFAN_BACKOFFICE_BOOTSTRAP_EMAIL:-}" ]] \

@@ -6,12 +6,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using Sarafan.Core.Authentication;
 using Sarafan.Core.Data;
@@ -33,7 +30,7 @@ public sealed class BackofficeOrderTests
     {
         await IntegrationTestEnvironment.ResetAsync();
         await DemoteDemoBackofficeUsersAsync();
-        _app = CreateApp(realOrdersEnabled: true);
+        _app = CreateApp();
         _client = _app.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost"),
@@ -242,57 +239,24 @@ public sealed class BackofficeOrderTests
     }
 
     [Test]
-    public async Task ReleaseGate_HidesBothRoutesBeforeListFilterValidation()
+    public async Task DemoPhoneSuffixAuthorization_DoesNotHideOrderRoutesOrListValidation()
     {
-        using var hiddenApp = CreateApp(realOrdersEnabled: false);
-        using var hiddenClient = hiddenApp.CreateClient();
-        var token = await AdministratorTokenAsync(hiddenApp.Services);
-        foreach (var path in new[]
-                 {
-                     "/api/v1/backoffice/orders/ops",
-                     "/api/v1/backoffice/orders?page=abc&pageSize=&statusGroup=unknown"
-                 })
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, path);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            using var response = await hiddenClient.SendAsync(request);
-            var problem = await response.Content.ReadFromJsonAsync<SarafanProblemDetails>();
-            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound), path);
-            Assert.That(problem!.Code, Is.EqualTo("resource_not_found"), path);
-        }
-
-        await using var scope = hiddenApp.Services.CreateAsyncScope();
-        var service = scope.ServiceProvider.GetRequiredService<OrderService>();
-        var exception = Assert.ThrowsAsync<ServiceException>(() => service.ListForBackofficeAsync(
-            0,
-            10,
-            "createdAt",
-            "desc",
-            null,
-            null,
-            "unknown",
-            null,
-            null,
-            default));
+        Assert.That(_app!.Services.GetRequiredService<IVerificationCodeProvider>(),
+            Is.TypeOf<PhoneSuffixVerificationCodeProvider>());
+        using var ops = await SendAsAdministratorAsync("/api/v1/backoffice/orders/ops");
+        using var invalid = await SendAsAdministratorAsync(
+            "/api/v1/backoffice/orders?page=abc&pageSize=&statusGroup=unknown");
+        var problem = await invalid.Content.ReadFromJsonAsync<SarafanProblemDetails>();
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(exception!.StatusCode, Is.EqualTo(StatusCodes.Status404NotFound));
-            Assert.That(exception.Code, Is.EqualTo("resource_not_found"));
+            Assert.That(ops.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(invalid.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That(problem!.Code, Is.EqualTo("invalid_order_list_filter"));
         }
     }
 
-    private static WebApplicationFactory<Program> CreateApp(bool realOrdersEnabled)
-        => IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.Configure<BackofficeBootstrapOptions>(
-                    options => options.RealOrdersEnabled = realOrdersEnabled);
-                if (realOrdersEnabled)
-                {
-                    services.RemoveAll<IVerificationCodeProvider>();
-                    services.AddSingleton<IVerificationCodeProvider>(new ProductionReadyVerificationCodeProvider());
-                }
-            }));
+    private static WebApplicationFactory<Program> CreateApp()
+        => IntegrationTestEnvironment.Factory.WithWebHostBuilder(_ => { });
 
     private static async Task DemoteDemoBackofficeUsersAsync()
     {
@@ -425,11 +389,4 @@ public sealed class BackofficeOrderTests
         database.ChangeTracker.Clear();
     }
 
-    private sealed class ProductionReadyVerificationCodeProvider : IVerificationCodeProvider
-    {
-        public bool IsProductionReady => true;
-        public Task RequestCodeAsync(string phone, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task<bool> VerifyCodeAsync(string phone, string? code, CancellationToken cancellationToken)
-            => Task.FromResult(false);
-    }
 }

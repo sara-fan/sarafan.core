@@ -17,7 +17,6 @@ public sealed class BackofficeBootstrapOptions
     public string LastName { get; set; } = "Samsonov";
     public string Email { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
-    public bool RealOrdersEnabled { get; set; }
     public bool RealPaymentIntegrationEnabled { get; set; }
 
     public void Validate()
@@ -27,10 +26,10 @@ public sealed class BackofficeBootstrapOptions
             return;
         }
 
-        if (BackofficeUserService.RealOperationsEnabled(this))
+        if (RealPaymentIntegrationEnabled)
         {
             throw new InvalidOperationException(
-                "BackofficeBootstrap cannot be enabled with real orders or real payment integration");
+                "BackofficeBootstrap cannot be enabled with real payment integration");
         }
 
         if (string.IsNullOrWhiteSpace(FirstName) || FirstName.Trim().Length > 100

@@ -54,20 +54,15 @@ public sealed class AuthenticationContractTests
         => Assert.That(new PhoneNormalizer().TryNormalize(input, out _), Is.False);
 
     [Test]
-    public void DemoVerificationProviderIsBlockedByEitherRealFeatureFlag()
+    public void DemoVerificationProviderIsBlockedOnlyByRealPaymentIntegration()
     {
         var provider = new PhoneSuffixVerificationCodeProvider();
         Assert.That(provider.IsProductionReady, Is.False);
 
-        foreach (var settings in new[]
-        {
-            new BackofficeBootstrapOptions { RealOrdersEnabled = true },
-            new BackofficeBootstrapOptions { RealPaymentIntegrationEnabled = true }
-        })
-        {
-            var gate = new VerificationCodeReleaseGate(provider, Options.Create(settings));
-            Assert.That(gate.EnsureAllowed, Throws.TypeOf<InvalidOperationException>());
-        }
+        var paymentGate = new VerificationCodeReleaseGate(
+            provider,
+            Options.Create(new BackofficeBootstrapOptions { RealPaymentIntegrationEnabled = true }));
+        Assert.That(paymentGate.EnsureAllowed, Throws.TypeOf<InvalidOperationException>());
 
         Assert.That(new VerificationCodeReleaseGate(provider, Options.Create(new BackofficeBootstrapOptions())).EnsureAllowed,
             Throws.Nothing);
@@ -80,7 +75,7 @@ public sealed class AuthenticationContractTests
         Assert.That(provider.IsProductionReady, Is.False);
         Assert.That(new VerificationCodeReleaseGate(provider, Options.Create(new BackofficeBootstrapOptions
         {
-            RealOrdersEnabled = true
+            RealPaymentIntegrationEnabled = true
         })).EnsureAllowed, Throws.TypeOf<InvalidOperationException>());
     }
 

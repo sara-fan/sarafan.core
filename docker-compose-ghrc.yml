@@ -11,7 +11,6 @@ x-api-environment: &api-environment
   Authentication__SecureCookies: "true"
   BackofficeAuthentication__SigningKey: ${SARAFAN_BACKOFFICE_JWT_SECRET:?Set SARAFAN_BACKOFFICE_JWT_SECRET}
   BackofficeAuthentication__SecureCookies: "true"
-  BackofficeBootstrap__RealOrdersEnabled: ${SARAFAN_REAL_ORDERS_ENABLED:-false}
   BackofficeBootstrap__RealPaymentIntegrationEnabled: ${SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED:-false}
   Database__ApplyMigrations: "false"
   ForwardedHeaders__ForwardLimit: "2"

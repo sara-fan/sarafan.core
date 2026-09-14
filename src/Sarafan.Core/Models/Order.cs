@@ -110,7 +110,7 @@ public sealed class Order
 
         if (normalizedUpdatedAt == UpdatedAt)
         {
-            if (UpdatedAt == DateTimeOffset.MaxValue)
+            if (UpdatedAt > DateTimeOffset.MaxValue.AddTicks(-10))
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(updatedAt),
@@ -118,7 +118,7 @@ public sealed class Order
                     "The order update time cannot advance beyond its maximum value.");
             }
 
-            normalizedUpdatedAt = UpdatedAt.AddTicks(1);
+            normalizedUpdatedAt = UpdatedAt.AddMicroseconds(1);
         }
 
         ProductName = productName;
