@@ -47,6 +47,7 @@ public sealed class OrderStatusTests
                 Assert.That(expected.Status.GetUpperStatusDisplayName(), Is.EqualTo(expected.UpperStatusName));
                 Assert.That(expected.Status.GetUpperStatusRouteAlias(), Is.EqualTo(expected.UpperStatusRouteAlias));
                 Assert.That(expected.Status.IsTerminal(), Is.EqualTo(expected.Status is OrderStatus.Received or OrderStatus.Cancelled));
+                Assert.That(expected.Status.GetProgressPercent(), Is.InRange(0, 100));
             }
         }
 
@@ -69,6 +70,7 @@ public sealed class OrderStatusTests
         Assert.Throws<ArgumentOutOfRangeException>(() => status.GetUpperStatusDisplayName());
         Assert.Throws<ArgumentOutOfRangeException>(() => status.GetUpperStatusRouteAlias());
         Assert.Throws<ArgumentOutOfRangeException>(() => status.IsTerminal());
+        Assert.Throws<ArgumentOutOfRangeException>(() => status.GetProgressPercent());
     }
 
     [Test]
@@ -88,7 +90,8 @@ public sealed class OrderStatusTests
                 expected.UpperStatusValue,
                 expected.UpperStatusName,
                 expected.UpperStatusRouteAlias,
-                expected.Status.IsTerminal()))));
+                expected.Status.IsTerminal(),
+                expected.Status.GetProgressPercent()))));
         Assert.That(body.Currencies, Is.EqualTo(new[]
         {
             new EnumOpsItemDto(643, "Российский рубль", "rub"),

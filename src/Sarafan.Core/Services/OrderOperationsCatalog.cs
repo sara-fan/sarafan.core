@@ -31,7 +31,8 @@ internal static class OrderOperationsCatalog
                 status.GetUpperStatusValue(),
                 status.GetUpperStatusDisplayName(),
                 status.GetUpperStatusRouteAlias(),
-                status.IsTerminal()))
+                status.IsTerminal(),
+                status.GetProgressPercent()))
             .ToArray();
 
     private static EnumOpsItemDto[] Currencies()
