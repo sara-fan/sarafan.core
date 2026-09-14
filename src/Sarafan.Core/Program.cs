@@ -62,7 +62,6 @@ builder.Services.AddProblemDetails();
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<ControllerLoggingFilter>(int.MinValue);
-    options.Filters.Add<MandatoryCookieConsentFilter>();
 });
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
@@ -86,7 +85,6 @@ builder.Services.AddOptions<ConsentOptions>().Bind(builder.Configuration.GetSect
     .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddScoped<LegalDocumentService>();
 builder.Services.AddScoped<ConsentService>();
-builder.Services.AddScoped<MandatoryCookieConsentFilter>();
 builder.Services.AddScoped<PersonalDataConsentFilter>();
 builder.Services.AddScoped<ConsentWithdrawalRequestService>();
 builder.Services.AddScoped<ConsentRetentionService>();
@@ -214,6 +212,7 @@ app.UseStatusCodePages(async context =>
         SarafanProblemDetailsFactory.CodeForStatus(httpContext.Response.StatusCode),
         httpContext.RequestAborted);
 });
+app.UseMiddleware<RetiredConsentCookieMiddleware>();
 app.UseAuthentication();
 app.UseSwagger();
 app.UseSwaggerUI();

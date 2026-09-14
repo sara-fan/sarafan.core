@@ -23,7 +23,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<LegalDocument> LegalDocuments => Set<LegalDocument>();
     public DbSet<ConsentEvent> ConsentEvents => Set<ConsentEvent>();
     public DbSet<ConsentReplayTombstone> ConsentReplayTombstones => Set<ConsentReplayTombstone>();
-    public DbSet<ConsentAssociation> ConsentAssociations => Set<ConsentAssociation>();
     public DbSet<ConsentOnboarding> ConsentOnboarding => Set<ConsentOnboarding>();
     public DbSet<CustomerConsentWithdrawalRequest> CustomerConsentWithdrawalRequests => Set<CustomerConsentWithdrawalRequest>();
     public DbSet<LegalDocumentAuditEvent> LegalDocumentAuditEvents => Set<LegalDocumentAuditEvent>();

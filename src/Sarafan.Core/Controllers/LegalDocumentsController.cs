@@ -9,7 +9,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[AllowAnonymous, CookieConsentNotRequired, Route("api/v1/legal")]
+[AllowAnonymous, Route("api/v1/legal")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class LegalDocumentsController(LegalDocumentService documents, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {

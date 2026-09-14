@@ -37,10 +37,7 @@ public sealed class ConsentApiTests
         var customer = new Customer { Phone = "+7777" + Random.Shared.Next(1000000, 9999999), Profile = new() };
         db.Customers.Add(customer); await db.SaveChangesAsync(); _customer = customer.Id;
         _customerToken = scope.ServiceProvider.GetRequiredService<JwtTokenService>().CreateAccessToken(customer).Token;
-        var cookieDocument = await Current(LegalDocumentKind.CookieConsent);
-        using var cookieResponse = await _client.PostAsJsonAsync("/api/v1/consents/cookies", Decision(cookieDocument));
-        cookieResponse.EnsureSuccessStatusCode();
-        _client.DefaultRequestHeaders.Add("Cookie", cookieResponse.Headers.GetValues("Set-Cookie").Single().Split(';')[0]);
+
     }
     [TearDown] public void TearDown() => _client.Dispose();
     private void Authorize(string? token) => _client.DefaultRequestHeaders.Authorization = token is null ? null : new AuthenticationHeaderValue("Bearer", token);
@@ -51,19 +48,47 @@ public sealed class ConsentApiTests
         DocumentId = doc.Id,
         ContentHash = doc.ContentHash,
         Decision = decision,
-        Categories = decision == "grant" && doc.Kind == LegalDocumentKind.CookieConsent ? [CookieCategory.Mandatory] : [],
         IdempotencyKey = Guid.NewGuid()
     };
+
+    [TestCase("GET", "/api/v1/consents/cookies")]
+    [TestCase("POST", "/api/v1/consents/cookies")]
+    [TestCase("POST", "/api/v1/consents/me/browser")]
+    public async Task RetiredCookieEndpointsReturnNotFound(string method, string path)
+    {
+        Authorize(_customerToken);
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        using var response = await _client.SendAsync(request);
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That(response.Content.Headers.ContentType!.MediaType, Is.EqualTo("application/problem+json"));
+        Assert.That(response.Headers.Contains("Set-Cookie"), Is.False);
+    }
+
+    [Test]
+    public async Task RetiredKindIsRejectedAndNeverAdvertised()
+    {
+        using var current = await _client.GetAsync("/api/v1/legal/current/0");
+        Assert.That(current.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        Authorize(_adminToken);
+        using var preview = await _client.PostAsJsonAsync("/api/v1/backoffice/legal-documents/preview", new LegalDocumentPreviewRequest
+        {
+            Kind = (LegalDocumentKind)0,
+            Title = "Retired",
+            FileName = "retired.md",
+            Source = Encoding.UTF8.GetBytes("Retired"),
+            EffectiveDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1))
+        });
+        Assert.That((await preview.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_legal_document_kind"));
+        Assert.That(Sarafan.Core.Services.LegalDocumentService.Operations().Kinds.Select(x => x.Value), Does.Not.Contain(0));
+    }
 
     [Test]
     public async Task LegalDocumentOperationsAreIdenticalPublicMetadataAndStaffAuthorized()
     {
         using var publicResponse = await _client.GetAsync("/api/v1/legal/ops");
         var publicOps = await Read<LegalDocumentOpsDto>(publicResponse);
-        Assert.That(publicOps.Kinds.Select(item => item.Value), Is.EqualTo(new[] { 0, 1, 2, 3, 4 }));
-        Assert.That(publicOps.Kinds.Select(item => item.Name), Does.Contain("Согласие на использование куки"));
+        Assert.That(publicOps.Kinds.Select(item => item.Value), Is.EqualTo(new[] { 1, 2, 3, 4 }));
         Assert.That(publicOps.Kinds.Select(item => item.RouteAlias), Does.Contain("privacy-policy"));
-        Assert.That(publicOps.CookieCategories, Is.EqualTo(new[] { new CookieCategoryOpsItemDto(0, "Обязательные", true) }));
 
         using var anonymousStaff = await _client.GetAsync("/api/v1/backoffice/legal-documents/ops");
         Assert.That(anonymousStaff.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
@@ -74,14 +99,13 @@ public sealed class ConsentApiTests
         using var staffResponse = await _client.GetAsync("/api/v1/backoffice/legal-documents/ops");
         var staffOps = await Read<LegalDocumentOpsDto>(staffResponse);
         Assert.That(staffOps.Kinds, Is.EqualTo(publicOps.Kinds));
-        Assert.That(staffOps.CookieCategories, Is.EqualTo(publicOps.CookieCategories));
     }
 
     [Test]
     public async Task LegalDocumentKindsUseOnlyDefinedNumericContracts()
     {
-        using var numeric = await _client.GetAsync($"/api/v1/legal/current/{(int)LegalDocumentKind.CookieConsent}");
-        Assert.That((await Read<CurrentDocumentDto>(numeric)).Document!.Kind, Is.EqualTo(LegalDocumentKind.CookieConsent));
+        using var numeric = await _client.GetAsync($"/api/v1/legal/current/{(int)LegalDocumentKind.PrivacyPolicy}");
+        Assert.That((await Read<CurrentDocumentDto>(numeric)).Document!.Kind, Is.EqualTo(LegalDocumentKind.PrivacyPolicy));
         using var legacyAlias = await _client.GetAsync("/api/v1/legal/current/cookie-consent");
         Assert.That(legacyAlias.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var undefinedRoute = await _client.GetAsync("/api/v1/legal/current/99");
@@ -127,7 +151,6 @@ public sealed class ConsentApiTests
     }
 
     [TestCase(LegalDocumentKind.PersonalDataConsent, "/api/v1/consents/me/personal-data")]
-    [TestCase(LegalDocumentKind.CookieConsent, "/api/v1/consents/cookies")]
     public async Task OmittedDecisionCannotCreateConsent(LegalDocumentKind kind, string path)
     {
         Authorize(_customerToken);
@@ -163,25 +186,6 @@ public sealed class ConsentApiTests
         Assert.That((await invalidReceipt.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_phone"));
     }
 
-    [TestCase(null)]
-    [TestCase("invalid")]
-    [TestCase("00000000-0000-0000-0000-000000000000")]
-    public async Task BrowserAssociationRejectsMissingOrInvalidAuthenticatedTokenId(string? tokenId)
-    {
-        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        var options = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationOptions>>().Value;
-        var claims = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(_customerToken).Claims.Where(x => x.Type != "jti").ToList();
-        if (tokenId is not null) claims.Add(new System.Security.Claims.Claim("jti", tokenId));
-        var jwt = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(options.Issuer, options.Audience, claims, DateTime.UtcNow.AddMinutes(-1), DateTime.UtcNow.AddMinutes(5),
-            new Microsoft.IdentityModel.Tokens.SigningCredentials(new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey)), Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256));
-        Authorize(new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(jwt));
-        using var response = await _client.PostAsync("/api/v1/consents/me/browser", null);
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
-        var challenge = response.Headers.WwwAuthenticate.Single();
-        Assert.That(challenge.Scheme, Is.EqualTo("Bearer"));
-        Assert.That(challenge.Parameter, Is.EqualTo("error=\"invalid_token\""));
-        Assert.That((await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_access_token"));
-    }
 
     [Test]
     public async Task AdministratorCreatesPreviewsDeletesAndAuditsImmutableDocuments()
@@ -286,30 +290,9 @@ public sealed class ConsentApiTests
         Assert.That(await publicSource.Content.ReadAsByteArrayAsync(), Is.Not.Empty);
     }
     [Test]
-    public async Task CustomerGate_BrowserAssociation_AndManualWithdrawalQueue_WorkTogether()
+    public async Task PersonalDataGate_AndManualWithdrawalQueue_WorkWithoutCookieConsent()
     {
-        _client.DefaultRequestHeaders.Remove("Cookie");
-        var pd = await Current(LegalDocumentKind.PersonalDataConsent); var cookies = await Current(LegalDocumentKind.CookieConsent);
-        using var empty = await _client.GetAsync("/api/v1/consents/cookies");
-        Assert.That(empty.Headers.Contains("Set-Cookie"), Is.False);
-        Assert.That((await Read<CookieConsentDto>(empty)).Status, Is.EqualTo("missing"));
-        using var blockedAuthentication = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new { });
-        Assert.That(blockedAuthentication.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
-        Assert.That((await blockedAuthentication.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("cookie_consent_required"));
-        Authorize(_customerToken);
-        using var blockedService = await _client.GetAsync("/api/v1/customers/me");
-        Assert.That(blockedService.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
-        using var allowedHistory = await _client.GetAsync("/api/v1/consents/me");
-        Assert.That(allowedHistory.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-        Authorize(null);
-        var choice = Decision(cookies); choice.Categories = [CookieCategory.Mandatory];
-        using var cookieResponse = await _client.PostAsJsonAsync("/api/v1/consents/cookies", choice);
-        Assert.That((await Read<CookieConsentDto>(cookieResponse)).Categories, Is.EqualTo(new[] { CookieCategory.Mandatory }));
-        var setCookie = cookieResponse.Headers.GetValues("Set-Cookie").Single();
-        Assert.That(setCookie, Does.Contain("httponly").IgnoreCase.And.Contain("samesite=strict").IgnoreCase.And.Contain("path=/api/v1"));
-        _client.DefaultRequestHeaders.Add("Cookie", setCookie.Split(';')[0]);
-        using var retry = await _client.PostAsJsonAsync("/api/v1/consents/cookies", choice);
-        Assert.That((await Read<CookieConsentDto>(retry)).Status, Is.EqualTo("current"));
+        var pd = await Current(LegalDocumentKind.PersonalDataConsent);
         Authorize(_customerToken);
         using var gated = await _client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = "Тест" });
         Assert.That(gated.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
@@ -320,14 +303,6 @@ public sealed class ConsentApiTests
         Assert.That(gatedPhoto.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
         using var mineBefore = await _client.GetAsync("/api/v1/consents/me");
         Assert.That((await Read<CustomerConsentsDto>(mineBefore)).Statuses.Single().Status, Is.EqualTo("missing"));
-        using var link = await _client.PostAsync("/api/v1/consents/me/browser", null);
-        Assert.That(link.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
-        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
-        {
-            var association = await scope.ServiceProvider.GetRequiredService<AppDbContext>().ConsentAssociations.SingleAsync(x => x.CustomerId == _customer);
-            var tokenId = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(_customerToken).Id;
-            Assert.That(association.AuthenticationTokenId, Is.EqualTo(Guid.Parse(tokenId)));
-        }
         var stale = Decision(pd); stale.DocumentId = Guid.NewGuid();
         using var conflict = await _client.PostAsJsonAsync("/api/v1/consents/me/personal-data", stale);
         Assert.That(conflict.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
@@ -337,7 +312,6 @@ public sealed class ConsentApiTests
         using var grant = await _client.PostAsJsonAsync("/api/v1/consents/me/personal-data", Decision(pd));
         var mine = await Read<CustomerConsentsDto>(grant);
         Assert.That(mine.Statuses.Single().Status, Is.EqualTo("current"));
-        Assert.That(mine.History.Any(x => x.Scope == "observed-browser"), Is.True);
         using var write = await _client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = "Тест" });
         Assert.That(write.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         using var requestResponse = await _client.PostAsync("/api/v1/consents/me/withdrawal-request", null);

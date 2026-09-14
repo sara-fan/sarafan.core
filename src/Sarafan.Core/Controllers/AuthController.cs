@@ -22,7 +22,7 @@ public sealed class AuthController(
     private readonly AuthenticationOptions _options = options.Value;
 
     [AllowAnonymous]
-    [CookieConsentNotRequired]
+
     [HttpGet("ops")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public ActionResult<AuthenticationOpsDto> Operations() => Ok(new AuthenticationOpsDto(
@@ -31,7 +31,7 @@ public sealed class AuthController(
             .ToArray()));
 
     [AllowAnonymous]
-    [CookieConsentNotRequired]
+
     [HttpPost("phone/resolve")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType<PhoneResolveDto>(StatusCodes.Status200OK)]
@@ -71,7 +71,7 @@ public sealed class AuthController(
     }
 
     [AllowAnonymous]
-    [CookieConsentNotRequired]
+
     [HttpPost("refresh")]
     [ProducesResponseType<AuthenticationSessionDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<AuthenticationSessionDto>> Refresh(CancellationToken cancellationToken)
@@ -100,7 +100,7 @@ public sealed class AuthController(
     }
 
     [AllowAnonymous]
-    [CookieConsentNotRequired]
+
     [HttpPost("logout")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> Logout(CancellationToken cancellationToken)

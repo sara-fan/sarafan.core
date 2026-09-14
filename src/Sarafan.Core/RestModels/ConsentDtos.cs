@@ -24,31 +24,26 @@ public sealed class LegalDocumentRequest : LegalDocumentPreviewRequest
 }
 
 public sealed record LegalDocumentDto(Guid Id, LegalDocumentKind Kind, string Locale, string Title, string DisplayVersion,
-    string Html, string SourceHash, string ContentHash, string RendererVersion, CookieCategory[] CookieCategories,
+    string Html, string SourceHash, string ContentHash, string RendererVersion,
     DateTimeOffset EffectiveAt, DateTimeOffset CreatedAt, int? CreatedBy,
     DateOnly EffectiveLocalDate, string EffectiveTimeZone, bool? CanDelete);
 public sealed record CurrentDocumentDto(LegalDocumentDto? Document, DateTimeOffset ServerNow, DateTimeOffset? NextChangeAt);
 public sealed record LegalDocumentPreviewDto(string Html);
 public sealed record LegalDocumentOpsItemDto(int Value, string Name, string RouteAlias);
-public sealed record CookieCategoryOpsItemDto(int Value, string Name, bool Required);
-public sealed record LegalDocumentOpsDto(IReadOnlyList<LegalDocumentOpsItemDto> Kinds,
-    IReadOnlyList<CookieCategoryOpsItemDto> CookieCategories);
+public sealed record LegalDocumentOpsDto(IReadOnlyList<LegalDocumentOpsItemDto> Kinds);
 
 public sealed class ConsentDecisionRequest
 {
     public Guid DocumentId { get; set; }
     [Required, StringLength(64)] public string ContentHash { get; set; } = "";
     [Required, StringLength(16)] public string Decision { get; set; } = "";
-    [MaxLength(16)] public CookieCategory[] Categories { get; set; } = [];
     public Guid IdempotencyKey { get; set; }
 }
-public sealed record CookieConsentDto(string Status, CookieCategory[] Categories, Guid? DocumentId,
-    DateTimeOffset? DecidedAt, DateTimeOffset? ExpiresAt, DateTimeOffset ServerNow, DateTimeOffset? NextChangeAt);
 public sealed record ConsentStatusDto(LegalDocumentKind Kind, string Status, Guid? RequiredVersion,
     Guid? AcceptedVersion, DateTimeOffset? DecidedAt);
 public sealed record ConsentHistoryDto(string Id, LegalDocumentKind Kind, string Decision, Guid DocumentId,
-    string DisplayVersion, string ContentHash, CookieCategory[] Categories, DateTimeOffset At,
-    string Source, string Scope, DateTimeOffset? AssociatedAt);
+    string DisplayVersion, string ContentHash, DateTimeOffset At,
+    string Source);
 public sealed record CustomerConsentsDto(int CustomerId, DateTimeOffset ServerNow,
     ConsentStatusDto[] Statuses, ConsentHistoryDto[] History,
     CustomerConsentWithdrawalRequestDto? WithdrawalRequest, DateTimeOffset? NextChangeAt = null);

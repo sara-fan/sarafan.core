@@ -11,7 +11,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[AllowAnonymous, CookieConsentNotRequired, Route("api/v1/customers")]
+[AllowAnonymous, Route("api/v1/customers")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class CustomerOperationsController(SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {

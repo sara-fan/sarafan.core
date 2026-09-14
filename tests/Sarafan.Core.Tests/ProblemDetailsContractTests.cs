@@ -43,7 +43,6 @@ public sealed class ProblemDetailsContractTests
                 AllowAutoRedirect = false,
                 HandleCookies = false
             });
-        await ConsentTestData.AcceptMandatoryCookies(_client);
     }
 
     [TearDown]

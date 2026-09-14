@@ -16,7 +16,6 @@ public sealed class LegalDocument
     public string SourceHash { get; set; } = "";
     public string ContentHash { get; set; } = "";
     public string RendererVersion { get; set; } = "";
-    public CookieCategory[] CookieCategories { get; set; } = [];
     public int CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset EffectiveAt { get; set; }

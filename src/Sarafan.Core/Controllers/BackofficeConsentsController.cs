@@ -10,7 +10,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[CookieConsentNotRequired, Authorize(Policy = BackofficePolicies.ManageConsentWithdrawalRequests), Route("api/v1/backoffice/consents")]
+[Authorize(Policy = BackofficePolicies.ManageConsentWithdrawalRequests), Route("api/v1/backoffice/consents")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class BackofficeConsentsController(ConsentWithdrawalRequestService withdrawalRequests, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {

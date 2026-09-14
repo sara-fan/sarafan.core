@@ -14,22 +14,10 @@ public sealed class ConsentEvent
     public string ContentHash { get; set; } = "";
     public LegalDocumentKind Kind { get; set; }
     public string Decision { get; set; } = "";
-    public CookieCategory[] Categories { get; set; } = [];
     public string Source { get; set; } = "";
     public Guid IdempotencyKey { get; set; }
     public DateTimeOffset At { get; set; }
-    public DateTimeOffset? ExpiresAt { get; set; }
     public DateTimeOffset RetainUntil { get; set; }
-}
-
-public sealed class ConsentAssociation
-{
-    public long Id { get; set; }
-    public long ConsentEventId { get; set; }
-    public ConsentEvent Event { get; set; } = null!;
-    public int CustomerId { get; set; }
-    public DateTimeOffset AssociatedAt { get; set; }
-    public Guid AuthenticationTokenId { get; set; }
 }
 
 public sealed class ConsentOnboarding

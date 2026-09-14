@@ -27,7 +27,6 @@ internal sealed class LegalDocumentConfiguration : IEntityTypeConfiguration<Lega
         builder.Property(item => item.SourceHash).HasColumnName("source_hash").HasMaxLength(64);
         builder.Property(item => item.ContentHash).HasColumnName("content_hash").HasMaxLength(64);
         builder.Property(item => item.RendererVersion).HasColumnName("renderer_version").HasMaxLength(64);
-        builder.Property(item => item.CookieCategories).HasColumnName("cookie_categories").HasColumnType("integer[]");
         builder.Property(item => item.CreatedBy).HasColumnName("created_by");
         builder.Property(item => item.CreatedAt).HasColumnName("created_at");
         builder.Property(item => item.EffectiveAt).HasColumnName("effective_at");

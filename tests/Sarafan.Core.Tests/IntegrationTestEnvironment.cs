@@ -3,6 +3,7 @@
 // This file is a part of the Sarafan application
 
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -37,7 +38,6 @@ public sealed class IntegrationTestEnvironment
 
     public static async Task ResetAsync()
     {
-        ConsentTestData.Reset();
         Factory.Services.GetRequiredService<VerificationAttemptStore>().Reset();
         await using var scope = Factory.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -125,6 +125,7 @@ public sealed class IntegrationTestEnvironment
             });
             builder.ConfigureServices(services =>
             {
+                services.AddDataProtection().UseEphemeralDataProtectionProvider();
                 services.RemoveAll<DbContextOptions<AppDbContext>>();
                 services.RemoveAll<IDbContextOptionsConfiguration<AppDbContext>>();
                 services.RemoveAll<AppDbContext>();

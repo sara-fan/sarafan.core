@@ -10,7 +10,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Controllers;
 
-[AllowAnonymous, CookieConsentNotRequired, Route("api/v1/orders")]
+[AllowAnonymous, Route("api/v1/orders")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class OrderOperationsController(SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
