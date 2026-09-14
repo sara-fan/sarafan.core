@@ -16,6 +16,12 @@ public sealed class OrdersController(
     OrderService orders,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
+    [HttpGet]
+    [ProducesResponseType<IReadOnlyList<CustomerOrderListItemDto>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<CustomerOrderListItemDto>>> List(
+        CancellationToken cancellationToken)
+        => Ok(await orders.ListAsync(CurrentCustomerId(), cancellationToken));
+
     [HttpGet("{id:long}")]
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<OrderDto>> Get(

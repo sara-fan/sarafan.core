@@ -25,6 +25,18 @@ public sealed class OrderService(
     private const int CodeAllocationAttempts = 10;
     private const int MaximumSearchLength = 2048;
 
+    public Task<IReadOnlyList<CustomerOrderListItemDto>> ListAsync(
+        int customerId,
+        CancellationToken cancellationToken)
+        => OperationLogging.RunAsync(
+            logger,
+            $"{typeof(OrderService).FullName}.{nameof(ListAsync)}",
+            () => LogValueSummary.Inputs(
+                (nameof(customerId), customerId),
+                (nameof(cancellationToken), cancellationToken)),
+            () => ListCoreAsync(customerId, cancellationToken),
+            cancellationToken);
+
     public Task<OrderDto> GetAsync(
         int customerId,
         long orderId,
@@ -350,6 +362,33 @@ public sealed class OrderService(
         return ToDto(order);
     }
 
+    private async Task<IReadOnlyList<CustomerOrderListItemDto>> ListCoreAsync(
+        int customerId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await database.Orders
+            .AsNoTracking()
+            .Where(item => item.CustomerId == customerId && item.Customer.OrderCode != null)
+            .OrderByDescending(item => item.CreatedAt)
+            .ThenByDescending(item => item.Id)
+            .Select(item => new CustomerOrderProjection(
+                item.Id,
+                item.Customer.OrderCode!,
+                item.CustomerOrderNumber,
+                item.Status,
+                item.SourceUrl,
+                item.ProductName,
+                item.StoreName,
+                item.ImageUrl,
+                item.SellerPrice,
+                item.SellerPriceCurrency,
+                item.Quantity,
+                item.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+
+        return rows.Select(ToCustomerDto).ToArray();
+    }
+
     private static string NormalizeSourceUrl(string? sourceUrl)
     {
         var normalized = sourceUrl?.Trim();
@@ -453,7 +492,35 @@ public sealed class OrderService(
         order.CreatedAt,
         order.UpdatedAt);
 
+    private static CustomerOrderListItemDto ToCustomerDto(CustomerOrderProjection order) => new(
+        order.Id,
+        $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
+        order.Status,
+        order.SourceUrl,
+        order.ProductName,
+        order.StoreName,
+        order.ImageUrl,
+        order.SellerPrice.HasValue && order.SellerPriceCurrency.HasValue
+            ? new OrderSellerPriceDto(order.SellerPrice.Value, order.SellerPriceCurrency.Value)
+            : null,
+        order.Quantity,
+        order.CreatedAt);
+
     private sealed record Allocation(Order Order, string CustomerOrderCode);
+
+    private sealed record CustomerOrderProjection(
+        long Id,
+        string CustomerOrderCode,
+        long CustomerOrderNumber,
+        OrderStatus Status,
+        string SourceUrl,
+        string? ProductName,
+        string? StoreName,
+        string? ImageUrl,
+        decimal? SellerPrice,
+        Currency? SellerPriceCurrency,
+        int Quantity,
+        DateTimeOffset CreatedAt);
 
     private sealed record BackofficeOrderProjection(
         string CustomerOrderCode,

@@ -137,6 +137,70 @@ public sealed class OrderCreationTests
     }
 
     [Test]
+    public async Task List_IsOwnerScopedNewestFirstAndReturnsCardFields()
+    {
+        using var emptyResponse = await _client.GetAsync("/api/v1/orders");
+        var emptyItems = await emptyResponse.Content.ReadFromJsonAsync<CustomerOrderListItemDto[]>();
+        using var firstResponse = await Create(_client, "https://shop.example/first", Guid.NewGuid(), quantity: 2);
+        var first = (await firstResponse.Content.ReadFromJsonAsync<OrderDto>())!;
+        using var secondResponse = await Create(_client, "https://shop.example/second", Guid.NewGuid());
+        var second = (await secondResponse.Content.ReadFromJsonAsync<OrderDto>())!;
+
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var firstOrder = await database.Orders.SingleAsync(item => item.Id == first.Id);
+            firstOrder.SetProductSnapshot(
+                "Первый товар",
+                "Магазин",
+                "https://images.example/first.jpg",
+                12.34m,
+                Currency.Usd,
+                null,
+                null,
+                null,
+                null,
+                null,
+                DateTimeOffset.UtcNow);
+            await database.SaveChangesAsync();
+        }
+
+        using var otherClient = CreateClient(_app);
+        await Register(otherClient);
+        using var otherCreate = await Create(otherClient, "https://other.example/product", Guid.NewGuid());
+        var other = (await otherCreate.Content.ReadFromJsonAsync<OrderDto>())!;
+
+        using var response = await _client.GetAsync("/api/v1/orders");
+        var items = await response.Content.ReadFromJsonAsync<CustomerOrderListItemDto[]>();
+        using var otherResponse = await otherClient.GetAsync("/api/v1/orders");
+        var otherItems = await otherResponse.Content.ReadFromJsonAsync<CustomerOrderListItemDto[]>();
+        using var anonymousClient = CreateClient(_app);
+        await ConsentTestData.AcceptMandatoryCookies(anonymousClient);
+        using var anonymousResponse = await anonymousClient.GetAsync("/api/v1/orders");
+
+        response.EnsureSuccessStatusCode();
+        otherResponse.EnsureSuccessStatusCode();
+        emptyResponse.EnsureSuccessStatusCode();
+        Assert.That(items, Is.Not.Null);
+        var customerItems = items!;
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(emptyItems, Is.Empty);
+            Assert.That(customerItems.Select(item => item.Id), Is.EqualTo(new[] { second.Id, first.Id }));
+            Assert.That(customerItems, Has.None.Property(nameof(CustomerOrderListItemDto.Id)).EqualTo(other.Id));
+            Assert.That(customerItems[0].OrderNumber, Is.EqualTo(second.OrderNumber));
+            Assert.That(customerItems[0].CreatedAt, Is.Not.EqualTo(default(DateTimeOffset)));
+            Assert.That(customerItems[1].ProductName, Is.EqualTo("Первый товар"));
+            Assert.That(customerItems[1].StoreName, Is.EqualTo("Магазин"));
+            Assert.That(customerItems[1].ImageUrl, Is.EqualTo("https://images.example/first.jpg"));
+            Assert.That(customerItems[1].SellerPrice, Is.EqualTo(new OrderSellerPriceDto(12.34m, Currency.Usd)));
+            Assert.That(customerItems[1].Quantity, Is.EqualTo(2));
+            Assert.That(otherItems, Has.One.Property(nameof(CustomerOrderListItemDto.Id)).EqualTo(other.Id));
+            Assert.That(anonymousResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        }
+    }
+
+    [Test]
     public async Task Get_UnknownOrder_ReturnsNotFound()
     {
         using var response = await _client.GetAsync("/api/v1/orders/9223372036854775807");
