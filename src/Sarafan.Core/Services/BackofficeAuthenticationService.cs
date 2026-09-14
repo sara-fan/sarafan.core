@@ -88,7 +88,7 @@ public sealed class BackofficeAuthenticationService(
             .SingleOrDefaultAsync(item => item.NormalizedEmail == email, cancellationToken);
         if (user is null
             || !user.IsActive
-            || (user.IsDemo && BackofficeUserService.RealOperationsEnabled(_bootstrapOptions))
+            || (user.IsDemo && _bootstrapOptions.RealPaymentIntegrationEnabled)
             || user.UserRoles.Count == 0
             || !VerifyPassword(request.Password, user.PasswordHash))
         {
@@ -134,7 +134,7 @@ public sealed class BackofficeAuthenticationService(
             || current.ReplacedByTokenHash is not null
             || current.ExpiresAt <= now
             || !current.BackofficeUser.IsActive
-            || (current.BackofficeUser.IsDemo && BackofficeUserService.RealOperationsEnabled(_bootstrapOptions)))
+            || (current.BackofficeUser.IsDemo && _bootstrapOptions.RealPaymentIntegrationEnabled))
         {
             await RevokeFamilyAsync(current.FamilyId, now, cancellationToken);
             await database.SaveChangesAsync(cancellationToken);

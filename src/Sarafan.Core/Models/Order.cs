@@ -16,7 +16,8 @@ public sealed class Order
         string sourceUrl,
         int quantity,
         string? comment,
-        Guid creationIdempotencyKey)
+        Guid creationIdempotencyKey,
+        DateTimeOffset createdAt)
     {
         if (quantity <= 0)
         {
@@ -34,6 +35,8 @@ public sealed class Order
         Quantity = quantity;
         Comment = comment;
         CreationIdempotencyKey = creationIdempotencyKey;
+        CreatedAt = NormalizeToPostgresTimestamp(createdAt);
+        UpdatedAt = CreatedAt;
     }
 
     public long Id { get; private set; }
@@ -54,6 +57,8 @@ public sealed class Order
     public string? Comment { get; private set; }
     public long? AppliedExchangeRateHistoryId { get; private set; }
     internal Guid CreationIdempotencyKey { get; private set; }
+    public DateTimeOffset CreatedAt { get; private set; }
+    public DateTimeOffset UpdatedAt { get; private set; }
 
     public Customer Customer { get; private set; } = null!;
     public ExchangeRateHistory? AppliedExchangeRateHistory { get; private set; }
@@ -68,7 +73,8 @@ public sealed class Order
         decimal? widthCm,
         decimal? heightCm,
         IReadOnlyDictionary<string, string>? characteristics,
-        ExchangeRateHistory? appliedExchangeRateHistory)
+        ExchangeRateHistory? appliedExchangeRateHistory,
+        DateTimeOffset updatedAt)
     {
         if (sellerPrice.HasValue != sellerPriceCurrency.HasValue || sellerPrice is <= 0)
         {
@@ -93,6 +99,28 @@ public sealed class Order
             throw new ArgumentException("The applied exchange rate base currency must match the seller price currency.");
         }
 
+        var normalizedUpdatedAt = NormalizeToPostgresTimestamp(updatedAt);
+        if (normalizedUpdatedAt < UpdatedAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(updatedAt),
+                updatedAt,
+                "The order update time cannot precede its previous update time.");
+        }
+
+        if (normalizedUpdatedAt == UpdatedAt)
+        {
+            if (UpdatedAt > DateTimeOffset.MaxValue.AddMicroseconds(-1))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(updatedAt),
+                    updatedAt,
+                    "The order update time cannot advance beyond its maximum value.");
+            }
+
+            normalizedUpdatedAt = UpdatedAt.AddMicroseconds(1);
+        }
+
         ProductName = productName;
         StoreName = storeName;
         ImageUrl = imageUrl;
@@ -104,5 +132,12 @@ public sealed class Order
         Characteristics = characteristics?.ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
         AppliedExchangeRateHistory = appliedExchangeRateHistory;
         AppliedExchangeRateHistoryId = appliedExchangeRateHistory?.Id;
+        UpdatedAt = normalizedUpdatedAt;
+    }
+
+    private static DateTimeOffset NormalizeToPostgresTimestamp(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        return new DateTimeOffset(utc.Ticks - utc.Ticks % 10, TimeSpan.Zero);
     }
 }

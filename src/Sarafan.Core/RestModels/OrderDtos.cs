@@ -59,3 +59,32 @@ public sealed record OrderStatusOpsItemDto(
 public sealed record OrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,
     IReadOnlyList<EnumOpsItemDto> Currencies);
+
+public sealed record BackofficeOrderStatusFilterGroupDto(
+    string RouteAlias,
+    string Name,
+    IReadOnlyList<OrderStatus> Statuses);
+
+public sealed record BackofficeOrderOpsDto(
+    IReadOnlyList<OrderStatusOpsItemDto> Statuses,
+    IReadOnlyList<EnumOpsItemDto> Currencies,
+    IReadOnlyList<BackofficeOrderStatusFilterGroupDto> StatusGroups);
+
+public sealed record BackofficeOrderListItemDto(
+    string OrderNumber,
+    OrderStatus Status,
+    string SourceUrl,
+    string? ProductName,
+    string? StoreName,
+    OrderSellerPriceDto? SellerPrice,
+    int Quantity,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed class BackofficeOrderPageDto : PagedResult<BackofficeOrderListItemDto>
+{
+    public OrderStatus? Status { get; init; }
+    public string? StatusGroup { get; init; }
+    public DateOnly? CreatedFrom { get; init; }
+    public DateOnly? CreatedTo { get; init; }
+}

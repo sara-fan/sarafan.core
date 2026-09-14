@@ -3,8 +3,6 @@
 // This file is a part of the Sarafan application
 
 using Microsoft.Extensions.Options;
-using Sarafan.Core.Services;
-
 namespace Sarafan.Core.Authentication;
 
 public sealed class VerificationCodeReleaseGate(
@@ -15,11 +13,11 @@ public sealed class VerificationCodeReleaseGate(
 
     public void EnsureAllowed()
     {
-        if (BackofficeUserService.RealOperationsEnabled(_options)
+        if (_options.RealPaymentIntegrationEnabled
             && !provider.IsProductionReady)
         {
             throw new InvalidOperationException(
-                "The phone-suffix verification provider is forbidden with real orders or real payment integration");
+                "The phone-suffix verification provider is forbidden with real payment integration");
         }
     }
 }

@@ -93,7 +93,6 @@ Supply these native Core settings through a private process environment; do not 
 | `BackofficeBootstrap__Enabled` | `true` only for the initial migration run |
 | `BackofficeBootstrap__Email` | Initial Administrator email obtained securely |
 | `BackofficeBootstrap__Password` | Initial password, 8 to 18 characters |
-| `BackofficeBootstrap__RealOrdersEnabled` | `false` |
 | `BackofficeBootstrap__RealPaymentIntegrationEnabled` | `false` |
 
 With the native database connection from Option B still selected, run:
@@ -105,7 +104,7 @@ dotnet run --project src/Sarafan.Core/Sarafan.Core.csproj --launch-profile http 
 For Option A, provide the same settings through the shell environment and pass their names to a one-off container. Ensure `db` is healthy first:
 
 ```powershell
-docker compose -p sarafan-core-dev -f docker-compose.yml run --rm --no-deps -e BackofficeBootstrap__Enabled -e BackofficeBootstrap__Email -e BackofficeBootstrap__Password -e BackofficeBootstrap__RealOrdersEnabled -e BackofficeBootstrap__RealPaymentIntegrationEnabled api --migrate-only
+docker compose -p sarafan-core-dev -f docker-compose.yml run --rm --no-deps -e BackofficeBootstrap__Enabled -e BackofficeBootstrap__Email -e BackofficeBootstrap__Password -e BackofficeBootstrap__RealPaymentIntegrationEnabled api --migrate-only
 ```
 
 Disable bootstrap and remove its email/password variables after provisioning, then start the native API if applicable. Verify staff login and change the initial password; the account remains marked as demo until its password changes. The normal Docker API service keeps bootstrap disabled. Cloud equivalents are listed below.
@@ -137,7 +136,7 @@ This alternative writes reports to `TestResults/`. Direct local `--wait` command
 
 The cloud topology runs PostgreSQL, backup, a one-shot migration service, Core, the customer UI and Back Office. Core and PostgreSQL stay on the private application network; each frontend proxies API requests on its own origin. Adminer is absent.
 
-**Release gate:** the current application verifies customer phone numbers with their last four digits in every runtime environment, including `Production`. It is a demonstration mechanism and must be replaced and disabled before real orders or payment integration. Keep both real-operation flags false until that work is complete. Active demo staff accounts also block real-operation startup. Track the release gate in the [MVP delivery plan](https://github.com/sara-fan/sarafan.spec/issues/26).
+**Release gate:** the current application verifies customer phone numbers with their last four digits in every runtime environment, including `Production`. This demonstration mechanism permits all non-payment functionality, including orders, but must be replaced and disabled before real payment integration. Keep the real-payment integration flag false until that work is complete. Active demo staff accounts also block startup with real payment integration. Track the release gate in the [MVP delivery plan](https://github.com/sara-fan/sarafan.spec/issues/26).
 
 ### Choose one edge mode
 
@@ -177,7 +176,7 @@ Edit `sarafan.env` before deployment. It is ignored by Git. The scripts **source
 | `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT` | Positive health-wait timeout in seconds, default 180 |
 | `SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED` | `true` only when creating the first Administrator |
 | `SARAFAN_BACKOFFICE_BOOTSTRAP_EMAIL`, `SARAFAN_BACKOFFICE_BOOTSTRAP_PASSWORD` | Supply securely only for bootstrap; password must contain 8 to 18 characters |
-| `SARAFAN_REAL_ORDERS_ENABLED`, `SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED` | `false` while demonstration authentication is in use |
+| `SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED` | `false` while demonstration authentication is in use |
 | `SARAFAN_UI_LOGGING_ENABLED`, `SARAFAN_BACKOFFICE_LOGGING_ENABLED` | Independent frontend logging switches, default `false` |
 | `OTEL_LOGS_EXPORTER`, `OTEL_TRACES_EXPORTER` | Default `none`; use `otlp` only when sending telemetry to a configured collector |
 

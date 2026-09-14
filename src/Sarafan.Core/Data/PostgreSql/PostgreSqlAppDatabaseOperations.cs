@@ -108,6 +108,23 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
         IQueryable<CustomerConsentWithdrawalRequest> query,
         string search)
         => query.Where(item => EF.Functions.Like(item.CustomerId.ToString(), $"%{search}%"));
+
+    public IQueryable<Order> ApplyOrderSearch(IQueryable<Order> query, string search)
+    {
+        var escaped = search
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
+        var pattern = $"%{escaped}%";
+        return query.Where(item =>
+            EF.Functions.ILike(
+                item.Customer.OrderCode + "-" + item.CustomerOrderNumber.ToString(),
+                pattern,
+                "\\")
+            || EF.Functions.ILike(item.SourceUrl, pattern, "\\")
+            || item.ProductName != null && EF.Functions.ILike(item.ProductName, pattern, "\\")
+            || item.StoreName != null && EF.Functions.ILike(item.StoreName, pattern, "\\"));
+    }
 }
 
 [ExcludeFromCodeCoverage]

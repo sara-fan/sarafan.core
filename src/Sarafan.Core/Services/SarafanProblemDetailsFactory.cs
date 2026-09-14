@@ -108,6 +108,10 @@ public sealed class SarafanProblemDetailsFactory(
                 StatusCodes.Status400BadRequest,
                 "Некорректный комментарий",
                 "Комментарий не должен превышать 2000 символов."),
+            ["invalid_order_list_filter"] = new(
+                StatusCodes.Status400BadRequest,
+                "Некорректные параметры списка заказов",
+                "Проверьте страницу, размер страницы, поиск, статус, даты и сортировку."),
             ["invalid_order_idempotency_key"] = new(
                 StatusCodes.Status400BadRequest,
                 "Некорректный ключ запроса",

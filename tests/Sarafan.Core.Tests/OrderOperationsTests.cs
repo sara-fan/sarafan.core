@@ -53,7 +53,7 @@ public sealed class OrderOperationsTests
             new OrderStatusOpsItemDto(330, "Получен на складе в США", "delivered_to_us_warehouse", 300, "Выполняется", "in_progress"),
             new OrderStatusOpsItemDto(340, "Доставляем в Россию", "delivering_to_russia", 300, "Выполняется", "in_progress"),
             new OrderStatusOpsItemDto(360, "Получен на складе в России", "delivered_to_russian_warehouse", 300, "Выполняется", "in_progress"),
-            new OrderStatusOpsItemDto(380, "Доставка по России", "delivering_in_russia", 300, "Выполняется", "in_progress"),
+            new OrderStatusOpsItemDto(380, "Доставляем по России", "delivering_in_russia", 300, "Выполняется", "in_progress"),
             new OrderStatusOpsItemDto(400, "Получен", "received", 400, "Завершён", "completed"),
             new OrderStatusOpsItemDto(500, "Отменён", "cancelled", 500, "Отменён", "cancelled")
         }));

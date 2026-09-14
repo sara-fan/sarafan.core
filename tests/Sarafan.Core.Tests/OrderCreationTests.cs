@@ -54,12 +54,14 @@ public sealed class OrderCreationTests
     {
         Assert.That(_session.Customer.OrderCode, Is.Null);
         var firstKey = Guid.NewGuid();
+        var beforeCreate = DateTimeOffset.UtcNow;
         using var firstResponse = await Create(
             _client,
             "  https://shop.example/product?id=1  ",
             firstKey,
             quantity: 2,
             comment: "  Упаковать бережно  ");
+        var afterCreate = DateTimeOffset.UtcNow;
         var first = await firstResponse.Content.ReadFromJsonAsync<OrderDto>();
         using var replayResponse = await Create(
             _client,
@@ -123,10 +125,14 @@ public sealed class OrderCreationTests
         await using var scope = _app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var storedCustomer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == _session.Customer.Id);
+        var storedFirstOrder = await database.Orders.AsNoTracking().SingleAsync(item => item.Id == first!.Id);
         using (Assert.EnterMultipleScope())
         {
             Assert.That(storedCustomer.NextOrderNumber, Is.EqualTo(3));
             Assert.That(await database.Orders.CountAsync(item => item.CustomerId == storedCustomer.Id), Is.EqualTo(2));
+            Assert.That(storedFirstOrder.CreatedAt, Is.InRange(beforeCreate, afterCreate));
+            Assert.That(storedFirstOrder.UpdatedAt, Is.EqualTo(storedFirstOrder.CreatedAt));
+            Assert.That(storedFirstOrder.CreatedAt.Offset, Is.EqualTo(TimeSpan.Zero));
         }
     }
 
@@ -174,7 +180,8 @@ public sealed class OrderCreationTests
                 20.50m,
                 30.75m,
                 new Dictionary<string, string> { ["Цвет"] = "Синий" },
-                rate);
+                rate,
+                DateTimeOffset.UtcNow);
             await database.SaveChangesAsync();
         }
 
@@ -211,55 +218,20 @@ public sealed class OrderCreationTests
     }
 
     [Test]
-    public async Task Operations_AreHiddenWhenRealOperationsAreDisabled()
+    public async Task DemoPhoneSuffixAuthorization_AllowsOrderOperationsWhenPaymentsAreDisabled()
     {
-        using var app = IsolatedApp(realOrdersEnabled: false);
-        using var client = CreateClient(app);
-        var session = await Register(client);
-
-        using var create = await Create(client, "https://shop.example/product", Guid.NewGuid());
-        var createProblem = await create.Content.ReadFromJsonAsync<SarafanProblemDetails>();
-        using var missingKey = await CreateRaw(client, null, null);
-        var missingKeyProblem = await missingKey.Content.ReadFromJsonAsync<SarafanProblemDetails>();
-        using var malformedKey = await CreateRaw(client, "ftp://shop.example/product", "not-a-guid");
-        var malformedKeyProblem = await malformedKey.Content.ReadFromJsonAsync<SarafanProblemDetails>();
-        using var malformedJson = await SendMalformedCreate(client);
-        var malformedJsonProblem = await malformedJson.Content.ReadFromJsonAsync<SarafanProblemDetails>();
-        using var get = await client.GetAsync("/api/v1/orders/1");
-        var getProblem = await get.Content.ReadFromJsonAsync<SarafanProblemDetails>();
-
-        await using var scope = app.Services.CreateAsyncScope();
-        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var orders = scope.ServiceProvider.GetRequiredService<OrderService>();
-        var customer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == session.Customer.Id);
-        var createException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
-            customer.Id,
-            null,
-            1,
-            null,
-            Guid.Empty,
-            default));
-        var getException = Assert.ThrowsAsync<ServiceException>(() => orders.GetAsync(
-            customer.Id,
-            1,
-            default));
+        Assert.That(_app.Services.GetRequiredService<IVerificationCodeProvider>(),
+            Is.TypeOf<PhoneSuffixVerificationCodeProvider>());
+        using var create = await Create(_client, "https://shop.example/product", Guid.NewGuid());
+        var order = await create.Content.ReadFromJsonAsync<OrderDto>();
+        using var get = await _client.GetAsync($"/api/v1/orders/{order!.Id}");
+        var stored = await get.Content.ReadFromJsonAsync<OrderDto>();
 
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(create.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-            Assert.That(createProblem?.Code, Is.EqualTo("resource_not_found"));
-            Assert.That(missingKey.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-            Assert.That(missingKeyProblem?.Code, Is.EqualTo("resource_not_found"));
-            Assert.That(malformedKey.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-            Assert.That(malformedKeyProblem?.Code, Is.EqualTo("resource_not_found"));
-            Assert.That(malformedJson.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-            Assert.That(malformedJsonProblem?.Code, Is.EqualTo("resource_not_found"));
-            Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-            Assert.That(getProblem?.Code, Is.EqualTo("resource_not_found"));
-            Assert.That(createException?.Code, Is.EqualTo("resource_not_found"));
-            Assert.That(getException?.Code, Is.EqualTo("resource_not_found"));
-            Assert.That(customer.OrderCode, Is.Null);
-            Assert.That(await database.Orders.AnyAsync(item => item.CustomerId == customer.Id), Is.False);
+            Assert.That(create.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+            Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(stored, Is.EqualTo(order));
         }
     }
 
@@ -510,20 +482,11 @@ public sealed class OrderCreationTests
         return await client.SendAsync(request);
     }
 
-    private static WebApplicationFactory<Program> IsolatedApp(
-        bool realOrdersEnabled = true,
-        CollisionHarness? collisions = null)
+    private static WebApplicationFactory<Program> IsolatedApp(CollisionHarness? collisions = null)
         => IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<VerificationAttemptStore>();
             services.AddSingleton<VerificationAttemptStore>();
-            services.RemoveAll<IVerificationCodeProvider>();
-            services.AddSingleton<IVerificationCodeProvider>(new ProductionReadyVerificationCodeProvider());
-            services.Configure<BackofficeBootstrapOptions>(options =>
-            {
-                options.RealOrdersEnabled = realOrdersEnabled;
-                options.RealPaymentIntegrationEnabled = false;
-            });
             if (collisions is not null)
             {
                 services.AddDbContext<AppDbContext>(options => options.AddInterceptors(collisions));
@@ -544,26 +507,6 @@ public sealed class OrderCreationTests
             user.IsDemo = false;
         }
         await database.SaveChangesAsync();
-    }
-
-    private sealed class ProductionReadyVerificationCodeProvider : IVerificationCodeProvider
-    {
-        public bool IsProductionReady => true;
-
-        public Task RequestCodeAsync(string phone, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> VerifyCodeAsync(string phone, string? code, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var expectedCode = phone.Length >= 4 ? phone[^4..] : string.Empty;
-            return Task.FromResult(
-                expectedCode.Length == 4
-                && string.Equals(code?.Trim(), expectedCode, StringComparison.Ordinal));
-        }
     }
 
     private sealed class CollisionHarness : SaveChangesInterceptor, ICustomerOrderCodeCollisionDetector

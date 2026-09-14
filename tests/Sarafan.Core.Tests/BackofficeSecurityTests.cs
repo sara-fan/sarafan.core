@@ -210,9 +210,6 @@ public sealed class BackofficeSecurityTests
         Assert.Throws<InvalidOperationException>(bootstrap.Validate);
         bootstrap.FirstName = "Maxim";
         Assert.DoesNotThrow(bootstrap.Validate);
-        bootstrap.RealOrdersEnabled = true;
-        Assert.Throws<InvalidOperationException>(bootstrap.Validate);
-        bootstrap.RealOrdersEnabled = false;
         bootstrap.RealPaymentIntegrationEnabled = true;
         Assert.Throws<InvalidOperationException>(bootstrap.Validate);
     }
@@ -358,19 +355,19 @@ public sealed class BackofficeSecurityTests
             NullLogger<BackofficeBootstrapService>.Instance);
         Assert.ThrowsAsync<InvalidOperationException>(async () => await conflicting.ProvisionAsync(default));
 
-        var realOperations = new BackofficeBootstrapService(
+        var realPaymentIntegration = new BackofficeBootstrapService(
             database,
             hasher,
-            Options.Create(new BackofficeBootstrapOptions { RealOrdersEnabled = true }),
+            Options.Create(new BackofficeBootstrapOptions { RealPaymentIntegrationEnabled = true }),
             TimeProvider.System,
             NullLogger<BackofficeBootstrapService>.Instance);
         Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await realOperations.EnsureReleaseGateAsync(default));
+            await realPaymentIntegration.EnsureReleaseGateAsync(default));
 
         var restrictedUsers = new BackofficeUserService(
             database,
             hasher,
-            Options.Create(new BackofficeBootstrapOptions { RealOrdersEnabled = true }),
+            Options.Create(new BackofficeBootstrapOptions { RealPaymentIntegrationEnabled = true }),
             TimeProvider.System,
             NullLogger<BackofficeUserService>.Instance);
         var restricted = Assert.ThrowsAsync<ServiceException>(() => restrictedUsers.UpdateAsync(

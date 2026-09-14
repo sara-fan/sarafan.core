@@ -39,10 +39,10 @@ public sealed class BackofficeJwtBearerEvents(
             .Where(item => item.Id == userId)
             .Select(item => new { item.IsActive, item.IsDemo, item.TokenVersion })
             .SingleOrDefaultAsync(context.HttpContext.RequestAborted);
-        var realOperationsEnabled = BackofficeUserService.RealOperationsEnabled(bootstrapOptions.Value);
+        var realPaymentIntegrationEnabled = bootstrapOptions.Value.RealPaymentIntegrationEnabled;
         if (current is null
             || !current.IsActive
-            || (current.IsDemo && realOperationsEnabled)
+            || (current.IsDemo && realPaymentIntegrationEnabled)
             || current.TokenVersion != tokenVersion)
         {
             context.Fail("Back-office session is no longer valid");

@@ -81,7 +81,7 @@ public sealed class BackofficeBootstrapService(
 
     private async Task EnsureReleaseGateCoreAsync(CancellationToken cancellationToken)
     {
-        if (!BackofficeUserService.RealOperationsEnabled(_options))
+        if (!_options.RealPaymentIntegrationEnabled)
         {
             return;
         }
@@ -91,7 +91,7 @@ public sealed class BackofficeBootstrapService(
                 cancellationToken))
         {
             throw new InvalidOperationException(
-                "An active demo back-office account is forbidden with real orders or real payment integration");
+                "An active demo back-office account is forbidden with real payment integration");
         }
     }
 }
