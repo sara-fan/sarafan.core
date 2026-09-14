@@ -186,6 +186,7 @@ public sealed class OrderCreationTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(emptyItems, Is.Empty);
+            Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
             Assert.That(customerItems.Select(item => item.Id), Is.EqualTo(new[] { second.Id, first.Id }));
             Assert.That(customerItems, Has.None.Property(nameof(CustomerOrderListItemDto.Id)).EqualTo(other.Id));
             Assert.That(customerItems[0].OrderNumber, Is.EqualTo(second.OrderNumber));
@@ -265,6 +266,7 @@ public sealed class OrderCreationTests
         response.EnsureSuccessStatusCode();
         using (Assert.EnterMultipleScope())
         {
+            Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
             Assert.That(orderDto?.ProductName, Is.EqualTo("Товар"));
             Assert.That(orderDto?.StoreName, Is.EqualTo("Магазин"));
             Assert.That(orderDto?.ImageUrl, Is.EqualTo("https://images.example/product.jpg"));

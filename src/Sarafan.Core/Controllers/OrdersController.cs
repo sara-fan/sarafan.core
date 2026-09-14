@@ -12,6 +12,7 @@ namespace Sarafan.Core.Controllers;
 
 [Authorize]
 [Route("api/v1/orders")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class OrdersController(
     OrderService orders,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
