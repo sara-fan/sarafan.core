@@ -62,7 +62,7 @@ public sealed class OrderProductContractTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(order.CreatedAt, Is.EqualTo(CreatedAt));
-            Assert.That(order.UpdatedAt, Is.EqualTo(CreatedAt.AddTicks(1)));
+            Assert.That(order.UpdatedAt, Is.EqualTo(CreatedAt.AddTicks(10)));
         }
     }
 
