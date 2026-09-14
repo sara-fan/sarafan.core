@@ -67,7 +67,8 @@ public sealed record OrderStatusOpsItemDto(
     int UpperStatusValue,
     string UpperStatusName,
     string UpperStatusRouteAlias,
-    bool IsTerminal);
+    bool IsTerminal,
+    int ProgressPercent);
 
 public sealed record OrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,

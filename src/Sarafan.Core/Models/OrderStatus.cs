@@ -125,6 +125,21 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringInRussia => false,
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
+
+    public static int GetProgressPercent(this OrderStatus status) => status switch
+    {
+        OrderStatus.UnderReview => 14,
+        OrderStatus.QuoteReady or OrderStatus.QuoteExpired => 32,
+        OrderStatus.Paid => 48,
+        OrderStatus.PurchasingItem => 56,
+        OrderStatus.DeliveringToUsWarehouse => 64,
+        OrderStatus.DeliveredToUsWarehouse => 70,
+        OrderStatus.DeliveringToRussia => 78,
+        OrderStatus.DeliveredToRussianWarehouse => 86,
+        OrderStatus.DeliveringInRussia => 94,
+        OrderStatus.Received or OrderStatus.Cancelled => 100,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+    };
 }
 
 public sealed record OrderStatusFilterGroup(
