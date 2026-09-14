@@ -44,6 +44,7 @@ internal static class LogValueSummary
         IReadOnlyCollection<BackofficeRoleDto> roles => $"BackofficeRoleDto collection(count={roles.Count})",
         CustomerDto => "CustomerDto([redacted])",
         OrderDto => "OrderDto(identity/product/pricing=[redacted])",
+        IReadOnlyCollection<CustomerOrderListItemDto> orders => $"CustomerOrderListItemDto collection(count={orders.Count})",
         Customer => "Customer([redacted])",
         BackofficeUser => "BackofficeUser([redacted])",
         AuthenticationSession => "AuthenticationSession(tokens/customer=[redacted])",

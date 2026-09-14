@@ -473,6 +473,7 @@ public sealed class OperationLoggingTests
         orderRequest.Headers.Add("Idempotency-Key", orderKey.ToString("D"));
         using var createOrder = await client.SendAsync(orderRequest);
         var createdOrder = (await createOrder.Content.ReadFromJsonAsync<OrderDto>())!;
+        using var listOrders = await client.GetAsync("/api/v1/orders");
         using var getOrder = await client.GetAsync($"/api/v1/orders/{createdOrder.Id}");
         var customerToken = session.AccessToken;
         using var backofficeLogin = await client.PostAsJsonAsync("/api/v1/backoffice/auth/login", new BackofficeLoginRequest
@@ -503,6 +504,7 @@ public sealed class OperationLoggingTests
         Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(createOrder.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        Assert.That(listOrders.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(getOrder.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(backofficeOrderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(backofficeOrders.StatusCode, Is.EqualTo(HttpStatusCode.OK));
@@ -548,6 +550,7 @@ public sealed class OperationLoggingTests
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("status=400")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("AuthenticationSession(tokens/customer=[redacted])")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("CustomerDto([redacted])")), Is.True);
+        Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("CustomerOrderListItemDto collection(count=")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
         Assert.That(
             string.Join(' ', _logs.Records.Select(record => record.Message)),

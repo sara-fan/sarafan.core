@@ -30,7 +30,8 @@ internal static class OrderOperationsCatalog
                 status.GetRouteAlias(),
                 status.GetUpperStatusValue(),
                 status.GetUpperStatusDisplayName(),
-                status.GetUpperStatusRouteAlias()))
+                status.GetUpperStatusRouteAlias(),
+                status.IsTerminal()))
             .ToArray();
 
     private static EnumOpsItemDto[] Currencies()

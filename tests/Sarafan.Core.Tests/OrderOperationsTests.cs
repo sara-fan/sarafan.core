@@ -44,18 +44,18 @@ public sealed class OrderOperationsTests
 
         Assert.That(body!.Statuses, Is.EqualTo(new[]
         {
-            new OrderStatusOpsItemDto(0, "На проверке", "under_review", 0, "На проверке", "under_review"),
-            new OrderStatusOpsItemDto(100, "Расчёт готов", "quote_ready", 100, "Расчёт готов", "quote_ready"),
-            new OrderStatusOpsItemDto(200, "Расчёт истёк", "quote_expired", 200, "Расчёт истёк", "quote_expired"),
-            new OrderStatusOpsItemDto(300, "Оплачен", "paid", 300, "Выполняется", "in_progress"),
-            new OrderStatusOpsItemDto(310, "Выкупаем товар", "purchasing_item", 300, "Выполняется", "in_progress"),
-            new OrderStatusOpsItemDto(320, "Доставляем на склад в США", "delivering_to_us_warehouse", 300, "Выполняется", "in_progress"),
-            new OrderStatusOpsItemDto(330, "Получен на складе в США", "delivered_to_us_warehouse", 300, "Выполняется", "in_progress"),
-            new OrderStatusOpsItemDto(340, "Доставляем в Россию", "delivering_to_russia", 300, "Выполняется", "in_progress"),
-            new OrderStatusOpsItemDto(360, "Получен на складе в России", "delivered_to_russian_warehouse", 300, "Выполняется", "in_progress"),
-            new OrderStatusOpsItemDto(380, "Доставляем по России", "delivering_in_russia", 300, "Выполняется", "in_progress"),
-            new OrderStatusOpsItemDto(400, "Получен", "received", 400, "Завершён", "completed"),
-            new OrderStatusOpsItemDto(500, "Отменён", "cancelled", 500, "Отменён", "cancelled")
+            new OrderStatusOpsItemDto(0, "На проверке", "under_review", 0, "На проверке", "under_review", false),
+            new OrderStatusOpsItemDto(100, "Расчёт готов", "quote_ready", 100, "Расчёт готов", "quote_ready", false),
+            new OrderStatusOpsItemDto(200, "Расчёт истёк", "quote_expired", 200, "Расчёт истёк", "quote_expired", false),
+            new OrderStatusOpsItemDto(300, "Оплачен", "paid", 300, "Выполняется", "in_progress", false),
+            new OrderStatusOpsItemDto(310, "Выкупаем товар", "purchasing_item", 300, "Выполняется", "in_progress", false),
+            new OrderStatusOpsItemDto(320, "Доставляем на склад в США", "delivering_to_us_warehouse", 300, "Выполняется", "in_progress", false),
+            new OrderStatusOpsItemDto(330, "Получен на складе в США", "delivered_to_us_warehouse", 300, "Выполняется", "in_progress", false),
+            new OrderStatusOpsItemDto(340, "Доставляем в Россию", "delivering_to_russia", 300, "Выполняется", "in_progress", false),
+            new OrderStatusOpsItemDto(360, "Получен на складе в России", "delivered_to_russian_warehouse", 300, "Выполняется", "in_progress", false),
+            new OrderStatusOpsItemDto(380, "Доставляем по России", "delivering_in_russia", 300, "Выполняется", "in_progress", false),
+            new OrderStatusOpsItemDto(400, "Получен", "received", 400, "Завершён", "completed", true),
+            new OrderStatusOpsItemDto(500, "Отменён", "cancelled", 500, "Отменён", "cancelled", true)
         }));
     }
 }

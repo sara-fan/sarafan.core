@@ -48,13 +48,26 @@ public sealed record OrderDto(
     string? Comment,
     OrderAppliedExchangeRateDto? AppliedExchangeRate);
 
+public sealed record CustomerOrderListItemDto(
+    long Id,
+    string OrderNumber,
+    OrderStatus Status,
+    string SourceUrl,
+    string? ProductName,
+    string? StoreName,
+    string? ImageUrl,
+    OrderSellerPriceDto? SellerPrice,
+    int Quantity,
+    DateTimeOffset CreatedAt);
+
 public sealed record OrderStatusOpsItemDto(
     int Value,
     string Name,
     string RouteAlias,
     int UpperStatusValue,
     string UpperStatusName,
-    string UpperStatusRouteAlias);
+    string UpperStatusRouteAlias,
+    bool IsTerminal);
 
 public sealed record OrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,
