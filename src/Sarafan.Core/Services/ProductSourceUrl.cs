@@ -10,7 +10,7 @@ internal static partial class ProductSourceUrl
 {
     internal const int MaximumLength = 2048;
 
-    internal static string Normalize(string? sourceUrl)
+    internal static string Normalize(string? sourceUrl, IReadOnlySet<string> topLevelDomains)
     {
         if (!TryCanonicalize(
                 sourceUrl,
@@ -18,6 +18,7 @@ internal static partial class ProductSourceUrl
                 rejectWhitespace: true,
                 requireValidDomainSuffix: true,
                 enforceCanonicalLength: true,
+                topLevelDomains,
                 out var normalized))
         {
             throw Invalid();
@@ -35,6 +36,7 @@ internal static partial class ProductSourceUrl
             rejectWhitespace: false,
             requireValidDomainSuffix: false,
             enforceCanonicalLength: true,
+            null,
             out var normalized)
             ? normalized
             : stored;
@@ -47,6 +49,7 @@ internal static partial class ProductSourceUrl
                 rejectWhitespace: false,
                 requireValidDomainSuffix: false,
                 enforceCanonicalLength: false,
+                null,
                 out var stored)
             && TryCanonicalize(
                 requestedSourceUrl,
@@ -54,6 +57,7 @@ internal static partial class ProductSourceUrl
                 rejectWhitespace: false,
                 requireValidDomainSuffix: false,
                 enforceCanonicalLength: false,
+                null,
                 out var requested)
             && string.Equals(stored, requested, StringComparison.Ordinal);
 
@@ -63,6 +67,7 @@ internal static partial class ProductSourceUrl
         bool rejectWhitespace,
         bool requireValidDomainSuffix,
         bool enforceCanonicalLength,
+        IReadOnlySet<string>? topLevelDomains,
         out string normalized)
     {
         normalized = string.Empty;
@@ -115,7 +120,8 @@ internal static partial class ProductSourceUrl
         {
             var idnHost = uri.IdnHost;
             if (string.IsNullOrEmpty(idnHost)
-                || requireValidDomainSuffix && !IanaTopLevelDomains.HasValidSuffix(idnHost))
+                || requireValidDomainSuffix
+                    && (topLevelDomains is null || !IanaTopLevelDomainRules.HasValidSuffix(idnHost, topLevelDomains)))
             {
                 return false;
             }

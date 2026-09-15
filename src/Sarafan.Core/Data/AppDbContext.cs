@@ -20,6 +20,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<BackofficeUserRole> BackofficeUserRoles => Set<BackofficeUserRole>();
     public DbSet<BackofficeRefreshSession> BackofficeRefreshSessions => Set<BackofficeRefreshSession>();
     public DbSet<ExchangeRateHistory> ExchangeRateHistory => Set<ExchangeRateHistory>();
+    public DbSet<IanaTldCatalog> IanaTldCatalog => Set<IanaTldCatalog>();
     public DbSet<LegalDocument> LegalDocuments => Set<LegalDocument>();
     public DbSet<ConsentEvent> ConsentEvents => Set<ConsentEvent>();
     public DbSet<ConsentReplayTombstone> ConsentReplayTombstones => Set<ConsentReplayTombstone>();

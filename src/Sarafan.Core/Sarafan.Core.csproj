@@ -25,6 +25,7 @@
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageReference Include="Quartz" Version="4.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
   </ItemGroup>
 
@@ -32,7 +33,4 @@
     <InternalsVisibleTo Include="Sarafan.Core.Tests" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="Resources\iana-tlds.txt" />
-  </ItemGroup>
 </Project>

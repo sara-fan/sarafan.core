@@ -183,6 +183,42 @@ public sealed class OrderPreviewTests
         }
     }
 
+    [Test]
+    public async Task MissingTldCatalogAllowsIdempotentReplayButRejectsANewOrder()
+    {
+        var session = await Register("+79993124569");
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
+        var idempotencyKey = Guid.NewGuid();
+        using (var create = CreateOrderRequest(idempotencyKey))
+        using (var created = await _client.SendAsync(create))
+        {
+            Assert.That(created.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        }
+
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.IanaTldCatalog.RemoveRange(database.IanaTldCatalog);
+            await database.SaveChangesAsync();
+        }
+
+        using (var replay = CreateOrderRequest(idempotencyKey))
+        using (var replayed = await _client.SendAsync(replay))
+        {
+            Assert.That(replayed.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        }
+
+        using var createNew = CreateOrderRequest(Guid.NewGuid());
+        using var rejected = await _client.SendAsync(createNew);
+        var problem = await rejected.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+            Assert.That(problem?.Code, Is.EqualTo("tld_catalog_unavailable"));
+            Assert.That(await CountOrders(), Is.EqualTo(1));
+        }
+    }
+
     [TestCaseSource(nameof(LegacySourceUrls))]
     public async Task OrderCreation_ReplaysPreCanonicalizationRows(
         string legacySourceUrl,
@@ -285,6 +321,20 @@ public sealed class OrderPreviewTests
             "https://shop.example/product");
         var unicodeUrl = $"https://shop.example.com/{new string('я', 400)}";
         yield return new TestCaseData(unicodeUrl, unicodeUrl);
+    }
+
+    private static HttpRequestMessage CreateOrderRequest(Guid idempotencyKey)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
+        {
+            Content = JsonContent.Create(new Sarafan.Core.RestModels.CreateOrderRequest
+            {
+                SourceUrl = "shop.example.com/product",
+                Quantity = 1
+            })
+        };
+        request.Headers.Add("Idempotency-Key", idempotencyKey.ToString("D"));
+        return request;
     }
 
     private async Task<AuthenticationSessionDto> Register(string phone)

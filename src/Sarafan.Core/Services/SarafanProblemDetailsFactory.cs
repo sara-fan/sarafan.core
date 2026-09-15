@@ -98,6 +98,10 @@ public sealed class SarafanProblemDetailsFactory(
                 StatusCodes.Status400BadRequest,
                 "Некорректная ссылка на товар",
                 "Проверьте ссылку на товар и попробуйте ещё раз"),
+            ["tld_catalog_unavailable"] = new(
+                StatusCodes.Status503ServiceUnavailable,
+                "Каталог доменов временно недоступен",
+                "Проверка ссылки временно недоступна. Повторите попытку позже."),
             ["invalid_order_quantity"] = new(
                 StatusCodes.Status400BadRequest,
                 "Некорректное количество товара",

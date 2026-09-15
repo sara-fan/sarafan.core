@@ -178,13 +178,16 @@ Edit `sarafan.env` before deployment. It is ignored by Git. The scripts **source
 | `SARAFAN_BACKOFFICE_BOOTSTRAP_EMAIL`, `SARAFAN_BACKOFFICE_BOOTSTRAP_PASSWORD` | Supply securely only for bootstrap; password must contain 8 to 18 characters |
 | `SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED` | `false` while demonstration authentication is in use |
 | `SARAFAN_UI_LOGGING_ENABLED`, `SARAFAN_BACKOFFICE_LOGGING_ENABLED` | Independent frontend logging switches, default `false` |
+| `SARAFAN_EXCHANGE_RATES_*`, `SARAFAN_CONSENT_RETENTION_*`, `SARAFAN_IANA_TLD_UPDATE_*` | Quartz cron, timezone and startup switches for the three Core jobs; quote cron values because this file is sourced by Bash |
 | `OTEL_LOGS_EXPORTER`, `OTEL_TRACES_EXPORTER` | Default `none`; use `otlp` only when sending telemetry to a configured collector |
 
 Bootstrap creates and checks the configured storage directories. Choose distinct locations and ensure the container processes can write their mounts. On an existing database, changing `SARAFAN_POSTGRES_PASSWORD` does not change the stored PostgreSQL role password; credential rotation requires a coordinated database operation.
 
 **Image namespace:** [docker-compose-ghrc.yml](../docker-compose-ghrc.yml) currently pins the Core and customer UI repositories to `ghcr.io/maxirmx/sarafan.core` and `ghcr.io/maxirmx/sarafan.ui`. Their tag variables do not change those repositories. Core's publish workflow uses the GitHub repository owner, currently `sara-fan`, so a newly published tag is not automatically available at the older deployment path. Verify availability at the exact configured paths before deployment; deploying images that exist only under another owner requires a reviewed cloud Compose change. Back Office already supports its separate image-repository variable.
 
-Only settings wired into the Compose files reach containers. For example, putting `Logging__LogLevel__Sarafan` or `ExchangeRates__Enabled` in `sarafan.env` alone does not pass it into Core; additional runtime options require explicit Compose environment entries. The local port settings in the example file do not publish cloud database or frontend ports.
+Only settings wired into the Compose files reach containers. The three `SARAFAN_*_CRON`, `SARAFAN_*_TIME_ZONE` and `SARAFAN_*_RUN_ON_STARTUP` groups are wired to Core's shared `ScheduledJobs` configuration; other additional runtime options still require explicit Compose environment entries. A blank cron disables recurrence independently of the startup switch. The local port settings in the example file do not publish cloud database or frontend ports.
+
+A fresh database has no embedded TLD fallback. For the first deployment, temporarily set `SARAFAN_IANA_TLD_UPDATE_RUN_ON_STARTUP=true`; after a successful catalogue download, restore the default `false`. Until then, URL preview, genuinely new order creation and anonymous order Ops return `503 tld_catalog_unavailable`, while unrelated endpoints remain available.
 
 ### Validate and deploy
 

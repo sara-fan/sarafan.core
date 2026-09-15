@@ -45,6 +45,15 @@ services:
       BackofficeAuthentication__SigningKey: ${SARAFAN_BACKOFFICE_JWT_SECRET:-sarafan-backoffice-development-signing-key-change-before-deployment}
       BackofficeAuthentication__SecureCookies: "false"
       BackofficeBootstrap__Enabled: false
+      ScheduledJobs__ExchangeRates__Cron: ${SARAFAN_EXCHANGE_RATES_CRON:-0 10 0 * * ?}
+      ScheduledJobs__ExchangeRates__TimeZone: ${SARAFAN_EXCHANGE_RATES_TIME_ZONE:-Europe/Moscow}
+      ScheduledJobs__ExchangeRates__RunOnStartup: ${SARAFAN_EXCHANGE_RATES_RUN_ON_STARTUP:-true}
+      ScheduledJobs__ConsentRetention__Cron: ${SARAFAN_CONSENT_RETENTION_CRON:-0 0 1 * * ?}
+      ScheduledJobs__ConsentRetention__TimeZone: ${SARAFAN_CONSENT_RETENTION_TIME_ZONE:-Europe/Moscow}
+      ScheduledJobs__ConsentRetention__RunOnStartup: ${SARAFAN_CONSENT_RETENTION_RUN_ON_STARTUP:-true}
+      ScheduledJobs__IanaTldUpdate__Cron: ${SARAFAN_IANA_TLD_UPDATE_CRON:-0 0 3 5 * ?}
+      ScheduledJobs__IanaTldUpdate__TimeZone: ${SARAFAN_IANA_TLD_UPDATE_TIME_ZONE:-Europe/Moscow}
+      ScheduledJobs__IanaTldUpdate__RunOnStartup: ${SARAFAN_IANA_TLD_UPDATE_RUN_ON_STARTUP:-false}
       # For a one-time local bootstrap 
       # DO NOT TRACK/COMMIT
       # BackofficeBootstrap__Enabled: true

@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 
 using Sarafan.Core.Authentication;
 using Sarafan.Core.Data;
+using Sarafan.Core.Models;
 using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Tests;
@@ -43,6 +44,8 @@ public sealed class IntegrationTestEnvironment
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await database.Database.EnsureDeletedAsync();
         await database.Database.EnsureCreatedAsync();
+        database.IanaTldCatalog.Add(CreateIanaTldCatalog());
+        await database.SaveChangesAsync();
         await scope.ServiceProvider.GetRequiredService<BackofficeBootstrapService>()
             .ProvisionAsync(default);
         var initialUsers = await database.BackofficeUsers
@@ -96,8 +99,9 @@ public sealed class IntegrationTestEnvironment
             builder.UseEnvironment("Testing");
             builder.UseSetting("ConnectionStrings:DefaultConnection", "Host=unused;Database=unused;Username=unused;Password=unused");
             builder.UseSetting("Database:ApplyMigrations", "false");
-            builder.UseSetting("ExchangeRates:Enabled", "false");
-            builder.UseSetting("Consents:RetentionWorkerEnabled", "false");
+            DisableJob(builder, nameof(ScheduledJobsOptions.ExchangeRates));
+            DisableJob(builder, nameof(ScheduledJobsOptions.ConsentRetention));
+            DisableJob(builder, nameof(ScheduledJobsOptions.IanaTldUpdate));
             builder.UseSetting("Authentication:Issuer", "sarafan.core.tests");
             builder.UseSetting("Authentication:Audience", "sarafan.ui.tests");
             builder.UseSetting("Authentication:SigningKey", "sarafan-tests-signing-key-with-at-least-thirty-two-characters");
@@ -133,5 +137,30 @@ public sealed class IntegrationTestEnvironment
                     options.UseInMemoryDatabase(databaseName, _databaseRoot));
             });
         }
+
+        private static void DisableJob(IWebHostBuilder builder, string name)
+        {
+            builder.UseSetting($"ScheduledJobs:{name}:Cron", string.Empty);
+            builder.UseSetting($"ScheduledJobs:{name}:RunOnStartup", "false");
+        }
+    }
+
+    internal static IanaTldCatalog CreateIanaTldCatalog(string version = "2026091400")
+    {
+        var values = Enumerable.Range(0, 1_100)
+            .Select(index => $"T{index:D4}")
+            .Append("COM")
+            .Append("XN--P1AI")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return new IanaTldCatalog
+        {
+            Version = version,
+            Source = IanaTldClient.Endpoint,
+            SourceUpdatedAt = DateTimeOffset.Parse("2026-09-14T07:07:01Z"),
+            RetrievedAt = DateTimeOffset.Parse("2026-09-14T07:08:00Z"),
+            ContentSha256 = new string('0', 64),
+            TopLevelDomains = values
+        };
     }
 }
