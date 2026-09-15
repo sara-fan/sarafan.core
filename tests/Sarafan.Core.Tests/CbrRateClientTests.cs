@@ -10,6 +10,7 @@ using System.Xml.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Sarafan.Core.Services;
+using Sarafan.Core.Models;
 
 namespace Sarafan.Core.Tests;
 
@@ -126,6 +127,34 @@ public sealed class CbrRateClientTests
         })))
         { MaxResponseContentBufferSize = 1_048_576 };
         Assert.ThrowsAsync<HttpRequestException>(() => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
+    }
+
+    [TestCase(true, true)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    public async Task FetchesBothCurrenciesInOneResponseAndRetainsIndependentlyValidRows(bool validUsd, bool validEur)
+    {
+        var calls = 0;
+        var usd = validUsd ? Row : Row.Replace("81.1234", "bad");
+        var eur = Row.Replace("840", "978").Replace("USD ", "EUR").Replace("81.1234", validEur ? "100.123456" : "bad");
+        using var http = new HttpClient(new Handler((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Soap(usd + eur)) });
+        }));
+        var rates = await new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetRatesAsync(Requested, default);
+        Assert.That(calls, Is.EqualTo(1));
+        Assert.That(rates.Select(rate => rate.BaseCurrency), Is.EquivalentTo(
+            new[] { validUsd ? Currency.Usd : (Currency?)null, validEur ? Currency.Eur : (Currency?)null }.OfType<Currency>()));
+        if (validEur) Assert.That(rates.Single(rate => rate.BaseCurrency == Currency.Eur).OfficialRate, Is.EqualTo(100.123456m));
+    }
+
+    [Test]
+    public void LegacyUsdReaderReportsMissingUsdAsDataFailure()
+    {
+        using var http = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        { Content = new StringContent(Soap(Row.Replace("840", "978").Replace("USD ", "EUR"))) })));
+        Assert.ThrowsAsync<InvalidDataException>(() => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
     }
 
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler

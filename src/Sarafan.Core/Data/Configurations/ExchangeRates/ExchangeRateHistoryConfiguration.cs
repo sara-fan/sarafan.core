@@ -18,8 +18,8 @@ internal sealed class ExchangeRateHistoryConfiguration : IEntityTypeConfiguratio
         {
             table.HasCheckConstraint("CK_exchange_rate_nominal", "nominal BETWEEN 1 AND 1000000");
             table.HasCheckConstraint("CK_exchange_rate_positive", "official_rate > 0");
-            table.HasCheckConstraint("CK_exchange_rate_base_currency", "base_currency IN (643, 840)");
-            table.HasCheckConstraint("CK_exchange_rate_quote_currency", "quote_currency IN (643, 840)");
+            table.HasCheckConstraint("CK_exchange_rate_base_currency", "base_currency IN (643, 840, 978)");
+            table.HasCheckConstraint("CK_exchange_rate_quote_currency", "quote_currency IN (643, 840, 978)");
             table.HasCheckConstraint("CK_exchange_rate_distinct_currencies", "base_currency <> quote_currency");
         });
 

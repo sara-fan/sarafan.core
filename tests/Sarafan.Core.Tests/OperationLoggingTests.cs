@@ -84,20 +84,27 @@ public sealed class OperationLoggingTests
         AssertPrivate();
     }
 
-    [Test]
-    public void ProductPreviewSummaries_RedactTheSourceAddress()
+    [TestCase(ProductPreviewDto.ManualReviewOutcome, "manual_review")]
+    [TestCase(ProductPreviewDto.RecognizedOutcome, "recognized")]
+    [TestCase("untrusted-outcome-secret", "[redacted]")]
+    [TestCase(null, "[redacted]")]
+    public void ProductPreviewSummaries_AllowOnlyKnownOutcomesAndRedactProduct(string? outcome, string expected)
     {
         var request = new ProductPreviewRequest { SourceUrl = $"https://shop.example.com/?token={Secret}" };
-        var result = new ProductPreviewDto(request.SourceUrl, ProductPreviewDto.ManualReviewOutcome);
+        var result = new ProductPreviewDto(request.SourceUrl, outcome!)
+        {
+            Product = new(Secret, new(123, Currency.Usd), 1, Secret, Secret, Secret)
+        };
 
         using (Assert.EnterMultipleScope())
         {
             Assert.That(LogValueSummary.Describe(request),
                 Is.EqualTo("ProductPreviewRequest(sourceUrl=[redacted])"));
             Assert.That(LogValueSummary.Describe(result),
-                Is.EqualTo("ProductPreviewDto(sourceUrl=[redacted]; outcome=manual_review)"));
+                Is.EqualTo($"ProductPreviewDto(sourceUrl/product=[redacted]; outcome={expected})"));
             Assert.That(LogValueSummary.Describe(request), Does.Not.Contain(Secret));
             Assert.That(LogValueSummary.Describe(result), Does.Not.Contain(Secret));
+            Assert.That(LogValueSummary.Describe(result), Does.Not.Contain("untrusted-outcome-secret"));
         }
     }
 
@@ -211,6 +218,15 @@ public sealed class OperationLoggingTests
         cancellation.Cancel();
         object?[] values =
         [
+            new SubmittedProductRequest { ProductName = Secret, Color = Secret, Size = Secret },
+            new UpdateOrderProductRequest { ProductName = Secret, Comment = Secret },
+            new OrderProductDto(Secret, new(10, Currency.Usd), 1, Secret, Secret, Secret),
+            new CreateOrderRequest { SourceUrl = Secret, SubmittedProduct = new() { ProductName = Secret } },
+            new OrderLimitRatePair(OrderProductTestData.Rate(Currency.Usd, 80), OrderProductTestData.Rate(Currency.Eur, 100)),
+            new BackofficeOrderDetailsDto(Secret, OrderStatus.UnderReview, Secret, default, default,
+                new(Secret, null, 1, null, null, null), new(Secret, null, 1, null, null, null),
+                new(Secret, Secret, Secret, Secret, Secret, Secret, Secret, null, Secret, Secret, Secret, Secret, Secret),
+                new(1000, Currency.Eur, false, null, null), true),
             Secret, new PoisonValue(), null, customer, dto, session, new AuthenticationSession(session, Secret),
             backofficeUser, backofficeDto, backofficeIdentity, new[] { backofficeDto },
             new BackofficeRoleDto(Secret, Secret), new[] { new BackofficeRoleDto(Secret, Secret) },
@@ -485,10 +501,11 @@ public sealed class OperationLoggingTests
         var session = (await verify.Content.ReadFromJsonAsync<AuthenticationSessionDto>())!;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
         var orderKey = Guid.NewGuid();
+        await OrderProductTestData.SeedRates();
         var orderSourceUrl = $"https://shop.example.com/product?token={Secret}";
         using var orderRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
         {
-            Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = orderSourceUrl, Quantity = 1 })
+            Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = orderSourceUrl, Quantity = 1, SubmittedProduct = OrderProductTestData.Product() })
         };
         orderRequest.Headers.Add("Idempotency-Key", orderKey.ToString("D"));
         using var createOrder = await client.SendAsync(orderRequest);
@@ -506,6 +523,19 @@ public sealed class OperationLoggingTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", administrator.AccessToken);
         using var backofficeOrderOps = await client.GetAsync("/api/v1/backoffice/orders/ops");
         using var backofficeOrders = await client.GetAsync("/api/v1/backoffice/orders?page=1&pageSize=10&sortBy=createdAt&sortOrder=desc");
+        var productDetails = (await client.GetFromJsonAsync<BackofficeOrderDetailsDto>($"/api/v1/backoffice/orders/{createdOrder.OrderNumber}"))!;
+        using var productCorrection = await client.PutAsJsonAsync($"/api/v1/backoffice/orders/{createdOrder.OrderNumber}/product",
+            new UpdateOrderProductRequest
+            {
+                ExpectedUpdatedAt = productDetails.UpdatedAt,
+                ProductName = Secret,
+                SellerPrice = new(10, Currency.Usd),
+                Quantity = 1,
+                Color = Secret,
+                Size = Secret,
+                Comment = Secret
+            });
+        productCorrection.EnsureSuccessStatusCode();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", customerToken);
         using var get = await client.GetAsync("/api/v1/customers/me");
         using var update = await client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = Secret });
@@ -646,6 +676,10 @@ public sealed class OperationLoggingTests
                 LastName = administrator.User.LastName
             });
         using var disable = await client.DeleteAsync($"/api/v1/backoffice/users/{created.Id}");
+        using var missingOrder = await client.GetAsync("/api/v1/backoffice/orders/12345678-1");
+        using var missingOrderCorrection = await client.PutAsJsonAsync("/api/v1/backoffice/orders/12345678-1/product", new UpdateOrderProductRequest());
+        Assert.That(missingOrder.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That(missingOrderCorrection.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var refresh = await client.PostAsync("/api/v1/backoffice/auth/refresh", null);
         using var logout = await client.PostAsync("/api/v1/backoffice/auth/logout", null);
         await using (var scope = app.Services.CreateAsyncScope())

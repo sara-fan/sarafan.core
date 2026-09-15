@@ -49,7 +49,8 @@ public sealed class OrdersController(
             request.Quantity,
             request.Comment,
             parsedKey,
-            cancellationToken);
+            cancellationToken,
+            request.SubmittedProduct);
         return CreatedAtAction(nameof(Get), new { id = order.Id }, order);
     }
 }

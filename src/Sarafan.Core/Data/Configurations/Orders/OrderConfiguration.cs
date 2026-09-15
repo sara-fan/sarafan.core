@@ -50,7 +50,28 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         var idempotencyKey = builder.Property(item => item.CreationIdempotencyKey)
             .HasColumnName("creation_idempotency_key");
         var createdAt = builder.Property(item => item.CreatedAt).HasColumnName("created_at");
-        builder.Property(item => item.UpdatedAt).HasColumnName("updated_at");
+        builder.Property(item => item.UpdatedAt).HasColumnName("updated_at").IsConcurrencyToken();
+        builder.Property(item => item.Status).IsConcurrencyToken();
+        builder.Property(item => item.SubmittedProductName).HasColumnName("submitted_product_name").HasMaxLength(500).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        builder.Property(item => item.SubmittedSellerPrice).HasColumnName("submitted_seller_price").HasPrecision(10, 2).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        builder.Property(item => item.SubmittedSellerPriceCurrency).HasColumnName("submitted_seller_price_currency").Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        builder.Property(item => item.SubmittedColor).HasColumnName("submitted_color").HasMaxLength(200).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        builder.Property(item => item.SubmittedSize).HasColumnName("submitted_size").HasMaxLength(200).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        builder.Property(item => item.OverrideProductName).HasColumnName("override_product_name").HasMaxLength(500);
+        builder.Property(item => item.OverrideSellerPrice).HasColumnName("override_seller_price").HasPrecision(10, 2);
+        builder.Property(item => item.OverrideSellerPriceCurrency).HasColumnName("override_seller_price_currency");
+        builder.Property(item => item.OverrideColor).HasColumnName("override_color").HasMaxLength(200);
+        builder.Property(item => item.OverrideSize).HasColumnName("override_size").HasMaxLength(200);
+        builder.Property(item => item.OverrideQuantity).HasColumnName("override_quantity");
+        builder.Property(item => item.OverrideComment).HasColumnName("override_comment").HasMaxLength(2000);
+        builder.Property(item => item.CreatedLimitUsdRateId).HasColumnName("created_limit_usd_rate_id").Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        builder.HasOne<ExchangeRateHistory>().WithMany().HasForeignKey(item => item.CreatedLimitUsdRateId).OnDelete(DeleteBehavior.Restrict);
+        builder.Property(item => item.CreatedLimitEurRateId).HasColumnName("created_limit_eur_rate_id").Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        builder.HasOne<ExchangeRateHistory>().WithMany().HasForeignKey(item => item.CreatedLimitEurRateId).OnDelete(DeleteBehavior.Restrict);
+        builder.Property(item => item.UpdatedLimitUsdRateId).HasColumnName("updated_limit_usd_rate_id");
+        builder.HasOne<ExchangeRateHistory>().WithMany().HasForeignKey(item => item.UpdatedLimitUsdRateId).OnDelete(DeleteBehavior.Restrict);
+        builder.Property(item => item.UpdatedLimitEurRateId).HasColumnName("updated_limit_eur_rate_id");
+        builder.HasOne<ExchangeRateHistory>().WithMany().HasForeignKey(item => item.UpdatedLimitEurRateId).OnDelete(DeleteBehavior.Restrict);
 
         customerId.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         customerOrderNumber.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
@@ -87,13 +108,17 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         builder.ToTable(table =>
         {
+            table.HasCheckConstraint("ck_orders_submitted_product", "(submitted_product_name IS NULL AND submitted_seller_price IS NULL AND submitted_seller_price_currency IS NULL AND submitted_color IS NULL AND submitted_size IS NULL) OR (submitted_product_name IS NOT NULL AND char_length(submitted_product_name) > 0 AND submitted_seller_price IS NOT NULL AND submitted_seller_price > 0 AND submitted_seller_price_currency IS NOT NULL AND submitted_seller_price_currency = 840 AND quantity BETWEEN 1 AND 4)");
+            table.HasCheckConstraint("ck_orders_override_product", "(override_quantity IS NULL AND override_product_name IS NULL AND override_seller_price IS NULL AND override_seller_price_currency IS NULL AND override_color IS NULL AND override_size IS NULL AND override_comment IS NULL) OR (override_quantity IS NOT NULL AND override_quantity BETWEEN 1 AND 4 AND override_product_name IS NOT NULL AND char_length(override_product_name) > 0 AND override_seller_price IS NOT NULL AND override_seller_price > 0 AND override_seller_price_currency IS NOT NULL AND override_seller_price_currency = 840)");
+            table.HasCheckConstraint("ck_orders_created_limit_pair", "(created_limit_usd_rate_id IS NULL) = (created_limit_eur_rate_id IS NULL)");
+            table.HasCheckConstraint("ck_orders_updated_limit_pair", "(updated_limit_usd_rate_id IS NULL) = (updated_limit_eur_rate_id IS NULL)");
             table.HasCheckConstraint("ck_orders_customer_order_number", "customer_order_number > 0");
             table.HasCheckConstraint("ck_orders_creation_idempotency_key", "creation_idempotency_key <> '00000000-0000-0000-0000-000000000000'::uuid");
             table.HasCheckConstraint("ck_orders_status", "status IN (0, 100, 200, 300, 310, 320, 330, 340, 360, 380, 400, 500)");
             table.HasCheckConstraint("ck_orders_source_url", "source_url ~* '^https?://' AND char_length(source_url) <= 2048");
             table.HasCheckConstraint("ck_orders_image_url", "image_url IS NULL OR image_url ~* '^https?://' AND char_length(image_url) <= 2048");
             table.HasCheckConstraint("ck_orders_quantity", "quantity > 0");
-            table.HasCheckConstraint("ck_orders_seller_price", "(seller_price IS NULL AND seller_price_currency IS NULL) OR (seller_price > 0 AND seller_price_currency IN (643, 840))");
+            table.HasCheckConstraint("ck_orders_seller_price", "(seller_price IS NULL AND seller_price_currency IS NULL) OR (seller_price > 0 AND seller_price_currency IN (643, 840, 978))");
             table.HasCheckConstraint("ck_orders_dimensions", "(length_cm IS NULL AND width_cm IS NULL AND height_cm IS NULL) OR (length_cm > 0 AND width_cm > 0 AND height_cm > 0)");
             table.HasCheckConstraint("ck_orders_applied_exchange_rate", "applied_exchange_rate_history_id IS NULL OR seller_price_currency IS NOT NULL");
         });
