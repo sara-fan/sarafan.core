@@ -184,7 +184,9 @@ Bootstrap creates and checks the configured storage directories. Choose distinct
 
 **Image namespace:** [docker-compose-ghrc.yml](../docker-compose-ghrc.yml) currently pins the Core and customer UI repositories to `ghcr.io/maxirmx/sarafan.core` and `ghcr.io/maxirmx/sarafan.ui`. Their tag variables do not change those repositories. Core's publish workflow uses the GitHub repository owner, currently `sara-fan`, so a newly published tag is not automatically available at the older deployment path. Verify availability at the exact configured paths before deployment; deploying images that exist only under another owner requires a reviewed cloud Compose change. Back Office already supports its separate image-repository variable.
 
-Only settings wired into the Compose files reach containers. For example, putting `Logging__LogLevel__Sarafan` or `ExchangeRates__Enabled` in `sarafan.env` alone does not pass it into Core; additional runtime options require explicit Compose environment entries. The local port settings in the example file do not publish cloud database or frontend ports.
+Only settings wired into the Compose files reach containers. Quartz schedules are supplied by Core's tracked `ScheduledJobs` section in `appsettings.json`; they are not overridden through `sarafan.env`. Other additional runtime options require explicit Compose environment entries. A blank cron disables recurrence independently of the startup switch. The local port settings in the example file do not publish cloud database or frontend ports.
+
+A fresh database has no embedded TLD fallback. For an initial deployment that must populate the catalogue immediately, publish Core with `ScheduledJobs:IanaTldUpdate:RunOnStartup` temporarily set to `true` in `appsettings.json`; restore the default `false` after the first successful catalogue download. Until then, URL preview, genuinely new order creation and anonymous order Ops return `503 tld_catalog_unavailable`, while unrelated endpoints remain available.
 
 ### Validate and deploy
 

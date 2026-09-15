@@ -12,8 +12,11 @@ namespace Sarafan.Core.Controllers;
 
 [AllowAnonymous, Route("api/v1/orders")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class OrderOperationsController(SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
+public sealed class OrderOperationsController(
+    IanaTldCatalogService tlds,
+    SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet("ops")]
-    public ActionResult<OrderOpsDto> Operations() => Ok(OrderOperationsCatalog.CreatePublic());
+    public async Task<ActionResult<OrderOpsDto>> Operations(CancellationToken cancellationToken)
+        => Ok(OrderOperationsCatalog.CreatePublic(await tlds.GetRequiredAsync(cancellationToken)));
 }

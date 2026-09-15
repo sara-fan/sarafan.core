@@ -11,5 +11,4 @@ public sealed class ConsentOptions
     public const string SectionName = "Consents";
     [Range(1, 3650)] public int EvidenceDays { get; set; } = 1095;
     [Range(1, 120)] public int OnboardingMinutes { get; set; } = 15;
-    public bool RetentionWorkerEnabled { get; set; } = true;
 }

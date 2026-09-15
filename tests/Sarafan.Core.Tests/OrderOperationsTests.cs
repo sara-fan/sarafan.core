@@ -22,9 +22,10 @@ public sealed class OrderOperationsTests
     {
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(IanaTopLevelDomains.HasValidSuffix("shop.example.com"), Is.True);
-            Assert.That(IanaTopLevelDomains.HasValidSuffix("shop.example.com."), Is.True);
-            Assert.That(IanaTopLevelDomains.HasValidSuffix("shop.example.com.."), Is.False);
+            IReadOnlySet<string> values = new HashSet<string>(["COM"], StringComparer.OrdinalIgnoreCase);
+            Assert.That(IanaTopLevelDomainRules.HasValidSuffix("shop.example.com", values), Is.True);
+            Assert.That(IanaTopLevelDomainRules.HasValidSuffix("shop.example.com.", values), Is.True);
+            Assert.That(IanaTopLevelDomainRules.HasValidSuffix("shop.example.com..", values), Is.False);
         }
     }
 

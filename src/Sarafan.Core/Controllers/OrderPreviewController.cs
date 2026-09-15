@@ -20,6 +20,8 @@ public sealed class OrderPreviewController(
     [HttpPost]
     [RequestSizeLimit(32 * 1024)]
     [ProducesResponseType<ProductPreviewDto>(StatusCodes.Status200OK)]
-    public ActionResult<ProductPreviewDto> Preview(ProductPreviewRequest request)
-        => Ok(previews.Preview(request));
+    public async Task<ActionResult<ProductPreviewDto>> Preview(
+        ProductPreviewRequest request,
+        CancellationToken cancellationToken)
+        => Ok(await previews.PreviewAsync(request, cancellationToken));
 }

@@ -19,6 +19,7 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
 {
     private const int CustomerLockNamespace = 938802021;
     private const string AdministratorMutationLockSql = "SELECT pg_advisory_xact_lock(1397301386)";
+    private const string IanaTldCatalogLockSql = "SELECT pg_advisory_xact_lock(1397315804)";
     private const string CustomerOrderCodeIndex = "ux_customers_order_code";
 
     internal static PostgreSqlAppDatabaseOperations Instance { get; } = new();
@@ -51,6 +52,13 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
         CancellationToken cancellationToken)
         => database.Database.ExecuteSqlRawAsync(
             AdministratorMutationLockSql,
+            cancellationToken);
+
+    public Task LockIanaTldCatalogAsync(
+        AppDbContext database,
+        CancellationToken cancellationToken)
+        => database.Database.ExecuteSqlRawAsync(
+            IanaTldCatalogLockSql,
             cancellationToken);
 
     public Task<Customer?> FindCustomerForUpdateAsync(

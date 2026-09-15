@@ -76,11 +76,9 @@ public sealed class OrderStatusTests
     [Test]
     public void Operations_BuildsTheCanonicalStatusCatalogue()
     {
-        var result = new OrderOperationsController(new SarafanProblemDetailsFactory()).Operations();
-        var response = (OkObjectResult)result.Result!;
-        var body = (OrderOpsDto)response.Value!;
+        var body = OrderOperationsCatalog.CreatePublic(
+            new IanaTldCatalogSnapshot("2026091400", ["COM"]));
 
-        Assert.That(response.StatusCode, Is.EqualTo(200));
         Assert.That(
             body.Statuses,
             Is.EqualTo(ExpectedStatuses.Select(expected => new OrderStatusOpsItemDto(

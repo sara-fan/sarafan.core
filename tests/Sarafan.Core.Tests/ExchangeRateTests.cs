@@ -5,7 +5,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Threading.Channels;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -31,7 +30,7 @@ public sealed class ExchangeRateTests
     private static AppDbContext Database(IServiceScope scope) => scope.ServiceProvider.GetRequiredService<AppDbContext>();
     private static ExchangeRateService Service(AppDbContext database, CbrRate? rate = null, TimeProvider? time = null,
         ILogger<ExchangeRateService>? logger = null, Exception? failure = null) =>
-        new(database, new StubClient(rate ?? Rate, failure), time ?? new ManualTime(Now), logger ?? NullLogger<ExchangeRateService>.Instance);
+        new(database, new StubClient(rate ?? Rate, failure), time ?? new FixedTime(Now), logger ?? NullLogger<ExchangeRateService>.Instance);
 
     [SetUp]
     public async Task ClearHistory()
@@ -46,7 +45,7 @@ public sealed class ExchangeRateTests
         var database = Database(scope);
         var logger = new TestLogger<ExchangeRateService>();
         await Service(database, logger: logger).SynchronizeAsync(default);
-        await Service(database, Rate with { OfficialRate = 1 }, new ManualTime(Now.AddHours(1))).SynchronizeAsync(default);
+        await Service(database, Rate with { OfficialRate = 1 }, new FixedTime(Now.AddHours(1))).SynchronizeAsync(default);
         var history = await database.ExchangeRateHistory.AsNoTracking().SingleAsync();
         using (Assert.EnterMultipleScope())
         {
@@ -172,14 +171,12 @@ public sealed class ExchangeRateTests
         Assert.That(await health.Content.ReadAsStringAsync(), Does.Not.Contain("exchangeRates"));
     }
 
-    [TestCase("2026-09-06T20:59:00Z", "2026-09-06T21:10:00Z", "2026-09-06")]
-    [TestCase("2026-09-06T21:00:00Z", "2026-09-06T21:10:00Z", "2026-09-07")]
-    [TestCase("2026-09-06T21:09:59Z", "2026-09-06T21:10:00Z", "2026-09-07")]
-    [TestCase("2026-09-06T21:10:00Z", "2026-09-07T21:10:00Z", "2026-09-07")]
-    [TestCase("2026-12-31T22:00:00Z", "2027-01-01T21:10:00Z", "2027-01-01")]
-    public void ScheduleUsesMoscowCalendarIndependentOfServerTimezone(string now, string next, string date)
+    [TestCase("2026-09-06T20:59:00Z", "2026-09-06")]
+    [TestCase("2026-09-06T21:00:00Z", "2026-09-07")]
+    [TestCase("2026-09-06T21:09:59Z", "2026-09-07")]
+    [TestCase("2026-12-31T22:00:00Z", "2027-01-01")]
+    public void ScheduleUsesMoscowCalendarIndependentOfServerTimezone(string now, string date)
     {
-        Assert.That(ExchangeRateSchedule.NextRun(DateTimeOffset.Parse(now)), Is.EqualTo(DateTimeOffset.Parse(next)));
         Assert.That(ExchangeRateSchedule.MoscowDate(DateTimeOffset.Parse(now)), Is.EqualTo(DateOnly.Parse(date)));
     }
 
@@ -207,26 +204,13 @@ public sealed class ExchangeRateTests
     }
 
     [Test]
-    public async Task WorkerStartsImmediatelyRetriesNextMoscow0010RunAfterFailureAndCancelsWait()
+    public async Task JobReportsFailureWithoutLeakingProviderDetails()
     {
-        var time = new ManualTime(Now);
-        var calls = 0;
-        var logger = new TestLogger<ExchangeRateWorker>();
-        await using var provider = new ServiceCollection().AddScoped<IExchangeRateSynchronizer>(_ => new StubSynchronizer(_ =>
-        {
-            if (Interlocked.Increment(ref calls) == 1) throw new HttpRequestException("secret response");
-            return Task.CompletedTask;
-        })).BuildServiceProvider();
-        using var worker = new ExchangeRateWorker(provider.GetRequiredService<IServiceScopeFactory>(), time, logger);
-        await worker.StartAsync(default);
-        var first = await time.Scheduled.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.That(calls, Is.EqualTo(1));
-        Assert.That(first.Delay, Is.EqualTo(TimeSpan.FromMinutes(10)));
-        time.Advance(first);
-        var second = await time.Scheduled.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.That(calls, Is.EqualTo(2));
-        Assert.That(second.Delay, Is.EqualTo(TimeSpan.FromDays(1)));
-        await worker.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+        var logger = new TestLogger<ExchangeRateJob>();
+        var job = new ExchangeRateJob(
+            new StubSynchronizer(_ => Task.FromException(new HttpRequestException("secret response"))),
+            logger);
+        await job.Execute(null!, default);
         var failed = logger.Records.Single(record => record.Event.Id == 1702);
         Assert.That(failed.Event.Name, Is.EqualTo(SarafanEvents.ExchangeRateUpdateFailedName));
         Assert.That(failed.Level, Is.EqualTo(LogLevel.Warning));
@@ -236,24 +220,16 @@ public sealed class ExchangeRateTests
     }
 
     [Test]
-    public async Task WorkerDoesNotBlockStartupOrOverlapAndCancelsAnActiveSync()
+    public async Task JobTreatsRequestedCancellationAsExpected()
     {
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var calls = 0;
-        var time = new ManualTime(Now);
-        await using var provider = new ServiceCollection().AddScoped<IExchangeRateSynchronizer>(_ => new StubSynchronizer(async cancellation =>
-        {
-            Interlocked.Increment(ref calls);
-            entered.SetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellation);
-        })).BuildServiceProvider();
-        using var worker = new ExchangeRateWorker(provider.GetRequiredService<IServiceScopeFactory>(), time, NullLogger<ExchangeRateWorker>.Instance);
-        await worker.StartAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.That(calls, Is.EqualTo(1));
-        Assert.That(time.Scheduled.Reader.TryRead(out _), Is.False);
-        await worker.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.That(worker.ExecuteTask!.IsCompletedSuccessfully, Is.True);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var logger = new TestLogger<ExchangeRateJob>();
+        var job = new ExchangeRateJob(
+            new StubSynchronizer(token => Task.FromCanceled(token)),
+            logger);
+        await job.Execute(null!, cancellation.Token);
+        Assert.That(logger.Records, Is.Empty);
     }
 
     [Test]
@@ -292,27 +268,9 @@ public sealed class ExchangeRateTests
         public Task SynchronizeAsync(CancellationToken cancellationToken) => synchronize(cancellationToken);
     }
 
-    private sealed class ManualTime(DateTimeOffset now) : TimeProvider
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider
     {
-        private DateTimeOffset _now = now;
-        internal Channel<ManualTimer> Scheduled { get; } = Channel.CreateUnbounded<ManualTimer>();
-        public override DateTimeOffset GetUtcNow() => _now;
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = new ManualTimer(callback, state, dueTime);
-            Scheduled.Writer.TryWrite(timer);
-            return timer;
-        }
-        internal void Advance(ManualTimer timer) { _now += timer.Delay; timer.Fire(); }
-    }
-
-    private sealed class ManualTimer(TimerCallback callback, object? state, TimeSpan delay) : ITimer
-    {
-        internal TimeSpan Delay { get; } = delay;
-        internal void Fire() => callback(state);
-        public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
-        public void Dispose() { }
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private sealed record Log(LogLevel Level, EventId Event, string Message, Exception? Exception, Dictionary<string, object?> Scope);

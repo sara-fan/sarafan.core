@@ -10,8 +10,12 @@ using Sarafan.Core.RestModels;
 
 namespace Sarafan.Core.Services;
 
+public interface IConsentRetentionService
+{
+    Task<ConsentRetentionDto> SweepAsync(CancellationToken token);
+}
 public sealed class ConsentRetentionService(AppDbContext database, TimeProvider clock,
-    ILogger<ConsentRetentionService> logger)
+    ILogger<ConsentRetentionService> logger) : IConsentRetentionService
 {
     public Task<ConsentRetentionDto> SweepAsync(CancellationToken token) => OperationLogging.RunAsync(logger,
         $"{typeof(ConsentRetentionService).FullName}.{nameof(SweepAsync)}", () => LogValueSummary.Inputs(),
@@ -60,26 +64,4 @@ public sealed class ConsentRetentionService(AppDbContext database, TimeProvider 
             }
             return new ConsentRetentionDto(onboarding, removed);
         }, token), token);
-}
-
-public sealed class ConsentRetentionWorker(IServiceScopeFactory scopes, TimeProvider clock, ILogger<ConsentRetentionWorker> logger) : BackgroundService
-{
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<ConsentRetentionService>().SweepAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-            catch (Exception exception)
-            {
-                SarafanEvents.ConsentRetentionFailed(logger, exception);
-            }
-            try { await Task.Delay(TimeSpan.FromHours(24), clock, stoppingToken); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-        }
-    }
 }

@@ -21,6 +21,7 @@ internal interface IAppDatabaseOperations
     Task LockConsentsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockCustomerAsync(AppDbContext database, int customerId, CancellationToken cancellationToken);
     Task LockAdministratorMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
+    Task LockIanaTldCatalogAsync(AppDbContext database, CancellationToken cancellationToken);
     Task<Customer?> FindCustomerForUpdateAsync(AppDbContext database, int customerId, CancellationToken cancellationToken);
     bool IsCustomerOrderCodeCollision(DbUpdateException exception);
     Task<bool> InsertExchangeRateAsync(
@@ -78,6 +79,11 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
         => Task.CompletedTask;
 
     public Task LockAdministratorMutationsAsync(
+        AppDbContext database,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
+
+    public Task LockIanaTldCatalogAsync(
         AppDbContext database,
         CancellationToken cancellationToken)
         => Task.CompletedTask;

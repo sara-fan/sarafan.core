@@ -19,6 +19,7 @@ public sealed class OrderService(
     ConsentService consents,
     ICustomerOrderCodeGenerator codeGenerator,
     ICustomerOrderCodeCollisionDetector collisionDetector,
+    IanaTldCatalogService tlds,
     TimeProvider timeProvider,
     ILogger<OrderService> logger)
 {
@@ -121,9 +122,10 @@ public sealed class OrderService(
         ServiceException? sourceUrlError = null;
         try
         {
-            normalizedSourceUrl = NormalizeSourceUrl(sourceUrl);
+            var catalog = await tlds.GetRequiredAsync(cancellationToken);
+            normalizedSourceUrl = ProductSourceUrl.Normalize(sourceUrl, catalog.Values);
         }
-        catch (ServiceException exception) when (exception.Code == "invalid_order_url")
+        catch (ServiceException exception) when (exception.Code is "invalid_order_url" or "tld_catalog_unavailable")
         {
             sourceUrlError = exception;
         }
@@ -402,9 +404,6 @@ public sealed class OrderService(
 
         return rows.Select(ToCustomerDto).ToArray();
     }
-
-    private static string NormalizeSourceUrl(string? sourceUrl)
-        => ProductSourceUrl.Normalize(sourceUrl);
 
     private static int NormalizeQuantity(int? quantity)
     {

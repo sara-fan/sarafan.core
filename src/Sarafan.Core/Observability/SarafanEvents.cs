@@ -237,6 +237,28 @@ public static partial class SarafanEvents
         Message = "Consent retention processing failed; the next scheduled run will retry.")]
     private static partial void ConsentRetentionFailedMessage(ILogger logger);
 
+    public const string IanaTldUpdateStartedName = "sarafan.core.iana_tld.update.started";
+    public const string IanaTldUpdateCompletedName = "sarafan.core.iana_tld.update.completed";
+    public const string IanaTldUpdateFailedName = "sarafan.core.iana_tld.update.failed";
+
+    [LoggerMessage(EventId = 1900, EventName = IanaTldUpdateStartedName, Level = LogLevel.Information,
+        Message = "IANA top-level-domain synchronization started.")]
+    public static partial void IanaTldUpdateStarted(ILogger logger);
+
+    [LoggerMessage(EventId = 1901, EventName = IanaTldUpdateCompletedName, Level = LogLevel.Information,
+        Message = "IANA top-level-domain synchronization completed. Version: {Version}; entries: {Count}; updated: {Updated}.")]
+    public static partial void IanaTldUpdateCompleted(ILogger logger, string version, int count, bool updated);
+
+    public static void IanaTldUpdateFailed(ILogger logger, Exception exception)
+    {
+        using var scope = ErrorTypeScope(logger, exception);
+        IanaTldUpdateFailedMessage(logger);
+    }
+
+    [LoggerMessage(EventId = 1902, EventName = IanaTldUpdateFailedName, Level = LogLevel.Warning,
+        Message = "IANA top-level-domain synchronization failed; the current catalogue was preserved. The next scheduled run will retry.")]
+    private static partial void IanaTldUpdateFailedMessage(ILogger logger);
+
     private static IDisposable? ErrorTypeScope(ILogger logger, Exception exception)
         => logger.BeginScope(new KeyValuePair<string, object?>[]
         {

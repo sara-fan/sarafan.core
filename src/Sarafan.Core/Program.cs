@@ -89,8 +89,7 @@ builder.Services.AddScoped<ConsentService>();
 builder.Services.AddScoped<PersonalDataConsentFilter>();
 builder.Services.AddScoped<ConsentWithdrawalRequestService>();
 builder.Services.AddScoped<ConsentRetentionService>();
-if (builder.Configuration.GetValue("Consents:RetentionWorkerEnabled", true))
-    builder.Services.AddHostedService<ConsentRetentionWorker>();
+builder.Services.AddScoped<IConsentRetentionService>(services => services.GetRequiredService<ConsentRetentionService>());
 builder.Services.AddScoped<IBackofficePasswordHasher, BCryptBackofficePasswordHasher>();
 builder.Services.AddScoped<BackofficeJwtTokenService>();
 builder.Services.AddScoped<BackofficeAuthenticationService>();
@@ -105,10 +104,14 @@ builder.Services.AddHttpClient<ICbrRateClient, CbrRateClient>(client =>
 });
 builder.Services.AddScoped<ExchangeRateService>();
 builder.Services.AddScoped<IExchangeRateSynchronizer>(services => services.GetRequiredService<ExchangeRateService>());
-if (builder.Configuration.GetValue("ExchangeRates:Enabled", true))
+builder.Services.AddHttpClient<IIanaTldClient, IanaTldClient>(client =>
 {
-    builder.Services.AddHostedService<ExchangeRateWorker>();
-}
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.MaxResponseContentBufferSize = IanaTldClient.MaximumResponseBytes;
+});
+builder.Services.AddScoped<IanaTldCatalogService>();
+builder.Services.AddScoped<IIanaTldSynchronizer>(services => services.GetRequiredService<IanaTldCatalogService>());
+builder.Services.AddSarafanScheduledJobs(builder.Configuration);
 
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authentication.SigningKey));
 var backofficeSigningKey = new SymmetricSecurityKey(
