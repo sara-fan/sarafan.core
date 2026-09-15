@@ -133,7 +133,7 @@ public sealed partial class IanaTldClient(HttpClient httpClient, ILogger<IanaTld
     [GeneratedRegex("\\A# Version (?<version>[0-9]{10}), Last Updated (?<updated>[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4} UTC)\\z", RegexOptions.CultureInvariant)]
     private static partial Regex HeaderPattern();
 
-    [GeneratedRegex("\\A[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("\\A(?=[A-Z0-9-]*[A-Z])[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\\z", RegexOptions.CultureInvariant)]
     private static partial Regex TopLevelDomainPattern();
 }
 
