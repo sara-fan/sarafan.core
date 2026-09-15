@@ -33,11 +33,12 @@ public sealed class SarafanProblemDetailsFactory(
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
             ["order_quantity_limit_exceeded"] = new(400, "Превышено количество товара", "Такое количество товара может быть признано коммерческой партией и запрещено к ввозу"),
-            ["order_value_limit_exceeded"] = new(400, "Превышена стоимость заказа", FormattableString.Invariant($"Максимальная стоимость заказа при экспресс-перевозке {OrderLimitService.MaximumAmountEur:0.############################} евро с учётом резерва {OrderLimitService.ExchangeRateReservePercent:0.############################}% на изменение курса")),
+            ["order_value_limit_exceeded"] = new(400, "Превышена стоимость заказа", OrderLimitService.ExceededMessage),
             ["order_limit_rates_unavailable"] = new(503, "Курсы временно недоступны", "Не удалось проверить стоимость. Повторите попытку позже."),
             ["order_update_conflict"] = new(409, "Заказ изменился", "Обновите карточку и повторите изменения."),
             ["order_not_editable"] = new(409, "Товар недоступен для редактирования", "Изменять товар можно только во время проверки заказа."),
             ["invalid_order_product_name"] = new(400, "Некорректное название товара", "Укажите название товара длиной от 1 до 500 символов."),
+            ["invalid_order_store_name"] = new(400, "Некорректное название магазина", "Название магазина не должно превышать 200 символов."),
             ["invalid_order_seller_price"] = new(400, "Некорректная цена товара", "Укажите положительную цену в USD не более 99999999,99, максимум с двумя дробными знаками."),
             ["invalid_order_color"] = new(400, "Некорректный цвет товара", "Цвет не должен превышать 200 символов."),
             ["invalid_order_size"] = new(400, "Некорректный размер товара", "Размер не должен превышать 200 символов."),
@@ -270,6 +271,7 @@ public sealed class SarafanProblemDetailsFactory(
             "order_quantity_limit_exceeded" => "quantity",
             "order_value_limit_exceeded" => "sellerPrice",
             "invalid_order_product_name" => "productName",
+            "invalid_order_store_name" => "storeName",
             "invalid_order_seller_price" => "sellerPrice",
             "invalid_order_color" => "color",
             "invalid_order_size" => "size",

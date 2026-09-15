@@ -130,7 +130,7 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
                 pattern,
                 "\\")
             || EF.Functions.ILike(item.SourceUrl, pattern, "\\")
-            || (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName) != null && EF.Functions.ILike((item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)!, pattern, "\\")
+            || item.ProductName != null && EF.Functions.ILike(item.ProductName, pattern, "\\")
             || item.StoreName != null && EF.Functions.ILike(item.StoreName, pattern, "\\"));
     }
 }

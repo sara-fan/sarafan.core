@@ -172,7 +172,7 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
                 search,
                 StringComparison.OrdinalIgnoreCase)
             || item.SourceUrl.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName) != null && (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)!.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || item.ProductName != null && item.ProductName.Contains(search, StringComparison.OrdinalIgnoreCase)
             || item.StoreName != null && item.StoreName.Contains(search, StringComparison.OrdinalIgnoreCase));
 }
 
