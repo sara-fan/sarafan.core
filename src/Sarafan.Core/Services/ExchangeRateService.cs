@@ -37,7 +37,7 @@ public sealed class ExchangeRateService(
 
     public Task<ExchangeRateDto?> GetLatestAsync(CancellationToken cancellationToken, Currency currency = Currency.Usd)
         => OperationLogging.RunAsync(logger, $"{typeof(ExchangeRateService).FullName}.{nameof(GetLatestAsync)}",
-            () => LogValueSummary.Inputs((nameof(cancellationToken), cancellationToken)), () =>
+            () => LogValueSummary.Inputs((nameof(currency), currency), (nameof(cancellationToken), cancellationToken)), () =>
             {
                 var today = ExchangeRateSchedule.MoscowDate(timeProvider.GetUtcNow());
                 return database.ExchangeRateHistory.AsNoTracking()
