@@ -14,9 +14,13 @@ namespace Sarafan.Core.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class OrderOperationsController(
     IanaTldCatalogService tlds,
+    OrderLimitService limits,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet("ops")]
     public async Task<ActionResult<OrderOpsDto>> Operations(CancellationToken cancellationToken)
-        => Ok(OrderOperationsCatalog.CreatePublic(await tlds.GetRequiredAsync(cancellationToken)));
+        => Ok(OrderOperationsCatalog.CreatePublic(await tlds.GetRequiredAsync(cancellationToken)) with
+        {
+            ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken))
+        });
 }

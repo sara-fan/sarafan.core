@@ -10,6 +10,7 @@ namespace Sarafan.Core.RestModels;
 
 public sealed class CreateOrderRequest
 {
+    public OrderProductRequest? Product { get; set; }
     public string? SourceUrl { get; set; }
 
     [Required(ErrorMessage = "Поле обязательно для заполнения.")]
@@ -28,6 +29,8 @@ public sealed class ProductPreviewRequest
 public sealed record ProductPreviewDto(string SourceUrl, string Outcome)
 {
     public const string ManualReviewOutcome = "manual_review";
+    public const string RecognizedOutcome = "recognized";
+    public OrderProductDto? Product { get; init; }
 }
 
 public sealed record OrderSellerPriceDto(decimal Amount, Currency Currency);
@@ -56,7 +59,12 @@ public sealed record OrderDto(
     IReadOnlyDictionary<string, string>? Characteristics,
     int Quantity,
     string? Comment,
-    OrderAppliedExchangeRateDto? AppliedExchangeRate);
+    OrderAppliedExchangeRateDto? AppliedExchangeRate)
+{
+    public required OrderProductDto Product { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public bool ShowReviewFields { get; init; }
+}
 
 public sealed record CustomerOrderListItemDto(
     long Id,
@@ -88,7 +96,10 @@ public sealed record ProductSourceUrlOpsDto(
 public sealed record OrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,
     IReadOnlyList<EnumOpsItemDto> Currencies,
-    ProductSourceUrlOpsDto ProductSourceUrl);
+    ProductSourceUrlOpsDto ProductSourceUrl)
+{
+    public OrderProductLimitsDto? ProductLimits { get; init; }
+}
 
 public sealed record BackofficeOrderStatusFilterGroupDto(
     string RouteAlias,
@@ -98,7 +109,10 @@ public sealed record BackofficeOrderStatusFilterGroupDto(
 public sealed record BackofficeOrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,
     IReadOnlyList<EnumOpsItemDto> Currencies,
-    IReadOnlyList<BackofficeOrderStatusFilterGroupDto> StatusGroups);
+    IReadOnlyList<BackofficeOrderStatusFilterGroupDto> StatusGroups)
+{
+    public OrderProductLimitsDto? ProductLimits { get; init; }
+}
 
 public sealed record BackofficeOrderListItemDto(
     string OrderNumber,

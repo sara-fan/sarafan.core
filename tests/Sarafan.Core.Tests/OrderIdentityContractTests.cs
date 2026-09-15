@@ -72,8 +72,8 @@ public sealed class OrderIdentityContractTests
             Assert.That(order.FindProperty(nameof(Order.CustomerId))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
             Assert.That(order.FindProperty(nameof(Order.CustomerOrderNumber))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
             Assert.That(order.FindProperty(nameof(Order.SourceUrl))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
-            Assert.That(order.FindProperty(nameof(Order.Quantity))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
-            Assert.That(order.FindProperty(nameof(Order.Comment))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Throw));
+            Assert.That(order.FindProperty(nameof(Order.Quantity))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Save));
+            Assert.That(order.FindProperty(nameof(Order.Comment))!.GetAfterSaveBehavior(), Is.EqualTo(PropertySaveBehavior.Save));
             Assert.That(order.FindProperty(nameof(Order.SellerPrice))!.GetPrecision(), Is.EqualTo(10));
             Assert.That(order.FindProperty(nameof(Order.SellerPrice))!.GetScale(), Is.EqualTo(2));
             Assert.That(order.FindProperty(nameof(Order.LengthCm))!.GetPrecision(), Is.EqualTo(10));

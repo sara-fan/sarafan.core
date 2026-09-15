@@ -7,7 +7,8 @@ namespace Sarafan.Core.Models;
 public enum Currency
 {
     Rub = 643,
-    Usd = 840
+    Usd = 840,
+    Eur = 978
 }
 
 public static class CurrencyExtensions
@@ -16,6 +17,7 @@ public static class CurrencyExtensions
     {
         Currency.Rub => "Российский рубль",
         Currency.Usd => "Доллар США",
+        Currency.Eur => "Евро",
         _ => throw new ArgumentOutOfRangeException(nameof(currency), currency, null)
     };
 
@@ -23,6 +25,7 @@ public static class CurrencyExtensions
     {
         Currency.Rub => "rub",
         Currency.Usd => "usd",
+        Currency.Eur => "eur",
         _ => throw new ArgumentOutOfRangeException(nameof(currency), currency, null)
     };
 }

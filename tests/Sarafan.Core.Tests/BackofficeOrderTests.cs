@@ -76,7 +76,7 @@ public sealed class BackofficeOrderTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(body, Is.Not.Null);
         Assert.That(body!.Statuses.Select(item => item.Value), Is.EqualTo(Enum.GetValues<OrderStatus>().Select(item => (int)item)));
-        Assert.That(body.Currencies.Select(item => item.Value), Is.EqualTo(new[] { 643, 840 }));
+        Assert.That(body.Currencies.Select(item => item.Value), Is.EqualTo(new[] { 643, 840, 978 }));
         Assert.That(body.StatusGroups.Select(item => (item.RouteAlias, item.Name)), Is.EqualTo(new[]
         {
             ("work", "В работе"),
@@ -355,18 +355,17 @@ public sealed class BackofficeOrderTests
                 null,
                 Guid.NewGuid(),
                 created);
-            order.SetProductSnapshot(
+            order.SetProduct(new OrderProductDto(
                 index == 1 ? "Blue Widget" : index == statuses.Length - 1 ? null : $"Product {index}",
-                index == 2 ? "Rare Shop" : index == statuses.Length - 1 ? null : $"Store {index}",
-                null,
-                index == statuses.Length - 1 ? null : 10m + index,
-                index == statuses.Length - 1 ? null : index % 2 == 0 ? Currency.Rub : Currency.Usd,
+                index == statuses.Length - 1 ? null : new(10m + index, index % 2 == 0 ? Currency.Rub : Currency.Usd),
+                index + 1,
                 null,
                 null,
-                null,
-                null,
-                null,
-                created.AddMinutes(index));
+                null)
+            {
+                StoreName = index == 2 ? "Rare Shop" : index == statuses.Length - 1 ? null : $"Store {index}"
+            });
+            order.SetProductMetadata(null, null, null, null, null, null, created.AddMinutes(index));
             database.Orders.Add(order);
             database.Entry(order).Property(item => item.Status).CurrentValue = statuses[index];
         }

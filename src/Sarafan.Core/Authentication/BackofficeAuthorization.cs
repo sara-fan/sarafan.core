@@ -16,7 +16,8 @@ public enum BackofficeAction
     OperationalQueue = 3,
     ManualQuotes = 4,
     ManageLegalDocuments = 5,
-    ManageConsentWithdrawalRequests = 6
+    ManageConsentWithdrawalRequests = 6,
+    EditOrderProduct = 7
 }
 
 public static class BackofficeAuthenticationDefaults
@@ -27,6 +28,7 @@ public static class BackofficeAuthenticationDefaults
 public static class BackofficePolicies
 {
     public const string Access = "backoffice:access";
+    public const string EditOrderProduct = "backoffice:edit-order-product";
     public const string ManageUsers = "backoffice:manage-users";
     public const string ManageRoles = "backoffice:manage-roles";
     public const string OperationalQueue = "backoffice:operational-queue";
@@ -45,6 +47,7 @@ public static class BackofficeAuthorization
         new Dictionary<BackofficeAction, IReadOnlySet<string>>
         {
             [BackofficeAction.Access] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
+            [BackofficeAction.EditOrderProduct] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
             [BackofficeAction.ManageUsers] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.ManageRoles] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.OperationalQueue] = new HashSet<string>([BackofficeRoles.Administrator, BackofficeRoles.ShiftManager], StringComparer.Ordinal),
@@ -61,6 +64,7 @@ public static class BackofficeAuthorization
     public static void Configure(AuthorizationOptions options)
     {
         AddPolicy(options, BackofficePolicies.Access, BackofficeAction.Access);
+        AddPolicy(options, BackofficePolicies.EditOrderProduct, BackofficeAction.EditOrderProduct);
         AddPolicy(options, BackofficePolicies.ManageUsers, BackofficeAction.ManageUsers);
         AddPolicy(options, BackofficePolicies.ManageRoles, BackofficeAction.ManageRoles);
         AddPolicy(options, BackofficePolicies.OperationalQueue, BackofficeAction.OperationalQueue);

@@ -3,6 +3,7 @@
 // This file is a part of the Sarafan application
 
 using Sarafan.Core.Models;
+using Sarafan.Core.RestModels;
 
 namespace Sarafan.Core.ModelTests;
 
@@ -17,7 +18,7 @@ public sealed class OrderProductContractTests
     {
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(Enum.GetValues<Currency>(), Is.EqualTo(new[] { Currency.Rub, Currency.Usd }));
+            Assert.That(Enum.GetValues<Currency>(), Is.EqualTo(new[] { Currency.Rub, Currency.Usd, Currency.Eur }));
             Assert.That((int)Currency.Rub, Is.EqualTo(643));
             Assert.That(Currency.Rub.GetDisplayName(), Is.EqualTo("Российский рубль"));
             Assert.That(Currency.Rub.GetRouteAlias(), Is.EqualTo("rub"));
@@ -26,8 +27,19 @@ public sealed class OrderProductContractTests
             Assert.That(Currency.Usd.GetRouteAlias(), Is.EqualTo("usd"));
         }
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)978).GetDisplayName());
-        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)978).GetRouteAlias());
+        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)999).GetDisplayName());
+        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)999).GetRouteAlias());
+    }
+
+    [Test]
+    public void ProductAuditKinds_UseStableValues()
+    {
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That((int)OrderProductAuditKind.Created, Is.Zero);
+            Assert.That((int)OrderProductAuditKind.Parsed, Is.EqualTo(100));
+            Assert.That((int)OrderProductAuditKind.StaffCorrected, Is.EqualTo(200));
+        }
     }
 
     [Test]
@@ -44,7 +56,7 @@ public sealed class OrderProductContractTests
         var localCreated = new DateTimeOffset(2026, 9, 14, 3, 0, 0, TimeSpan.FromHours(3));
         var order = new Order(1, 1, "https://shop.example.com/product", 1, null, Guid.NewGuid(), localCreated);
 
-        order.SetProductSnapshot(null, null, null, null, null, null, null, null, null, null,
+        order.SetProductMetadata(null, null, null, null, null, null,
             new DateTimeOffset(2026, 9, 14, 4, 0, 0, TimeSpan.FromHours(3)));
 
         Assert.That(order.CreatedAt, Is.EqualTo(DateTimeOffset.Parse("2026-09-14T00:00:00Z")));
@@ -52,12 +64,11 @@ public sealed class OrderProductContractTests
     }
 
     [Test]
-    public void ProductSnapshot_AdvancesUpdateTimeWhenTheProvidedTimeEqualsTheCurrentTime()
+    public void ProductMetadata_AdvancesUpdateTimeWhenTheProvidedTimeEqualsTheCurrentTime()
     {
         var order = NewOrder();
 
-        order.SetProductSnapshot(
-            null, null, null, null, null, null, null, null, null, null, CreatedAt);
+        order.SetProductMetadata(null, null, null, null, null, null, CreatedAt);
 
         using (Assert.EnterMultipleScope())
         {
@@ -67,18 +78,17 @@ public sealed class OrderProductContractTests
     }
 
     [Test]
-    public void ProductSnapshot_AdvancesUpdateTimeForSubMicrosecondDeltas()
+    public void ProductMetadata_AdvancesUpdateTimeForSubMicrosecondDeltas()
     {
         var order = NewOrder();
 
-        order.SetProductSnapshot(
-            null, null, null, null, null, null, null, null, null, null, CreatedAt.AddTicks(1));
+        order.SetProductMetadata(null, null, null, null, null, null, CreatedAt.AddTicks(1));
 
         Assert.That(order.UpdatedAt, Is.EqualTo(CreatedAt.AddMicroseconds(1)));
     }
 
     [Test]
-    public void ProductSnapshot_AcceptsCompleteRecognizedDataAndCopiesCharacteristics()
+    public void ProductMetadata_PreservesCurrentProductAndCopiesCharacteristics()
     {
         var order = NewOrder();
         var characteristics = new Dictionary<string, string> { ["Цвет"] = "Синий" };
@@ -95,12 +105,12 @@ public sealed class OrderProductContractTests
             RetrievedAt = DateTimeOffset.Parse("2026-09-13T00:00:00Z")
         };
 
-        order.SetProductSnapshot(
-            "Товар",
-            "Магазин",
+        order.SetProduct(new OrderProductDto("Товар", new(12.34m, Currency.Usd), 1, null, null, null)
+        {
+            StoreName = "Магазин"
+        });
+        order.SetProductMetadata(
             "https://images.example/product.jpg",
-            12.34m,
-            Currency.Usd,
             10.25m,
             20.50m,
             30.75m,
@@ -128,7 +138,7 @@ public sealed class OrderProductContractTests
     }
 
     [Test]
-    public void ProductSnapshot_RejectsIncompleteOrInvalidMoneyDimensionsAndRate()
+    public void ProductMetadata_RejectsInvalidDimensionsRateAndTimestamp()
     {
         var rubRate = new ExchangeRateHistory
         {
@@ -143,63 +153,35 @@ public sealed class OrderProductContractTests
             RetrievedAt = DateTimeOffset.Parse("2026-09-13T00:00:00Z")
         };
 
-        Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), sellerPrice: 10, currency: null));
-        Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), sellerPrice: null, currency: Currency.Usd));
-        Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), sellerPrice: 0, currency: Currency.Usd));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Snapshot(NewOrder(), sellerPrice: 10, currency: (Currency)978));
-        Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), length: 1, width: null, height: 1));
-        Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), length: 1, width: 0, height: 1));
-        Assert.Throws<ArgumentException>(() => Snapshot(
-            NewOrder(), sellerPrice: 10, currency: Currency.Usd, rate: rubRate));
-        Assert.Throws<ArgumentOutOfRangeException>(() => NewOrder().SetProductSnapshot(
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            CreatedAt.AddMicroseconds(-1)));
+        Assert.Throws<ArgumentException>(() => Metadata(NewOrder(), length: 1, width: null, height: 1));
+        Assert.Throws<ArgumentException>(() => Metadata(NewOrder(), length: 1, width: 0, height: 1));
+        Assert.Throws<ArgumentException>(() => Metadata(NewOrder(), rate: rubRate));
+        Assert.Throws<ArgumentOutOfRangeException>(() => NewOrder().SetProductMetadata(
+            null, null, null, null, null, null, CreatedAt.AddMicroseconds(-1)));
         var maximumTimestampOrder = new Order(
             1, 1, "https://shop.example.com/product", 1, null, Guid.NewGuid(), DateTimeOffset.MaxValue);
-        Assert.Throws<ArgumentOutOfRangeException>(() => maximumTimestampOrder.SetProductSnapshot(
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            DateTimeOffset.MaxValue));
+        Assert.Throws<ArgumentOutOfRangeException>(() => maximumTimestampOrder.SetProductMetadata(
+            null, null, null, null, null, null, DateTimeOffset.MaxValue));
     }
 
     private static Order NewOrder(int quantity = 1, string? comment = null)
         => new(1, 1, "https://shop.example.com/product", quantity, comment, Guid.NewGuid(), CreatedAt);
 
-    private static void Snapshot(
+    private static void Metadata(
         Order order,
-        decimal? sellerPrice = null,
-        Currency? currency = null,
         decimal? length = null,
         decimal? width = null,
         decimal? height = null,
         ExchangeRateHistory? rate = null)
-        => order.SetProductSnapshot(
+    {
+        order.SetProduct(new OrderProductDto("Товар", new(10, Currency.Usd), 1, null, null, null));
+        order.SetProductMetadata(
             null,
-            null,
-            null,
-            sellerPrice,
-            currency,
             length,
             width,
             height,
             null,
             rate,
             UpdatedAt);
+    }
 }

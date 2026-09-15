@@ -93,7 +93,7 @@ public sealed class OrderStatusTests
         Assert.That(body.Currencies, Is.EqualTo(new[]
         {
             new EnumOpsItemDto(643, "Российский рубль", "rub"),
-            new EnumOpsItemDto(840, "Доллар США", "usd")
+            new EnumOpsItemDto(840, "Доллар США", "usd"), new EnumOpsItemDto(978, "Евро", "eur")
         }));
     }
 

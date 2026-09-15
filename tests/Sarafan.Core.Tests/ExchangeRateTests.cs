@@ -165,7 +165,7 @@ public sealed class ExchangeRateTests
         Assert.That(status.Currencies, Is.EqualTo(new[]
         {
             new EnumOpsItemDto(643, "Российский рубль", "rub"),
-            new EnumOpsItemDto(840, "Доллар США", "usd")
+            new EnumOpsItemDto(840, "Доллар США", "usd"), new EnumOpsItemDto(978, "Евро", "eur")
         }));
         using var health = await client.GetAsync("/api/v1/status/status");
         Assert.That(await health.Content.ReadAsStringAsync(), Does.Not.Contain("exchangeRates"));
@@ -251,6 +251,32 @@ public sealed class ExchangeRateTests
             Is.EqualTo("ExchangeRateDto(rate/metadata=[redacted])"));
         Assert.That(LogValueSummary.Describe(new BackofficeStatus("secret", "secret", "secret", [], [])),
             Is.EqualTo("BackofficeStatus(version/rates=[redacted])"));
+    }
+
+    [Test]
+    public async Task SynchronizationPersistsBothCurrenciesAndIndependentSourceDates()
+    {
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var db = Database(scope);
+        var eur = Rate with { BaseCurrency = Currency.Eur, OfficialRate = 100m };
+        var client = new PairClient([Rate, eur]);
+        var service = new ExchangeRateService(db, client, new FixedTime(Now), NullLogger<ExchangeRateService>.Instance);
+        await service.SynchronizeAsync(default);
+        client.Rates = [Rate with { OfficialRate = 1 }, eur with { OfficialRate = 1 }];
+        await service.SynchronizeAsync(default);
+        Assert.That(await db.ExchangeRateHistory.CountAsync(), Is.EqualTo(2));
+        Assert.That((await service.GetLatestAsync(default, Currency.Eur))!.OfficialRate, Is.EqualTo(100));
+        client.Rates = [eur with { SourceEffectiveDate = new DateOnly(2026, 9, 6) }];
+        await service.SynchronizeAsync(default);
+        Assert.That((await service.GetLatestAsync(default))!.SourceEffectiveDate, Is.EqualTo(Rate.SourceEffectiveDate));
+        Assert.That((await service.GetLatestAsync(default, Currency.Eur))!.SourceEffectiveDate, Is.EqualTo(new DateOnly(2026, 9, 6)));
+    }
+
+    private sealed class PairClient(IReadOnlyList<CbrRate> rates) : ICbrRateClient
+    {
+        internal IReadOnlyList<CbrRate> Rates { get; set; } = rates;
+        public Task<CbrRate> GetAsync(DateOnly date, CancellationToken cancellationToken) => Task.FromResult(Rates[0]);
+        public Task<IReadOnlyList<CbrRate>> GetRatesAsync(DateOnly date, CancellationToken cancellationToken) => Task.FromResult(Rates);
     }
 
     private sealed class StubClient(CbrRate rate, Exception? failure) : ICbrRateClient

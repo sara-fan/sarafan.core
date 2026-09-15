@@ -3,6 +3,7 @@
 // This file is a part of the Sarafan application
 
 using System.Globalization;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -14,12 +15,13 @@ using Sarafan.Core.RestModels;
 
 namespace Sarafan.Core.Services;
 
-public sealed class OrderService(
+public sealed partial class OrderService(
     AppDbContext database,
     ConsentService consents,
     ICustomerOrderCodeGenerator codeGenerator,
     ICustomerOrderCodeCollisionDetector collisionDetector,
     IanaTldCatalogService tlds,
+    OrderLimitService limits,
     TimeProvider timeProvider,
     ILogger<OrderService> logger)
 {
@@ -58,7 +60,8 @@ public sealed class OrderService(
         int? quantity,
         string? comment,
         Guid idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        OrderProductRequest? product = null)
         => OperationLogging.RunAsync(
             logger,
             $"{typeof(OrderService).FullName}.{nameof(CreateAsync)}",
@@ -67,9 +70,10 @@ public sealed class OrderService(
                 (nameof(sourceUrl), sourceUrl),
                 (nameof(quantity), quantity),
                 (nameof(comment), comment),
+                (nameof(product), product),
                 (nameof(idempotencyKey), idempotencyKey),
                 (nameof(cancellationToken), cancellationToken)),
-            () => CreateCoreAsync(customerId, sourceUrl, quantity, comment, idempotencyKey, cancellationToken),
+            () => CreateCoreAsync(customerId, sourceUrl, quantity, comment, idempotencyKey, cancellationToken, product),
             cancellationToken);
 
     public Task<BackofficeOrderPageDto> ListForBackofficeAsync(
@@ -116,7 +120,8 @@ public sealed class OrderService(
         int? quantity,
         string? comment,
         Guid idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        OrderProductRequest? productRequest)
     {
         string? normalizedSourceUrl = null;
         ServiceException? sourceUrlError = null;
@@ -131,6 +136,7 @@ public sealed class OrderService(
         }
         var normalizedQuantity = NormalizeQuantity(quantity);
         var normalizedComment = NormalizeComment(comment);
+        var product = OrderProductRules.Normalize(productRequest, normalizedQuantity, normalizedComment);
         if (idempotencyKey == Guid.Empty)
         {
             throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_idempotency_key");
@@ -156,8 +162,7 @@ public sealed class OrderService(
                     if (existing is not null)
                     {
                         if (!ProductSourceUrl.MatchesStored(existing.SourceUrl, sourceUrl)
-                            || existing.Quantity != normalizedQuantity
-                            || !string.Equals(existing.Comment, normalizedComment, StringComparison.Ordinal))
+                            || await ProductAtCreation(existing, cancellationToken) != product)
                         {
                             throw new ServiceException(StatusCodes.Status409Conflict, "order_creation_conflict");
                         }
@@ -171,6 +176,9 @@ public sealed class OrderService(
                         throw sourceUrlError;
                     }
 
+                    OrderProductRules.Validate(product);
+                    var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
+
                     assignedNewCode = customer.OrderCode is null;
                     var customerOrderNumber = customer.AllocateOrderNumber(
                         customer.OrderCode ?? codeGenerator.Generate());
@@ -183,6 +191,16 @@ public sealed class OrderService(
                         idempotencyKey,
                         timeProvider.GetUtcNow());
                     database.Orders.Add(order);
+                    order.SetProduct(product);
+                    database.Set<OrderProductAuditEvent>().Add(new()
+                    {
+                        Order = order,
+                        Kind = OrderProductAuditKind.Created,
+                        OccurredAt = order.CreatedAt,
+                        After = JsonSerializer.Serialize(product),
+                        UsdRateId = pair.Usd.Id,
+                        EurRateId = pair.Eur.Id
+                    });
                     return new Allocation(order, customer.OrderCode!);
                 }, cancellationToken);
 
@@ -460,9 +478,7 @@ public sealed class OrderService(
         order.ProductName,
         order.StoreName,
         order.ImageUrl,
-        order.SellerPrice.HasValue && order.SellerPriceCurrency.HasValue
-            ? new OrderSellerPriceDto(order.SellerPrice.Value, order.SellerPriceCurrency.Value)
-            : null,
+        Price(order.SellerPrice, order.SellerPriceCurrency),
         order.LengthCm.HasValue && order.WidthCm.HasValue && order.HeightCm.HasValue
             ? new OrderDimensionsDto(order.LengthCm.Value, order.WidthCm.Value, order.HeightCm.Value)
             : null,
@@ -478,7 +494,12 @@ public sealed class OrderService(
                 rate.Nominal,
                 rate.OfficialRate,
                 rate.SourceEffectiveDate)
-            : null);
+            : null)
+    {
+        Product = CurrentProduct(order),
+        CreatedAt = order.CreatedAt,
+        ShowReviewFields = order.Status == OrderStatus.UnderReview
+    };
 
     private static BackofficeOrderListItemDto ToBackofficeDto(BackofficeOrderProjection order) => new(
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",

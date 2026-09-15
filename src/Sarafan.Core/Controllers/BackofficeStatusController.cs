@@ -24,6 +24,7 @@ public sealed class BackofficeStatusController(
     public async Task<ActionResult<BackofficeStatus>> Status(CancellationToken cancellationToken)
     {
         var rate = await exchangeRates.GetLatestAsync(cancellationToken);
+        var eur = await exchangeRates.GetLatestAsync(cancellationToken, Currency.Eur);
         var currencies = Enum.GetValues<Currency>()
             .OrderBy(currency => (int)currency)
             .Select(currency => new EnumOpsItemDto(
@@ -35,7 +36,7 @@ public sealed class BackofficeStatusController(
             "Sarafan.Core",
             "ok",
             VersionInfo.AppVersion,
-            rate is null ? [] : [rate],
+            new[] { rate, eur }.OfType<ExchangeRateDto>().ToArray(),
             currencies));
     }
 }

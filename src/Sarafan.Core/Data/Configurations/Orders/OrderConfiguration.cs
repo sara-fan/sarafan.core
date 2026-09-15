@@ -31,6 +31,8 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(item => item.ImageUrl).HasColumnName("image_url").HasMaxLength(2048);
         builder.Property(item => item.SellerPrice).HasColumnName("seller_price").HasPrecision(10, 2);
         builder.Property(item => item.SellerPriceCurrency).HasColumnName("seller_price_currency");
+        builder.Property(item => item.Color).HasColumnName("color").HasMaxLength(200);
+        builder.Property(item => item.Size).HasColumnName("size").HasMaxLength(200);
         builder.Property(item => item.LengthCm).HasColumnName("length_cm").HasPrecision(10, 2);
         builder.Property(item => item.WidthCm).HasColumnName("width_cm").HasPrecision(10, 2);
         builder.Property(item => item.HeightCm).HasColumnName("height_cm").HasPrecision(10, 2);
@@ -44,19 +46,17 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
             (left, right) => CharacteristicsEqual(left, right),
             value => CharacteristicsHashCode(value),
             value => CloneCharacteristics(value)));
-        var quantity = builder.Property(item => item.Quantity).HasColumnName("quantity");
-        var comment = builder.Property(item => item.Comment).HasColumnName("comment").HasMaxLength(2000);
+        builder.Property(item => item.Quantity).HasColumnName("quantity");
+        builder.Property(item => item.Comment).HasColumnName("comment").HasMaxLength(2000);
         builder.Property(item => item.AppliedExchangeRateHistoryId).HasColumnName("applied_exchange_rate_history_id");
         var idempotencyKey = builder.Property(item => item.CreationIdempotencyKey)
             .HasColumnName("creation_idempotency_key");
         var createdAt = builder.Property(item => item.CreatedAt).HasColumnName("created_at");
-        builder.Property(item => item.UpdatedAt).HasColumnName("updated_at");
-
+        builder.Property(item => item.UpdatedAt).HasColumnName("updated_at").IsConcurrencyToken();
+        builder.Property(item => item.Status).IsConcurrencyToken();
         customerId.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         customerOrderNumber.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         sourceUrl.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
-        quantity.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
-        comment.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         idempotencyKey.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         createdAt.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
 
@@ -93,7 +93,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
             table.HasCheckConstraint("ck_orders_source_url", "source_url ~* '^https?://' AND char_length(source_url) <= 2048");
             table.HasCheckConstraint("ck_orders_image_url", "image_url IS NULL OR image_url ~* '^https?://' AND char_length(image_url) <= 2048");
             table.HasCheckConstraint("ck_orders_quantity", "quantity > 0");
-            table.HasCheckConstraint("ck_orders_seller_price", "(seller_price IS NULL AND seller_price_currency IS NULL) OR (seller_price > 0 AND seller_price_currency IN (643, 840))");
+            table.HasCheckConstraint("ck_orders_seller_price", "(seller_price IS NULL AND seller_price_currency IS NULL) OR (seller_price > 0 AND seller_price_currency IN (643, 840, 978))");
             table.HasCheckConstraint("ck_orders_dimensions", "(length_cm IS NULL AND width_cm IS NULL AND height_cm IS NULL) OR (length_cm > 0 AND width_cm > 0 AND height_cm > 0)");
             table.HasCheckConstraint("ck_orders_applied_exchange_rate", "applied_exchange_rate_history_id IS NULL OR seller_price_currency IS NOT NULL");
         });

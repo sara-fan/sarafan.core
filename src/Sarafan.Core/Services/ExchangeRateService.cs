@@ -26,21 +26,23 @@ public sealed class ExchangeRateService(
             {
                 SarafanEvents.ExchangeRateUpdateStarted(logger);
                 var date = ExchangeRateSchedule.MoscowDate(timeProvider.GetUtcNow());
-                var rate = await cbr.GetAsync(date, cancellationToken);
+                var rates = await cbr.GetRatesAsync(date, cancellationToken);
                 var retrievedAt = timeProvider.GetUtcNow();
-                var inserted = await AppDatabaseOperations.For(database)
-                    .InsertExchangeRateAsync(database, rate, retrievedAt, cancellationToken);
+                var inserted = false;
+                foreach (var rate in rates)
+                    inserted |= await AppDatabaseOperations.For(database)
+                        .InsertExchangeRateAsync(database, rate, retrievedAt, cancellationToken);
                 SarafanEvents.ExchangeRateUpdateCompleted(logger, inserted);
             }, cancellationToken);
 
-    public Task<ExchangeRateDto?> GetLatestAsync(CancellationToken cancellationToken)
+    public Task<ExchangeRateDto?> GetLatestAsync(CancellationToken cancellationToken, Currency currency = Currency.Usd)
         => OperationLogging.RunAsync(logger, $"{typeof(ExchangeRateService).FullName}.{nameof(GetLatestAsync)}",
-            () => LogValueSummary.Inputs((nameof(cancellationToken), cancellationToken)), () =>
+            () => LogValueSummary.Inputs((nameof(currency), currency), (nameof(cancellationToken), cancellationToken)), () =>
             {
                 var today = ExchangeRateSchedule.MoscowDate(timeProvider.GetUtcNow());
                 return database.ExchangeRateHistory.AsNoTracking()
                     .Where(rate => rate.Provider == "CBR"
-                        && rate.BaseCurrency == Currency.Usd
+                        && rate.BaseCurrency == currency
                         && rate.QuoteCurrency == Currency.Rub
                         && rate.SourceEffectiveDate <= today)
                     .OrderByDescending(rate => rate.SourceEffectiveDate)
