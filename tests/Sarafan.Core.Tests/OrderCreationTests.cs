@@ -151,18 +151,10 @@ public sealed class OrderCreationTests
         {
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var firstOrder = await database.Orders.SingleAsync(item => item.Id == first.Id);
-            firstOrder.SetProductSnapshot(
-                "Первый товар",
-                "Магазин",
-                "https://images.example/first.jpg",
-                12.34m,
-                Currency.Usd,
-                null,
-                null,
-                null,
-                null,
-                null,
-                DateTimeOffset.UtcNow);
+            firstOrder.CorrectProduct("Магазин", OrderService.CurrentProduct(firstOrder),
+                firstOrder.CreatedLimitUsdRateId!.Value, firstOrder.CreatedLimitEurRateId!.Value, DateTimeOffset.UtcNow);
+            firstOrder.SetProductMetadata("https://images.example/first.jpg",
+                null, null, null, null, null, DateTimeOffset.UtcNow);
             await database.SaveChangesAsync();
         }
 
@@ -212,7 +204,7 @@ public sealed class OrderCreationTests
     }
 
     [Test]
-    public async Task GetAndIdempotentReplay_ReturnTheServerOwnedProductSnapshotAndAppliedRate()
+    public async Task GetAndIdempotentReplay_ReturnCurrentProductMetadataAndAppliedRate()
     {
         var idempotencyKey = Guid.NewGuid();
         using var createdResponse = await Create(_client, "https://shop.example.com/product", idempotencyKey);
@@ -235,18 +227,11 @@ public sealed class OrderCreationTests
             database.ExchangeRateHistory.Add(rate);
             await database.SaveChangesAsync();
             var order = await database.Orders.SingleAsync(item => item.Id == created.Id);
-            order.SetProductSnapshot(
-                "Товар",
-                "Магазин",
-                "https://images.example/product.jpg",
-                12.34m,
-                Currency.Usd,
-                10.25m,
-                20.50m,
-                30.75m,
-                new Dictionary<string, string> { ["Цвет"] = "Синий" },
-                rate,
-                DateTimeOffset.UtcNow);
+            order.CorrectProduct("Магазин", OrderService.CurrentProduct(order),
+                order.CreatedLimitUsdRateId!.Value, order.CreatedLimitEurRateId!.Value, DateTimeOffset.UtcNow);
+            order.SetProductMetadata("https://images.example/product.jpg",
+                10.25m, 20.50m, 30.75m, new Dictionary<string, string> { ["Цвет"] = "Синий" },
+                rate, DateTimeOffset.UtcNow);
             await database.SaveChangesAsync();
         }
 
@@ -530,7 +515,7 @@ public sealed class OrderCreationTests
         {
             Content = JsonContent.Create(new CreateOrderRequest
             {
-                SubmittedProduct = OrderProductTestData.Product(),
+                Product = OrderProductTestData.Product(),
                 SourceUrl = sourceUrl,
                 Quantity = quantity,
                 Comment = comment

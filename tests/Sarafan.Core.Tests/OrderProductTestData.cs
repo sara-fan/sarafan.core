@@ -11,7 +11,7 @@ namespace Sarafan.Core.Tests;
 
 internal static class OrderProductTestData
 {
-    internal static SubmittedProductRequest Product() => new()
+    internal static OrderProductRequest Product() => new()
     {
         ProductName = "Тестовый товар",
         SellerPrice = new(10m, Currency.Usd)

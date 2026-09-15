@@ -153,7 +153,7 @@ public sealed class OrderPreviewTests
             Content = JsonContent.Create(new CreateOrderRequest
             {
                 SourceUrl = "shop.example.com/product",
-                SubmittedProduct = OrderProductTestData.Product(),
+                Product = OrderProductTestData.Product(),
                 Quantity = 1
             })
         };
@@ -165,7 +165,7 @@ public sealed class OrderPreviewTests
             Content = JsonContent.Create(new CreateOrderRequest
             {
                 SourceUrl = "https://shop.example.com/product",
-                SubmittedProduct = OrderProductTestData.Product(),
+                Product = OrderProductTestData.Product(),
                 Quantity = 1
             })
         };
@@ -333,7 +333,7 @@ public sealed class OrderPreviewTests
             Content = JsonContent.Create(new Sarafan.Core.RestModels.CreateOrderRequest
             {
                 SourceUrl = "shop.example.com/product",
-                SubmittedProduct = OrderProductTestData.Product(),
+                Product = OrderProductTestData.Product(),
                 Quantity = 1
             })
         };

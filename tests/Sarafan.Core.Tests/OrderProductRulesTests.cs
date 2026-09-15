@@ -37,11 +37,15 @@ public sealed class OrderProductRulesTests
         var result = OrderProductRules.Normalize(new()
         {
             ProductName = "  Stanley  H2.0  ",
+            StoreName = "  Amazon  ",
             SellerPrice = new(40, Currency.Usd),
             Color = " Cherry Blossom ",
             Size = "  "
         }, 4, "  Тест  заказа  ");
-        Assert.That(result, Is.EqualTo(new OrderProductDto("Stanley  H2.0", new(40, Currency.Usd), 4, "Cherry Blossom", null, "Тест  заказа")));
+        Assert.That(result, Is.EqualTo(new OrderProductDto("Stanley  H2.0", new(40, Currency.Usd), 4, "Cherry Blossom", null, "Тест  заказа")
+        {
+            StoreName = "Amazon"
+        }));
         Assert.DoesNotThrow(() => OrderProductRules.Validate(result));
         Assert.That(OrderProductRules.Normalize(null, 1, null).ProductName, Is.Null);
     }
@@ -68,6 +72,7 @@ public sealed class OrderProductRulesTests
             Reject(Product with { SellerPrice = new(10m, currency) }, "invalid_order_seller_price");
         Reject(Product with { Color = new string('я', 201) }, "invalid_order_color");
         Reject(Product with { Size = new string('я', 201) }, "invalid_order_size");
+        Reject(Product with { StoreName = new string('я', 201) }, "invalid_order_store_name");
         Reject(Product with { Comment = new string('я', 2001) }, "invalid_order_comment");
         Assert.DoesNotThrow(() => OrderProductRules.Validate(Product with
         {
@@ -144,36 +149,33 @@ public sealed class OrderProductRulesTests
     }
 
     [Test]
-    public void SnapshotPreservesOriginalAndClearsOptionalOverrides()
+    public void CurrentProductCanBeCorrectedAndOptionalValuesCleared()
     {
         var now = DateTimeOffset.Parse("2026-09-15T00:00:00Z");
         var order = new Order(1, 1, "https://shop.example.com/", 1, null, Guid.NewGuid(), now);
-        order.SetSubmittedProduct(Product, 1, 2);
-        Assert.Throws<InvalidOperationException>(() => order.SetSubmittedProduct(Product, 1, 2));
+        order.SetProduct(Product, 1, 2);
+        Assert.Throws<InvalidOperationException>(() => order.SetProduct(Product, 1, 2));
         order.CorrectProduct(" Shop ", Product with { Quantity = 4, Color = "Red", Size = "L", Comment = "note" }, 3, 4, now.AddTicks(1));
         Assert.That(order.UpdatedAt, Is.EqualTo(now.AddMicroseconds(1)));
         order.CorrectProduct(null, Product, 5, 6, now.AddSeconds(-1));
         Assert.That(order.UpdatedAt, Is.EqualTo(now.AddMicroseconds(2)));
-        Assert.That(OrderService.Effective(order), Is.EqualTo(Product));
-        Assert.That(OrderService.Submitted(order), Is.EqualTo(Product));
-        Assert.That(OrderService.EffectiveStoreName(order), Is.Null);
+        Assert.That(OrderService.CurrentProduct(order), Is.EqualTo(Product));
         Assert.That(order.CreatedLimitUsdRateId, Is.EqualTo(1));
         Assert.That(order.UpdatedLimitEurRateId, Is.EqualTo(6));
         Assert.That(order.AppliedExchangeRateHistoryId, Is.Null);
     }
 
     [Test]
-    public void StoreCorrectionCanClearRecognizedValueWithoutChangingRecognitionSnapshot()
+    public void StoreCorrectionReplacesAndCanClearTheCurrentValue()
     {
         var now = DateTimeOffset.Parse("2026-09-15T00:00:00Z");
         var order = new Order(1, 1, "https://shop.example.com/", 1, null, Guid.NewGuid(), now);
-        order.SetSubmittedProduct(Product, 1, 2);
-        order.SetProductSnapshot(null, "Распознанный магазин", null, null, null,
-            null, null, null, null, null, now);
+        order.SetProduct(Product with { StoreName = "Распознанный магазин" }, 1, 2);
+        Assert.That(order.StoreName, Is.EqualTo("Распознанный магазин"));
         order.CorrectProduct(null, Product, 3, 4, now.AddSeconds(1));
 
-        Assert.That(order.StoreName, Is.EqualTo("Распознанный магазин"));
-        Assert.That(OrderService.EffectiveStoreName(order), Is.Null);
+        Assert.That(order.StoreName, Is.Null);
+        Assert.That(OrderService.CurrentProduct(order), Is.EqualTo(Product));
     }
 
     private static void Reject(OrderProductDto product, string code)

@@ -49,6 +49,8 @@ public sealed class Order
     public string? ImageUrl { get; private set; }
     public decimal? SellerPrice { get; private set; }
     public Currency? SellerPriceCurrency { get; private set; }
+    public string? Color { get; private set; }
+    public string? Size { get; private set; }
     public decimal? LengthCm { get; private set; }
     public decimal? WidthCm { get; private set; }
     public decimal? HeightCm { get; private set; }
@@ -59,32 +61,15 @@ public sealed class Order
     internal Guid CreationIdempotencyKey { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
-    public string? SubmittedProductName { get; private set; }
-    public decimal? SubmittedSellerPrice { get; private set; }
-    public Currency? SubmittedSellerPriceCurrency { get; private set; }
-    public string? SubmittedColor { get; private set; }
-    public string? SubmittedSize { get; private set; }
-    public string? OverrideProductName { get; private set; }
-    public string? OverrideStoreName { get; private set; }
-    public decimal? OverrideSellerPrice { get; private set; }
-    public Currency? OverrideSellerPriceCurrency { get; private set; }
-    public string? OverrideColor { get; private set; }
-    public string? OverrideSize { get; private set; }
-    public int? OverrideQuantity { get; private set; }
-    public string? OverrideComment { get; private set; }
     public long? CreatedLimitUsdRateId { get; private set; }
     public long? CreatedLimitEurRateId { get; private set; }
     public long? UpdatedLimitUsdRateId { get; private set; }
     public long? UpdatedLimitEurRateId { get; private set; }
 
-    internal void SetSubmittedProduct(Sarafan.Core.RestModels.OrderProductDto product, long usdRateId, long eurRateId)
+    internal void SetProduct(Sarafan.Core.RestModels.OrderProductDto product, long usdRateId, long eurRateId)
     {
-        if (SubmittedProductName is not null) throw new InvalidOperationException("The submitted product is immutable.");
-        SubmittedProductName = product.ProductName;
-        SubmittedSellerPrice = product.SellerPrice?.Amount;
-        SubmittedSellerPriceCurrency = product.SellerPrice?.Currency;
-        SubmittedColor = product.Color;
-        SubmittedSize = product.Size;
+        if (CreatedLimitUsdRateId.HasValue) throw new InvalidOperationException("The order product is already initialized.");
+        ApplyProduct(product);
         CreatedLimitUsdRateId = usdRateId;
         CreatedLimitEurRateId = eurRateId;
     }
@@ -92,29 +77,30 @@ public sealed class Order
     internal void CorrectProduct(string? storeName, Sarafan.Core.RestModels.OrderProductDto product,
         long usdRateId, long eurRateId, DateTimeOffset now)
     {
-        OverrideStoreName = storeName;
-        OverrideProductName = product.ProductName;
-        OverrideSellerPrice = product.SellerPrice?.Amount;
-        OverrideSellerPriceCurrency = product.SellerPrice?.Currency;
-        OverrideQuantity = product.Quantity;
-        OverrideColor = product.Color;
-        OverrideSize = product.Size;
-        OverrideComment = product.Comment;
+        ApplyProduct(product with { StoreName = storeName });
         UpdatedLimitUsdRateId = usdRateId;
         UpdatedLimitEurRateId = eurRateId;
         var timestamp = NormalizeToPostgresTimestamp(now);
         UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
     }
 
+    private void ApplyProduct(Sarafan.Core.RestModels.OrderProductDto product)
+    {
+        ProductName = product.ProductName;
+        StoreName = product.StoreName;
+        SellerPrice = product.SellerPrice?.Amount;
+        SellerPriceCurrency = product.SellerPrice?.Currency;
+        Quantity = product.Quantity;
+        Color = product.Color;
+        Size = product.Size;
+        Comment = product.Comment;
+    }
+
     public Customer Customer { get; private set; } = null!;
     public ExchangeRateHistory? AppliedExchangeRateHistory { get; private set; }
 
-    internal void SetProductSnapshot(
-        string? productName,
-        string? storeName,
+    internal void SetProductMetadata(
         string? imageUrl,
-        decimal? sellerPrice,
-        Currency? sellerPriceCurrency,
         decimal? lengthCm,
         decimal? widthCm,
         decimal? heightCm,
@@ -122,16 +108,6 @@ public sealed class Order
         ExchangeRateHistory? appliedExchangeRateHistory,
         DateTimeOffset updatedAt)
     {
-        if (sellerPrice.HasValue != sellerPriceCurrency.HasValue || sellerPrice is <= 0)
-        {
-            throw new ArgumentException("Seller price and currency must both be supplied and the price must be positive.");
-        }
-
-        if (sellerPriceCurrency is { } currency && !Enum.IsDefined(currency))
-        {
-            throw new ArgumentOutOfRangeException(nameof(sellerPriceCurrency), currency, "Seller price currency is not supported.");
-        }
-
         var dimensionCount = new[] { lengthCm, widthCm, heightCm }.Count(value => value.HasValue);
         if (dimensionCount is not (0 or 3) || lengthCm is <= 0 || widthCm is <= 0 || heightCm is <= 0)
         {
@@ -139,8 +115,8 @@ public sealed class Order
         }
 
         if (appliedExchangeRateHistory is not null
-            && (!sellerPriceCurrency.HasValue
-                || appliedExchangeRateHistory.BaseCurrency != sellerPriceCurrency.Value))
+            && (!SellerPriceCurrency.HasValue
+                || appliedExchangeRateHistory.BaseCurrency != SellerPriceCurrency.Value))
         {
             throw new ArgumentException("The applied exchange rate base currency must match the seller price currency.");
         }
@@ -167,11 +143,7 @@ public sealed class Order
             normalizedUpdatedAt = UpdatedAt.AddMicroseconds(1);
         }
 
-        ProductName = productName;
-        StoreName = storeName;
         ImageUrl = imageUrl;
-        SellerPrice = sellerPrice;
-        SellerPriceCurrency = sellerPriceCurrency;
         LengthCm = lengthCm;
         WidthCm = widthCm;
         HeightCm = heightCm;

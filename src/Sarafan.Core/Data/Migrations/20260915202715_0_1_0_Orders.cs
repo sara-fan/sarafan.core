@@ -11,7 +11,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Sarafan.Core.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class _0_1_1_OrderProducts : Migration
+    public partial class _0_1_0_Orders : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -28,6 +28,13 @@ namespace Sarafan.Core.Data.Migrations
                 name: "CK_exchange_rate_quote_currency",
                 table: "exchange_rate_history");
 
+            migrationBuilder.AddColumn<string>(
+                name: "color",
+                table: "orders",
+                type: "character varying(200)",
+                maxLength: 200,
+                nullable: true);
+
             migrationBuilder.AddColumn<long>(
                 name: "created_limit_eur_rate_id",
                 table: "orders",
@@ -41,83 +48,7 @@ namespace Sarafan.Core.Data.Migrations
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
-                name: "override_color",
-                table: "orders",
-                type: "character varying(200)",
-                maxLength: 200,
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "override_comment",
-                table: "orders",
-                type: "character varying(2000)",
-                maxLength: 2000,
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "override_product_name",
-                table: "orders",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "override_quantity",
-                table: "orders",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "override_seller_price",
-                table: "orders",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "override_seller_price_currency",
-                table: "orders",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "override_size",
-                table: "orders",
-                type: "character varying(200)",
-                maxLength: 200,
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "submitted_color",
-                table: "orders",
-                type: "character varying(200)",
-                maxLength: 200,
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "submitted_product_name",
-                table: "orders",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "submitted_seller_price",
-                table: "orders",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "submitted_seller_price_currency",
-                table: "orders",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "submitted_size",
+                name: "size",
                 table: "orders",
                 type: "character varying(200)",
                 maxLength: 200,
@@ -142,16 +73,20 @@ namespace Sarafan.Core.Data.Migrations
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     order_id = table.Column<long>(type: "bigint", nullable: false),
-                    actor_id = table.Column<int>(type: "integer", nullable: false),
+                    kind = table.Column<int>(type: "integer", nullable: false),
+                    actor_id = table.Column<int>(type: "integer", nullable: true),
                     occurred_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    before = table.Column<string>(type: "jsonb", nullable: false),
+                    before = table.Column<string>(type: "jsonb", nullable: true),
                     after = table.Column<string>(type: "jsonb", nullable: false),
-                    usd_rate_id = table.Column<long>(type: "bigint", nullable: false),
-                    eur_rate_id = table.Column<long>(type: "bigint", nullable: false)
+                    usd_rate_id = table.Column<long>(type: "bigint", nullable: true),
+                    eur_rate_id = table.Column<long>(type: "bigint", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_order_product_audit_events", x => x.id);
+                    table.CheckConstraint("ck_order_product_audit_kind", "kind IN (0, 100, 200)");
+                    table.CheckConstraint("ck_order_product_audit_rate_pair", "(usd_rate_id IS NULL) = (eur_rate_id IS NULL)");
+                    table.CheckConstraint("ck_order_product_audit_source", "(kind = 200 AND actor_id IS NOT NULL AND before IS NOT NULL AND usd_rate_id IS NOT NULL) OR (kind IN (0, 100) AND actor_id IS NULL)");
                     table.ForeignKey(
                         name: "FK_order_product_audit_events_backoffice_users_actor_id",
                         column: x => x.actor_id,
@@ -204,19 +139,9 @@ namespace Sarafan.Core.Data.Migrations
                 sql: "(created_limit_usd_rate_id IS NULL) = (created_limit_eur_rate_id IS NULL)");
 
             migrationBuilder.AddCheckConstraint(
-                name: "ck_orders_override_product",
-                table: "orders",
-                sql: "(override_quantity IS NULL AND override_product_name IS NULL AND override_seller_price IS NULL AND override_seller_price_currency IS NULL AND override_color IS NULL AND override_size IS NULL AND override_comment IS NULL) OR (override_quantity IS NOT NULL AND override_quantity BETWEEN 1 AND 4 AND override_product_name IS NOT NULL AND char_length(override_product_name) > 0 AND override_seller_price IS NOT NULL AND override_seller_price > 0 AND override_seller_price_currency IS NOT NULL AND override_seller_price_currency = 840)");
-
-            migrationBuilder.AddCheckConstraint(
                 name: "ck_orders_seller_price",
                 table: "orders",
                 sql: "(seller_price IS NULL AND seller_price_currency IS NULL) OR (seller_price > 0 AND seller_price_currency IN (643, 840, 978))");
-
-            migrationBuilder.AddCheckConstraint(
-                name: "ck_orders_submitted_product",
-                table: "orders",
-                sql: "(submitted_product_name IS NULL AND submitted_seller_price IS NULL AND submitted_seller_price_currency IS NULL AND submitted_color IS NULL AND submitted_size IS NULL) OR (submitted_product_name IS NOT NULL AND char_length(submitted_product_name) > 0 AND submitted_seller_price IS NOT NULL AND submitted_seller_price > 0 AND submitted_seller_price_currency IS NOT NULL AND submitted_seller_price_currency = 840 AND quantity BETWEEN 1 AND 4)");
 
             migrationBuilder.AddCheckConstraint(
                 name: "ck_orders_updated_limit_pair",
@@ -242,6 +167,11 @@ namespace Sarafan.Core.Data.Migrations
                 name: "IX_order_product_audit_events_eur_rate_id",
                 table: "order_product_audit_events",
                 column: "eur_rate_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_order_product_audit_events_order_id_kind",
+                table: "order_product_audit_events",
+                columns: new[] { "order_id", "kind" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_order_product_audit_events_order_id_occurred_at",
@@ -329,15 +259,7 @@ namespace Sarafan.Core.Data.Migrations
                 table: "orders");
 
             migrationBuilder.DropCheckConstraint(
-                name: "ck_orders_override_product",
-                table: "orders");
-
-            migrationBuilder.DropCheckConstraint(
                 name: "ck_orders_seller_price",
-                table: "orders");
-
-            migrationBuilder.DropCheckConstraint(
-                name: "ck_orders_submitted_product",
                 table: "orders");
 
             migrationBuilder.DropCheckConstraint(
@@ -353,6 +275,10 @@ namespace Sarafan.Core.Data.Migrations
                 table: "exchange_rate_history");
 
             migrationBuilder.DropColumn(
+                name: "color",
+                table: "orders");
+
+            migrationBuilder.DropColumn(
                 name: "created_limit_eur_rate_id",
                 table: "orders");
 
@@ -361,51 +287,7 @@ namespace Sarafan.Core.Data.Migrations
                 table: "orders");
 
             migrationBuilder.DropColumn(
-                name: "override_color",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "override_comment",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "override_product_name",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "override_quantity",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "override_seller_price",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "override_seller_price_currency",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "override_size",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "submitted_color",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "submitted_product_name",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "submitted_seller_price",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "submitted_seller_price_currency",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "submitted_size",
+                name: "size",
                 table: "orders");
 
             migrationBuilder.DropColumn(

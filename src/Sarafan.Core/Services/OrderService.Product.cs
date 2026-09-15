@@ -42,25 +42,26 @@ public sealed partial class OrderService
                 var order = await FindPublicOrder(orderNumber, cancellationToken);
                 if (order.Status != OrderStatus.UnderReview) throw new ServiceException(409, "order_not_editable");
                 if (request.ExpectedUpdatedAt != order.UpdatedAt) throw new ServiceException(409, "order_update_conflict");
-                var product = OrderProductRules.Normalize(new SubmittedProductRequest
+                var product = OrderProductRules.Normalize(new OrderProductRequest
                 {
                     ProductName = request.ProductName,
+                    StoreName = request.StoreName,
                     SellerPrice = request.SellerPrice,
                     Color = request.Color,
                     Size = request.Size
                 }, request.Quantity ?? 0, request.Comment);
                 OrderProductRules.Validate(product);
-                var storeName = NormalizeStoreName(request.StoreName);
                 var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
-                var before = AuditSnapshot(EffectiveStoreName(order), Effective(order));
-                order.CorrectProduct(storeName, product, pair.Usd.Id, pair.Eur.Id, timeProvider.GetUtcNow());
+                var before = CurrentProduct(order);
+                order.CorrectProduct(product.StoreName, product, pair.Usd.Id, pair.Eur.Id, timeProvider.GetUtcNow());
                 database.Set<OrderProductAuditEvent>().Add(new()
                 {
                     OrderId = order.Id,
+                    Kind = OrderProductAuditKind.StaffCorrected,
                     ActorId = actorId,
                     OccurredAt = order.UpdatedAt,
                     Before = JsonSerializer.Serialize(before),
-                    After = JsonSerializer.Serialize(AuditSnapshot(storeName, product)),
+                    After = JsonSerializer.Serialize(product),
                     UsdRateId = pair.Usd.Id,
                     EurRateId = pair.Eur.Id
                 });
@@ -101,13 +102,12 @@ public sealed partial class OrderService
         var profile = order.Customer.Profile;
         return new($"{order.Customer.OrderCode}-{order.CustomerOrderNumber}", order.Status,
             ProductSourceUrl.NormalizeStored(order.SourceUrl), order.CreatedAt, order.UpdatedAt,
-            Effective(order), Submitted(order), new(profile?.LastName, profile?.FirstName, profile?.Patronymic,
+            CurrentProduct(order), new(profile?.LastName, profile?.FirstName, profile?.Patronymic,
                 order.Customer.Phone, profile?.Email, profile?.PassportSeries, profile?.PassportNumber,
                 profile?.PassportIssueDate, profile?.PassportIssuedBy, profile?.Inn, profile?.PostalCode, profile?.City, profile?.Address),
             OrderLimitService.ToDto(pair), order.Status == OrderStatus.UnderReview
                 && BackofficeAuthorization.IsAllowed(roles, BackofficeAction.EditOrderProduct))
         {
-            StoreName = EffectiveStoreName(order),
             ImageUrl = order.ImageUrl,
             Dimensions = order.LengthCm.HasValue && order.WidthCm.HasValue && order.HeightCm.HasValue
                 ? new(order.LengthCm.Value, order.WidthCm.Value, order.HeightCm.Value) : null,
@@ -115,34 +115,24 @@ public sealed partial class OrderService
         };
     }
 
-    internal static OrderProductDto Submitted(Order order, bool legacySnapshot = true)
-        => new(order.SubmittedProductName ?? (legacySnapshot ? order.ProductName : null),
-            Price(order.SubmittedSellerPrice ?? (legacySnapshot ? order.SellerPrice : null),
-                order.SubmittedSellerPriceCurrency ?? (legacySnapshot ? order.SellerPriceCurrency : null)),
-            order.Quantity, order.SubmittedColor, order.SubmittedSize, order.Comment);
+    internal static OrderProductDto CurrentProduct(Order order)
+        => new(order.ProductName, Price(order.SellerPrice, order.SellerPriceCurrency),
+            order.Quantity, order.Color, order.Size, order.Comment)
+        {
+            StoreName = order.StoreName
+        };
 
-    internal static OrderProductDto Effective(Order order)
-        => order.OverrideQuantity.HasValue
-            ? new(order.OverrideProductName, Price(order.OverrideSellerPrice, order.OverrideSellerPriceCurrency),
-                order.OverrideQuantity.Value, order.OverrideColor, order.OverrideSize, order.OverrideComment)
-            : Submitted(order);
-
-    internal static string? EffectiveStoreName(Order order)
-        => order.OverrideQuantity.HasValue ? order.OverrideStoreName : order.StoreName;
-
-    private static string? NormalizeStoreName(string? value)
+    private async Task<OrderProductDto> ProductAtCreation(Order order, CancellationToken cancellationToken)
     {
-        var normalized = value?.Trim();
-        if (normalized?.Length > 200) throw new ServiceException(400, "invalid_order_store_name");
-        return string.IsNullOrEmpty(normalized) ? null : normalized;
+        var snapshot = await database.Set<OrderProductAuditEvent>().AsNoTracking()
+            .Where(item => item.OrderId == order.Id && item.Kind == OrderProductAuditKind.Created)
+            .Select(item => item.After)
+            .SingleOrDefaultAsync(cancellationToken);
+        return snapshot is null
+            ? CurrentProduct(order)
+            : JsonSerializer.Deserialize<OrderProductDto>(snapshot)
+                ?? throw new InvalidOperationException("The order creation audit snapshot is invalid.");
     }
-
-    private static ProductCorrectionSnapshot AuditSnapshot(string? storeName, OrderProductDto product)
-        => new(product.ProductName, product.SellerPrice, product.Quantity, product.Color,
-            product.Size, product.Comment, storeName);
-
-    private sealed record ProductCorrectionSnapshot(string? ProductName, OrderSellerPriceDto? SellerPrice,
-        int Quantity, string? Color, string? Size, string? Comment, string? StoreName);
 
     private static OrderSellerPriceDto? Price(decimal? amount, Currency? currency)
         => amount.HasValue && currency.HasValue ? new(amount.Value, currency.Value) : null;

@@ -50,7 +50,7 @@ public sealed class OrdersController(
             request.Comment,
             parsedKey,
             cancellationToken,
-            request.SubmittedProduct);
+            request.Product);
         return CreatedAtAction(nameof(Get), new { id = order.Id }, order);
     }
 }
