@@ -18,12 +18,28 @@ namespace Sarafan.Core.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class BackofficeOrdersController(
     OrderService orders,
+    OrderLimitService limits,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet("ops")]
     [ProducesResponseType<BackofficeOrderOpsDto>(StatusCodes.Status200OK)]
-    public ActionResult<BackofficeOrderOpsDto> Operations()
-        => Ok(OrderOperationsCatalog.CreateBackoffice());
+    public async Task<ActionResult<BackofficeOrderOpsDto>> Operations(CancellationToken cancellationToken)
+        => Ok(OrderOperationsCatalog.CreateBackoffice() with
+        {
+            ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken))
+        });
+
+    [HttpGet("{orderNumber}")]
+    public async Task<ActionResult<BackofficeOrderDetailsDto>> Get(string orderNumber, CancellationToken cancellationToken)
+        => Ok(await orders.GetForBackofficeAsync(orderNumber,
+            User.FindAll("role").Select(claim => claim.Value).ToArray(), cancellationToken));
+
+    [HttpPut("{orderNumber}/product")]
+    [Authorize(Policy = BackofficePolicies.EditOrderProduct)]
+    public async Task<ActionResult<BackofficeOrderDetailsDto>> UpdateProduct(string orderNumber,
+        UpdateOrderProductRequest request, CancellationToken cancellationToken)
+        => Ok(await orders.UpdateProductAsync(orderNumber, request, CurrentBackofficeUserId(),
+            User.FindAll("role").Select(claim => claim.Value).ToArray(), cancellationToken));
 
     [HttpGet]
     [ProducesResponseType<BackofficeOrderPageDto>(StatusCodes.Status200OK)]

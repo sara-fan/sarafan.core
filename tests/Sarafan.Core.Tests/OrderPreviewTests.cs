@@ -32,6 +32,7 @@ public sealed class OrderPreviewTests
     public async Task SetUp()
     {
         await IntegrationTestEnvironment.ResetAsync();
+        await OrderProductTestData.SeedRates();
         _app = IntegrationTestEnvironment.Factory;
         _client = _app.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -152,6 +153,7 @@ public sealed class OrderPreviewTests
             Content = JsonContent.Create(new CreateOrderRequest
             {
                 SourceUrl = "shop.example.com/product",
+                SubmittedProduct = OrderProductTestData.Product(),
                 Quantity = 1
             })
         };
@@ -163,6 +165,7 @@ public sealed class OrderPreviewTests
             Content = JsonContent.Create(new CreateOrderRequest
             {
                 SourceUrl = "https://shop.example.com/product",
+                SubmittedProduct = OrderProductTestData.Product(),
                 Quantity = 1
             })
         };
@@ -175,9 +178,9 @@ public sealed class OrderPreviewTests
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(order?.SourceUrl, Is.EqualTo(preview.SourceUrl));
             Assert.That(order?.Status, Is.EqualTo(Sarafan.Core.Models.OrderStatus.UnderReview));
-            Assert.That(order?.ProductName, Is.Null);
+            Assert.That(order?.ProductName, Is.EqualTo("Тестовый товар"));
             Assert.That(order?.StoreName, Is.Null);
-            Assert.That(order?.SellerPrice, Is.Null);
+            Assert.That(order?.SellerPrice, Is.EqualTo(new OrderSellerPriceDto(10m, Currency.Usd)));
             Assert.That(replay?.Id, Is.EqualTo(order?.Id));
             Assert.That(await CountOrders(), Is.EqualTo(1));
         }
@@ -330,6 +333,7 @@ public sealed class OrderPreviewTests
             Content = JsonContent.Create(new Sarafan.Core.RestModels.CreateOrderRequest
             {
                 SourceUrl = "shop.example.com/product",
+                SubmittedProduct = OrderProductTestData.Product(),
                 Quantity = 1
             })
         };

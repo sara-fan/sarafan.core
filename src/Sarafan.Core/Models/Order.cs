@@ -59,6 +59,49 @@ public sealed class Order
     internal Guid CreationIdempotencyKey { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+    public string? SubmittedProductName { get; private set; }
+    public decimal? SubmittedSellerPrice { get; private set; }
+    public Currency? SubmittedSellerPriceCurrency { get; private set; }
+    public string? SubmittedColor { get; private set; }
+    public string? SubmittedSize { get; private set; }
+    public string? OverrideProductName { get; private set; }
+    public decimal? OverrideSellerPrice { get; private set; }
+    public Currency? OverrideSellerPriceCurrency { get; private set; }
+    public string? OverrideColor { get; private set; }
+    public string? OverrideSize { get; private set; }
+    public int? OverrideQuantity { get; private set; }
+    public string? OverrideComment { get; private set; }
+    public long? CreatedLimitUsdRateId { get; private set; }
+    public long? CreatedLimitEurRateId { get; private set; }
+    public long? UpdatedLimitUsdRateId { get; private set; }
+    public long? UpdatedLimitEurRateId { get; private set; }
+
+    internal void SetSubmittedProduct(Sarafan.Core.RestModels.OrderProductDto product, long usdRateId, long eurRateId)
+    {
+        if (SubmittedProductName is not null) throw new InvalidOperationException("The submitted product is immutable.");
+        SubmittedProductName = product.ProductName;
+        SubmittedSellerPrice = product.SellerPrice?.Amount;
+        SubmittedSellerPriceCurrency = product.SellerPrice?.Currency;
+        SubmittedColor = product.Color;
+        SubmittedSize = product.Size;
+        CreatedLimitUsdRateId = usdRateId;
+        CreatedLimitEurRateId = eurRateId;
+    }
+
+    internal void CorrectProduct(Sarafan.Core.RestModels.OrderProductDto product, long usdRateId, long eurRateId, DateTimeOffset now)
+    {
+        OverrideProductName = product.ProductName;
+        OverrideSellerPrice = product.SellerPrice?.Amount;
+        OverrideSellerPriceCurrency = product.SellerPrice?.Currency;
+        OverrideQuantity = product.Quantity;
+        OverrideColor = product.Color;
+        OverrideSize = product.Size;
+        OverrideComment = product.Comment;
+        UpdatedLimitUsdRateId = usdRateId;
+        UpdatedLimitEurRateId = eurRateId;
+        var timestamp = NormalizeToPostgresTimestamp(now);
+        UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
+    }
 
     public Customer Customer { get; private set; } = null!;
     public ExchangeRateHistory? AppliedExchangeRateHistory { get; private set; }

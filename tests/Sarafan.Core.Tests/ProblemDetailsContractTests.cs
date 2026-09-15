@@ -636,6 +636,24 @@ public sealed class ProblemDetailsContractTests
         }
     }
 
+    [TestCase("$.quantity")]
+    [TestCase("$.QUANTITY")]
+    public void Validation_NormalizesQuantityBindingErrors(string path)
+    {
+        var modelState = new ModelStateDictionary();
+        modelState.AddModelError(path, "The JSON value secret could not be converted.");
+        modelState.AddModelError("Quantity", "Количество должно быть целым числом.");
+        modelState.AddModelError("$.price", "The JSON value secret could not be converted.");
+
+        var result = new SarafanProblemDetailsFactory().CreateValidationResult(Context("/validation"), modelState);
+        var problem = (SarafanProblemDetails)result.Value!;
+
+        Assert.That(problem.Code, Is.EqualTo("validation_failed"));
+        Assert.That(problem.Errors!["quantity"], Is.EqualTo(new[] { "Количество должно быть целым числом." }));
+        Assert.That(problem.Errors.ContainsKey(path), Is.False);
+        Assert.That(problem.Errors["$.price"], Is.EqualTo(new[] { "Значение заполнено некорректно." }));
+    }
+
     [Test]
     public void Controllers_UseCentralizedProblemConstructionOnly()
     {

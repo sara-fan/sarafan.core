@@ -17,7 +17,7 @@ public sealed class OrderProductContractTests
     {
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(Enum.GetValues<Currency>(), Is.EqualTo(new[] { Currency.Rub, Currency.Usd }));
+            Assert.That(Enum.GetValues<Currency>(), Is.EqualTo(new[] { Currency.Rub, Currency.Usd, Currency.Eur }));
             Assert.That((int)Currency.Rub, Is.EqualTo(643));
             Assert.That(Currency.Rub.GetDisplayName(), Is.EqualTo("Российский рубль"));
             Assert.That(Currency.Rub.GetRouteAlias(), Is.EqualTo("rub"));
@@ -26,8 +26,8 @@ public sealed class OrderProductContractTests
             Assert.That(Currency.Usd.GetRouteAlias(), Is.EqualTo("usd"));
         }
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)978).GetDisplayName());
-        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)978).GetRouteAlias());
+        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)999).GetDisplayName());
+        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)999).GetRouteAlias());
     }
 
     [Test]
@@ -146,7 +146,7 @@ public sealed class OrderProductContractTests
         Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), sellerPrice: 10, currency: null));
         Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), sellerPrice: null, currency: Currency.Usd));
         Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), sellerPrice: 0, currency: Currency.Usd));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Snapshot(NewOrder(), sellerPrice: 10, currency: (Currency)978));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Snapshot(NewOrder(), sellerPrice: 10, currency: (Currency)999));
         Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), length: 1, width: null, height: 1));
         Assert.Throws<ArgumentException>(() => Snapshot(NewOrder(), length: 1, width: 0, height: 1));
         Assert.Throws<ArgumentException>(() => Snapshot(

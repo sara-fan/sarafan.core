@@ -9,14 +9,20 @@ using System.Xml;
 using System.Xml.Linq;
 
 using Sarafan.Core.Observability;
+using Sarafan.Core.Models;
 
 namespace Sarafan.Core.Services;
 
-public sealed record CbrRate(DateOnly SourceEffectiveDate, int Nominal, decimal OfficialRate);
+public sealed record CbrRate(DateOnly SourceEffectiveDate, int Nominal, decimal OfficialRate)
+{
+    public Currency BaseCurrency { get; init; } = Currency.Usd;
+}
 
 public interface ICbrRateClient
 {
     Task<CbrRate> GetAsync(DateOnly date, CancellationToken cancellationToken);
+    async Task<IReadOnlyList<CbrRate>> GetRatesAsync(DateOnly date, CancellationToken cancellationToken)
+        => [await GetAsync(date, cancellationToken)];
 }
 
 public sealed partial class CbrRateClient(HttpClient httpClient, ILogger<CbrRateClient> logger) : ICbrRateClient
@@ -28,6 +34,12 @@ public sealed partial class CbrRateClient(HttpClient httpClient, ILogger<CbrRate
 
     public Task<CbrRate> GetAsync(DateOnly date, CancellationToken cancellationToken)
         => OperationLogging.RunAsync(logger, $"{typeof(CbrRateClient).FullName}.{nameof(GetAsync)}",
+            () => LogValueSummary.Inputs((nameof(date), date), (nameof(cancellationToken), cancellationToken)),
+            async () => (await GetRatesAsync(date, cancellationToken)).SingleOrDefault(rate => rate.BaseCurrency == Currency.Usd)
+                ?? throw new InvalidDataException("No valid CBR USD rate."), cancellationToken);
+
+    public Task<IReadOnlyList<CbrRate>> GetRatesAsync(DateOnly date, CancellationToken cancellationToken)
+        => OperationLogging.RunAsync<IReadOnlyList<CbrRate>>(logger, $"{typeof(CbrRateClient).FullName}.{nameof(GetRatesAsync)}",
             () => LogValueSummary.Inputs((nameof(date), date), (nameof(cancellationToken), cancellationToken)),
             async () =>
             {
@@ -55,10 +67,17 @@ public sealed partial class CbrRateClient(HttpClient httpClient, ILogger<CbrRate
                 });
                 var document = await XDocument.LoadAsync(reader, LoadOptions.None, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
-                return Parse(document, date);
+                var rates = new List<CbrRate>();
+                foreach (var currency in new[] { Currency.Usd, Currency.Eur })
+                {
+                    try { rates.Add(Parse(document, date, currency)); }
+                    catch (InvalidDataException) { /* Preserve each independently valid currency. */ }
+                }
+                if (rates.Count == 0) throw new InvalidDataException("No valid CBR rates.");
+                return rates;
             }, cancellationToken);
 
-    internal static CbrRate Parse(XDocument document, DateOnly requestedDate)
+    internal static CbrRate Parse(XDocument document, DateOnly requestedDate, Currency currency = Currency.Usd)
     {
         var data = document.Element(Soap + "Envelope")?.Element(Soap + "Body")?
             .Element(Cbr + "GetCursOnDateXMLResponse")?.Element(Cbr + "GetCursOnDateXMLResult")?
@@ -70,9 +89,11 @@ public sealed partial class CbrRateClient(HttpClient httpClient, ILogger<CbrRate
             throw new InvalidDataException("Invalid CBR source-effective date.");
         }
 
+        var alias = currency.GetRouteAlias();
+        var code = ((int)currency).ToString(CultureInfo.InvariantCulture);
         var candidates = data!.Elements("ValuteCursOnDate").Where(row =>
-            row.Element("VchCode")?.Value.Trim().Equals("USD", StringComparison.OrdinalIgnoreCase) == true
-            || row.Element("Vcode")?.Value.Trim() == "840").ToList();
+            row.Element("VchCode")?.Value.Trim().Equals(alias, StringComparison.OrdinalIgnoreCase) == true
+            || row.Element("Vcode")?.Value.Trim() == code).ToList();
         if (candidates.Count != 1)
         {
             throw new InvalidDataException("CBR response must contain one USD rate.");
@@ -80,8 +101,8 @@ public sealed partial class CbrRateClient(HttpClient httpClient, ILogger<CbrRate
 
         var usd = candidates[0];
         var rawRate = usd.Element("Vcurs")?.Value.Trim();
-        if (usd.Element("VchCode")?.Value.Trim().Equals("USD", StringComparison.OrdinalIgnoreCase) != true
-            || usd.Element("Vcode")?.Value.Trim() != "840"
+        if (usd.Element("VchCode")?.Value.Trim().Equals(alias, StringComparison.OrdinalIgnoreCase) != true
+            || usd.Element("Vcode")?.Value.Trim() != code
             || !int.TryParse(usd.Element("Vnom")?.Value.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var nominal)
             || nominal is < 1 or > 1_000_000
             || rawRate is null || !RatePattern().IsMatch(rawRate)
@@ -92,7 +113,7 @@ public sealed partial class CbrRateClient(HttpClient httpClient, ILogger<CbrRate
             throw new InvalidDataException("Invalid CBR USD rate.");
         }
 
-        return new CbrRate(effectiveDate, nominal, rate);
+        return new CbrRate(effectiveDate, nominal, rate) { BaseCurrency = currency };
     }
 
     [GeneratedRegex(@"\A[0-9]+([.,][0-9]{1,6})?\z", RegexOptions.CultureInvariant)]

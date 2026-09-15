@@ -76,7 +76,7 @@ public sealed class BackofficeOrderTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(body, Is.Not.Null);
         Assert.That(body!.Statuses.Select(item => item.Value), Is.EqualTo(Enum.GetValues<OrderStatus>().Select(item => (int)item)));
-        Assert.That(body.Currencies.Select(item => item.Value), Is.EqualTo(new[] { 643, 840 }));
+        Assert.That(body.Currencies.Select(item => item.Value), Is.EqualTo(new[] { 643, 840, 978 }));
         Assert.That(body.StatusGroups.Select(item => (item.RouteAlias, item.Name)), Is.EqualTo(new[]
         {
             ("work", "В работе"),

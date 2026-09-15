@@ -104,7 +104,7 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
     {
         var exists = await database.ExchangeRateHistory.AnyAsync(
             item => item.Provider == "CBR"
-                && item.BaseCurrency == Currency.Usd
+                && item.BaseCurrency == rate.BaseCurrency
                 && item.QuoteCurrency == Currency.Rub
                 && item.SourceEffectiveDate == rate.SourceEffectiveDate,
             cancellationToken);
@@ -117,7 +117,7 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
         {
             Provider = "CBR",
             Source = CbrRateClient.Endpoint,
-            BaseCurrency = Currency.Usd,
+            BaseCurrency = rate.BaseCurrency,
             QuoteCurrency = Currency.Rub,
             Nominal = rate.Nominal,
             OfficialRate = rate.OfficialRate,
@@ -172,7 +172,7 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
                 search,
                 StringComparison.OrdinalIgnoreCase)
             || item.SourceUrl.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || item.ProductName != null && item.ProductName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName) != null && (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)!.Contains(search, StringComparison.OrdinalIgnoreCase)
             || item.StoreName != null && item.StoreName.Contains(search, StringComparison.OrdinalIgnoreCase));
 }
 

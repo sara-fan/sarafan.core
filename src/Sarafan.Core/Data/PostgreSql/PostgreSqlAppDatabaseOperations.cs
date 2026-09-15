@@ -84,7 +84,7 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
         => await database.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO exchange_rate_history
                 (provider, source, base_currency, quote_currency, nominal, official_rate, source_effective_date, retrieved_at)
-            VALUES ({"CBR"}, {CbrRateClient.Endpoint}, {(int)Currency.Usd}, {(int)Currency.Rub}, {rate.Nominal},
+            VALUES ({"CBR"}, {CbrRateClient.Endpoint}, {(int)rate.BaseCurrency}, {(int)Currency.Rub}, {rate.Nominal},
                 {rate.OfficialRate}, {rate.SourceEffectiveDate}, {retrievedAt})
             ON CONFLICT (provider, base_currency, quote_currency, source_effective_date) DO NOTHING
             """, cancellationToken) == 1;
@@ -130,7 +130,7 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
                 pattern,
                 "\\")
             || EF.Functions.ILike(item.SourceUrl, pattern, "\\")
-            || item.ProductName != null && EF.Functions.ILike(item.ProductName, pattern, "\\")
+            || (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName) != null && EF.Functions.ILike((item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)!, pattern, "\\")
             || item.StoreName != null && EF.Functions.ILike(item.StoreName, pattern, "\\"));
     }
 }

@@ -51,7 +51,7 @@ public sealed class OrderOperationsTests
             Assert.That(body.Currencies, Is.EqualTo(new[]
             {
                 new EnumOpsItemDto((int)Currency.Rub, "Российский рубль", "rub"),
-                new EnumOpsItemDto((int)Currency.Usd, "Доллар США", "usd")
+                new EnumOpsItemDto((int)Currency.Usd, "Доллар США", "usd"), new EnumOpsItemDto(978, "Евро", "eur")
             }));
             Assert.That(body.ProductSourceUrl.MaximumLength, Is.EqualTo(2048));
             Assert.That(body.ProductSourceUrl.TopLevelDomainListVersion, Is.EqualTo("2026091400"));

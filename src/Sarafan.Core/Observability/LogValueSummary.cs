@@ -36,9 +36,15 @@ internal static class LogValueSummary
         BackofficeSelfUpdateRequest => "BackofficeSelfUpdateRequest(identity/password=[redacted])",
         CustomerProfileUpdateRequest => "CustomerProfileUpdateRequest([redacted])",
         ProductPreviewRequest => "ProductPreviewRequest(sourceUrl=[redacted])",
-        ProductPreviewDto => "ProductPreviewDto(sourceUrl=[redacted]; outcome=manual_review)",
-        CreateOrderRequest request =>
-            $"CreateOrderRequest(sourceUrl/comment=[redacted]; quantity={request.Quantity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "null"})",
+        ProductPreviewDto preview when preview.Outcome is ProductPreviewDto.ManualReviewOutcome or ProductPreviewDto.RecognizedOutcome
+            => $"ProductPreviewDto(sourceUrl/product=[redacted]; outcome={preview.Outcome})",
+        ProductPreviewDto => "ProductPreviewDto(sourceUrl/product=[redacted]; outcome=[redacted])",
+        CreateOrderRequest => "CreateOrderRequest(sourceUrl/product=[redacted])",
+        SubmittedProductRequest => "SubmittedProductRequest([redacted])",
+        UpdateOrderProductRequest => "UpdateOrderProductRequest([redacted])",
+        BackofficeOrderDetailsDto => "BackofficeOrderDetailsDto(order/product/customer=[redacted])",
+        OrderProductDto => "OrderProductDto([redacted])",
+        OrderLimitRatePair => "OrderLimitRatePair([redacted])",
         BackofficeUserDto => "BackofficeUserDto([redacted])",
         IReadOnlyCollection<BackofficeUserDto> users => $"BackofficeUserDto collection(count={users.Count})",
         BackofficeIdentityDto => "BackofficeIdentityDto([redacted])",
