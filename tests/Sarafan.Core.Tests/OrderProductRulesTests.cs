@@ -36,7 +36,10 @@ public sealed class OrderProductRulesTests
     {
         var result = OrderProductRules.Normalize(new()
         {
-            ProductName = "  Stanley  H2.0  ", SellerPrice = new(40, Currency.Usd), Color = " Cherry Blossom ", Size = "  "
+            ProductName = "  Stanley  H2.0  ",
+            SellerPrice = new(40, Currency.Usd),
+            Color = " Cherry Blossom ",
+            Size = "  "
         }, 4, "  Тест  заказа  ");
         Assert.That(result, Is.EqualTo(new OrderProductDto("Stanley  H2.0", new(40, Currency.Usd), 4, "Cherry Blossom", null, "Тест  заказа")));
         Assert.DoesNotThrow(() => OrderProductRules.Validate(result));
@@ -68,8 +71,11 @@ public sealed class OrderProductRulesTests
         Reject(Product with { Comment = new string('я', 2001) }, "invalid_order_comment");
         Assert.DoesNotThrow(() => OrderProductRules.Validate(Product with
         {
-            ProductName = new string('я', 500), SellerPrice = new(99999999.99m, Currency.Usd),
-            Color = new string('я', 200), Size = new string('я', 200), Comment = new string('я', 2000)
+            ProductName = new string('я', 500),
+            SellerPrice = new(99999999.99m, Currency.Usd),
+            Color = new string('я', 200),
+            Size = new string('я', 200),
+            Comment = new string('я', 2000)
         }));
     }
 

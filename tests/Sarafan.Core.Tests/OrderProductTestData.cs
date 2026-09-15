@@ -13,7 +13,8 @@ internal static class OrderProductTestData
 {
     internal static SubmittedProductRequest Product() => new()
     {
-        ProductName = "Тестовый товар", SellerPrice = new(10m, Currency.Usd)
+        ProductName = "Тестовый товар",
+        SellerPrice = new(10m, Currency.Usd)
     };
 
     internal static async Task SeedRates()
@@ -26,9 +27,14 @@ internal static class OrderProductTestData
 
     internal static ExchangeRateHistory Rate(Currency currency, decimal value, int nominal = 1,
         DateOnly? date = null) => new()
-    {
-        Provider = "CBR", Source = "fixture", BaseCurrency = currency, QuoteCurrency = Currency.Rub,
-        Nominal = nominal, OfficialRate = value, SourceEffectiveDate = date ?? new DateOnly(2026, 9, 1),
-        RetrievedAt = DateTimeOffset.Parse("2026-09-01T00:00:00Z")
-    };
+        {
+            Provider = "CBR",
+            Source = "fixture",
+            BaseCurrency = currency,
+            QuoteCurrency = Currency.Rub,
+            Nominal = nominal,
+            OfficialRate = value,
+            SourceEffectiveDate = date ?? new DateOnly(2026, 9, 1),
+            RetrievedAt = DateTimeOffset.Parse("2026-09-01T00:00:00Z")
+        };
 }

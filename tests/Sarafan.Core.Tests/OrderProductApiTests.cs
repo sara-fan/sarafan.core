@@ -219,8 +219,13 @@ public sealed class OrderProductApiTests
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var user = new BackofficeUser
             {
-                Email = role + "@test.local", NormalizedEmail = role + "@test.local", FirstName = "Тест", LastName = "Тест",
-                PasswordHash = "unused", CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+                Email = role + "@test.local",
+                NormalizedEmail = role + "@test.local",
+                FirstName = "Тест",
+                LastName = "Тест",
+                PasswordHash = "unused",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 UserRoles = [new() { RoleCode = role }]
             };
             db.BackofficeUsers.Add(user); await db.SaveChangesAsync();
@@ -299,7 +304,8 @@ public sealed class OrderProductApiTests
         {
             Content = JsonContent.Create(new CreateOrderRequest
             {
-                SourceUrl = "https://shop.example.com/", Quantity = quantity,
+                SourceUrl = "https://shop.example.com/",
+                Quantity = quantity,
                 SubmittedProduct = includeProduct ? new() { ProductName = name, SellerPrice = new(price, Currency.Usd) } : null
             })
         };

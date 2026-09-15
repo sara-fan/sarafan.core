@@ -518,8 +518,16 @@ public sealed class OperationLoggingTests
         using var backofficeOrders = await client.GetAsync("/api/v1/backoffice/orders?page=1&pageSize=10&sortBy=createdAt&sortOrder=desc");
         var productDetails = (await client.GetFromJsonAsync<BackofficeOrderDetailsDto>($"/api/v1/backoffice/orders/{createdOrder.OrderNumber}"))!;
         using var productCorrection = await client.PutAsJsonAsync($"/api/v1/backoffice/orders/{createdOrder.OrderNumber}/product",
-            new UpdateOrderProductRequest { ExpectedUpdatedAt = productDetails.UpdatedAt, ProductName = Secret,
-                SellerPrice = new(10, Currency.Usd), Quantity = 1, Color = Secret, Size = Secret, Comment = Secret });
+            new UpdateOrderProductRequest
+            {
+                ExpectedUpdatedAt = productDetails.UpdatedAt,
+                ProductName = Secret,
+                SellerPrice = new(10, Currency.Usd),
+                Quantity = 1,
+                Color = Secret,
+                Size = Secret,
+                Comment = Secret
+            });
         productCorrection.EnsureSuccessStatusCode();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", customerToken);
         using var get = await client.GetAsync("/api/v1/customers/me");

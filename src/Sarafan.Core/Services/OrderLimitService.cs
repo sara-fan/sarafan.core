@@ -31,7 +31,8 @@ public sealed class OrderLimitService(AppDbContext database, TimeProvider timePr
                 var today = ExchangeRateSchedule.MoscowDate(timeProvider.GetUtcNow());
                 var rates = database.ExchangeRateHistory.AsNoTracking().Where(rate => rate.Provider == "CBR"
                     && rate.QuoteCurrency == Currency.Rub && rate.SourceEffectiveDate <= today);
-                return await (from usd in rates where usd.BaseCurrency == Currency.Usd
+                return await (from usd in rates
+                              where usd.BaseCurrency == Currency.Usd
                               join eur in rates.Where(rate => rate.BaseCurrency == Currency.Eur)
                                   on usd.SourceEffectiveDate equals eur.SourceEffectiveDate
                               orderby usd.SourceEffectiveDate descending

@@ -37,8 +37,10 @@ public sealed partial class OrderService
                 if (request.ExpectedUpdatedAt != order.UpdatedAt) throw new ServiceException(409, "order_update_conflict");
                 var product = OrderProductRules.Normalize(new SubmittedProductRequest
                 {
-                    ProductName = request.ProductName, SellerPrice = request.SellerPrice,
-                    Color = request.Color, Size = request.Size
+                    ProductName = request.ProductName,
+                    SellerPrice = request.SellerPrice,
+                    Color = request.Color,
+                    Size = request.Size
                 }, request.Quantity ?? 0, request.Comment);
                 OrderProductRules.Validate(product);
                 var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
@@ -46,9 +48,13 @@ public sealed partial class OrderService
                 order.CorrectProduct(product, pair.Usd.Id, pair.Eur.Id, timeProvider.GetUtcNow());
                 database.Set<OrderProductAuditEvent>().Add(new()
                 {
-                    OrderId = order.Id, ActorId = actorId, OccurredAt = order.UpdatedAt,
-                    Before = JsonSerializer.Serialize(before), After = JsonSerializer.Serialize(product),
-                    UsdRateId = pair.Usd.Id, EurRateId = pair.Eur.Id
+                    OrderId = order.Id,
+                    ActorId = actorId,
+                    OccurredAt = order.UpdatedAt,
+                    Before = JsonSerializer.Serialize(before),
+                    After = JsonSerializer.Serialize(product),
+                    UsdRateId = pair.Usd.Id,
+                    EurRateId = pair.Eur.Id
                 });
                 try
                 {

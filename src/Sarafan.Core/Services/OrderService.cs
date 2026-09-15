@@ -487,12 +487,12 @@ public sealed partial class OrderService(
                 rate.OfficialRate,
                 rate.SourceEffectiveDate)
             : null)
-        {
-            Product = Effective(order),
-            SubmittedProduct = Submitted(order),
-            CreatedAt = order.CreatedAt,
-            ShowReviewFields = order.Status == OrderStatus.UnderReview
-        };
+    {
+        Product = Effective(order),
+        SubmittedProduct = Submitted(order),
+        CreatedAt = order.CreatedAt,
+        ShowReviewFields = order.Status == OrderStatus.UnderReview
+    };
 
     private static BackofficeOrderListItemDto ToBackofficeDto(BackofficeOrderProjection order) => new(
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
