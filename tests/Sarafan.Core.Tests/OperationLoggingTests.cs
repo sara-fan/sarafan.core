@@ -84,20 +84,27 @@ public sealed class OperationLoggingTests
         AssertPrivate();
     }
 
-    [Test]
-    public void ProductPreviewSummaries_RedactTheSourceAddress()
+    [TestCase(ProductPreviewDto.ManualReviewOutcome, "manual_review")]
+    [TestCase(ProductPreviewDto.RecognizedOutcome, "recognized")]
+    [TestCase("untrusted-outcome-secret", "[redacted]")]
+    [TestCase(null, "[redacted]")]
+    public void ProductPreviewSummaries_AllowOnlyKnownOutcomesAndRedactProduct(string? outcome, string expected)
     {
         var request = new ProductPreviewRequest { SourceUrl = $"https://shop.example.com/?token={Secret}" };
-        var result = new ProductPreviewDto(request.SourceUrl, ProductPreviewDto.ManualReviewOutcome);
+        var result = new ProductPreviewDto(request.SourceUrl, outcome!)
+        {
+            Product = new(Secret, new(123, Currency.Usd), 1, Secret, Secret, Secret)
+        };
 
         using (Assert.EnterMultipleScope())
         {
             Assert.That(LogValueSummary.Describe(request),
                 Is.EqualTo("ProductPreviewRequest(sourceUrl=[redacted])"));
             Assert.That(LogValueSummary.Describe(result),
-                Is.EqualTo("ProductPreviewDto(sourceUrl/product=[redacted])"));
+                Is.EqualTo($"ProductPreviewDto(sourceUrl/product=[redacted]; outcome={expected})"));
             Assert.That(LogValueSummary.Describe(request), Does.Not.Contain(Secret));
             Assert.That(LogValueSummary.Describe(result), Does.Not.Contain(Secret));
+            Assert.That(LogValueSummary.Describe(result), Does.Not.Contain("untrusted-outcome-secret"));
         }
     }
 

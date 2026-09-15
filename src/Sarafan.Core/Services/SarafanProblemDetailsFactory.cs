@@ -306,9 +306,13 @@ public sealed class SarafanProblemDetailsFactory(
     {
         var errors = modelState
             .Where(item => item.Value?.ValidationState == ModelValidationState.Invalid)
+            .GroupBy(item => IsQuantityBindingPath(item.Key)
+                ? "quantity" : JsonNamingPolicy.CamelCase.ConvertName(item.Key), StringComparer.Ordinal)
             .ToDictionary(
-                item => JsonNamingPolicy.CamelCase.ConvertName(item.Key),
-                item => ValidationMessages(item.Value),
+                group => group.Key,
+                group => group.SelectMany(item => IsQuantityBindingPath(item.Key)
+                    ? new[] { "Количество должно быть целым числом." }
+                    : ValidationMessages(item.Value)).Distinct(StringComparer.Ordinal).ToArray(),
                 StringComparer.Ordinal);
         return Result(Create(
             context,
@@ -398,6 +402,10 @@ public sealed class SarafanProblemDetailsFactory(
         result.ContentTypes.Add(MediaType);
         return result;
     }
+
+    // JSON conversion fails before property validation; never expose the formatter exception or input.
+    private static bool IsQuantityBindingPath(string key)
+        => string.Equals(key, "$.quantity", StringComparison.OrdinalIgnoreCase);
 
     private static string[] ValidationMessages(ModelStateEntry? entry)
     {

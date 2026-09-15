@@ -141,7 +141,14 @@ public sealed class OrderProductApiTests
         await Problem(quantity, HttpStatusCode.BadRequest, "order_quantity_limit_exceeded");
         using var excess = await Create(Guid.NewGuid(), price: 312.51m, quantity: 4);
         await Problem(excess, HttpStatusCode.BadRequest, "order_value_limit_exceeded");
-        foreach (var raw in new[] { "null", "0", "-1", "1.5", "\"abc\"" })
+        foreach (var (raw, expectedMessage) in new[]
+        {
+            ("null", "Поле обязательно для заполнения."),
+            ("0", "Количество должно быть положительным числом."),
+            ("-1", "Количество должно быть положительным числом."),
+            ("1.5", "Количество должно быть целым числом."),
+            ("\"abc\"", "Количество должно быть целым числом.")
+        })
         {
             using var invalid = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
             {
@@ -151,6 +158,11 @@ public sealed class OrderProductApiTests
             using var result = await _customer.SendAsync(invalid);
             Assert.That(result.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
             Assert.That(result.Content.Headers.ContentType!.MediaType, Is.EqualTo("application/problem+json"));
+            var problem = (await result.Content.ReadFromJsonAsync<SarafanProblemDetails>())!;
+            Assert.That(problem.Code, Is.EqualTo("validation_failed"), raw);
+            Assert.That(problem.Errors, Does.ContainKey("quantity"), raw);
+            Assert.That(problem.Errors!["quantity"], Is.EqualTo(new[] { expectedMessage }), raw);
+            Assert.That(problem.Errors, Does.Not.ContainKey("$.quantity"), raw);
         }
         await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
         {
