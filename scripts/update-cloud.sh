@@ -5,5 +5,4 @@
 
 set -euo pipefail
 
-readonly DEPLOYMENT_TARGET="${1:-${SARAFAN_DEPLOYMENT_TARGET:-production}}"
-exec "$(dirname "$0")/bootstrap-cloud.sh" "$DEPLOYMENT_TARGET"
+exec "$(dirname "$0")/bootstrap-cloud.sh" "$@"

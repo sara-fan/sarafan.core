@@ -14,8 +14,6 @@
       <DependentUpon>docker-compose.yml</DependentUpon>
     </None>
     <None Include="docker-compose.yml" />
-    <None Include="docker-compose-ghrc.yml" />
-    <None Include="docker-compose.edge.yml" />
     <None Include="docker-compose.production.yml" />
     <None Include=".dockerignore" />
     <None Include="sarafan.env.example" />
