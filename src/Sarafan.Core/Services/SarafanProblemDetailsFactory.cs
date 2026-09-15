@@ -33,7 +33,7 @@ public sealed class SarafanProblemDetailsFactory(
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
             ["order_quantity_limit_exceeded"] = new(400, "Превышено количество товара", "Такое количество товара может быть признано коммерческой партией и запрещено к ввозу"),
-            ["order_value_limit_exceeded"] = new(400, "Превышена стоимость заказа", "Максимальная стоимость заказа при экспресс-перевозке 1000 евро"),
+            ["order_value_limit_exceeded"] = new(400, "Превышена стоимость заказа", FormattableString.Invariant($"Максимальная стоимость заказа при экспресс-перевозке {OrderLimitService.MaximumAmountEur:0.############################} евро с учётом резерва {OrderLimitService.ExchangeRateReservePercent:0.############################}% на изменение курса")),
             ["order_limit_rates_unavailable"] = new(503, "Курсы временно недоступны", "Не удалось проверить стоимость. Повторите попытку позже."),
             ["order_update_conflict"] = new(409, "Заказ изменился", "Обновите карточку и повторите изменения."),
             ["order_not_editable"] = new(409, "Товар недоступен для редактирования", "Изменять товар можно только во время проверки заказа."),

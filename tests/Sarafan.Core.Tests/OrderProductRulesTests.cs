@@ -84,22 +84,22 @@ public sealed class OrderProductRulesTests
     {
         var pair = new OrderLimitRatePair(OrderProductTestData.Rate(Currency.Usd, 8000, 100),
             OrderProductTestData.Rate(Currency.Eur, 1000, 10));
-        Assert.That(pair.MaximumTotalUsd, Is.EqualTo(1250m));
-        Assert.That(pair.Allows(312.50m, 4), Is.True);
-        Assert.That(pair.Allows(312.51m, 4), Is.False);
-        Assert.That(pair.Allows(1249.99m, 1), Is.True);
-        // 1000.00001 EUR would round to 1000.00, but must be rejected.
+        Assert.That(pair.MaximumTotalUsd, Is.EqualTo(1125m));
+        Assert.That(pair.Allows(281.25m, 4), Is.True);
+        Assert.That(pair.Allows(281.26m, 4), Is.False);
+        Assert.That(pair.Allows(1124.99m, 1), Is.True);
+        // 900.000009 EUR would round to 900.00, but must be rejected.
         var boundary = new OrderLimitRatePair(OrderProductTestData.Rate(Currency.Usd, 100.000001m),
             OrderProductTestData.Rate(Currency.Eur, 100m));
-        Assert.That(boundary.Allows(1000m, 1), Is.False);
-        Assert.That(boundary.MaximumTotalUsd, Is.EqualTo(999.99m));
+        Assert.That(boundary.Allows(900m, 1), Is.False);
+        Assert.That(boundary.MaximumTotalUsd, Is.EqualTo(899.99m));
         var extreme = new OrderLimitRatePair(OrderProductTestData.Rate(Currency.Usd, 0.000001m, 1000000),
             OrderProductTestData.Rate(Currency.Eur, 999999999999.999999m));
         Assert.That(extreme.MaximumTotalUsd, Is.EqualTo(399999999.96m));
         Assert.That(extreme.Allows(99999999.99m, 4), Is.True);
         Assert.That(OrderLimitService.Validate(Product, pair), Is.SameAs(pair));
         Assert.That(Assert.Throws<ServiceException>(() => OrderLimitService.Validate(Product, null))!.Code, Is.EqualTo("order_limit_rates_unavailable"));
-        Assert.That(Assert.Throws<ServiceException>(() => OrderLimitService.Validate(Product with { SellerPrice = new(1250.01m, Currency.Usd) }, pair))!.Code, Is.EqualTo("order_value_limit_exceeded"));
+        Assert.That(Assert.Throws<ServiceException>(() => OrderLimitService.Validate(Product with { SellerPrice = new(1125.01m, Currency.Usd) }, pair))!.Code, Is.EqualTo("order_value_limit_exceeded"));
     }
 
     [Test]
@@ -123,7 +123,7 @@ public sealed class OrderProductRulesTests
         pair = await service.GetPairAsync(default);
         var metadata = OrderLimitService.Limits(pair);
         Assert.That(metadata.ValueLimit.SourceEffectiveDate, Is.EqualTo(new DateOnly(2026, 9, 15)));
-        Assert.That(metadata.ValueLimit.MaximumTotalUsd, Is.EqualTo(1333.33m));
+        Assert.That(metadata.ValueLimit.MaximumTotalUsd, Is.EqualTo(1200m));
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
         Assert.CatchAsync<OperationCanceledException>(() => service.GetPairAsync(cancelled.Token));
@@ -137,7 +137,7 @@ public sealed class OrderProductRulesTests
         Assert.That(quantity.Detail, Is.EqualTo("Такое количество товара может быть признано коммерческой партией и запрещено к ввозу"));
         Assert.That(quantity.Errors!["quantity"], Is.EqualTo(new[] { quantity.Detail }));
         var price = factory.Create(new DefaultHttpContext(), 400, "order_value_limit_exceeded");
-        Assert.That(price.Detail, Is.EqualTo("Максимальная стоимость заказа при экспресс-перевозке 1000 евро"));
+        Assert.That(price.Detail, Is.EqualTo("Максимальная стоимость заказа при экспресс-перевозке 900 евро с учётом резерва 10% на изменение курса"));
         Assert.That(price.Errors!["sellerPrice"], Is.EqualTo(new[] { price.Detail }));
         foreach (var code in new[] { "invalid_order_product_name", "invalid_order_seller_price", "invalid_order_color", "invalid_order_size" })
             Assert.That(factory.Create(new DefaultHttpContext(), 400, code).Errors, Has.Count.EqualTo(1));

@@ -61,13 +61,13 @@ public sealed class OrderProductApiTests
         Assert.That(details.CanEditProduct, Is.True);
         Assert.That(details.Customer.Phone, Is.EqualTo("+79993332211"));
         Assert.That(details.Customer.PassportNumber, Is.Null);
-        var request = Update(details, " Исправленный товар ", 312.50m, 4);
+        var request = Update(details, " Исправленный товар ", 281.25m, 4);
         request.Color = " Cherry Blossom "; request.Size = " L "; request.Comment = "  Проверено  ";
         using var changed = await _staff.PutAsJsonAsync($"/api/v1/backoffice/orders/{original.OrderNumber}/product", request);
         changed.EnsureSuccessStatusCode();
         Assert.That(changed.Headers.CacheControl!.NoStore, Is.True);
         var corrected = (await changed.Content.ReadFromJsonAsync<BackofficeOrderDetailsDto>())!;
-        Assert.That(corrected.Product, Is.EqualTo(new OrderProductDto("Исправленный товар", new(312.50m, Currency.Usd), 4, "Cherry Blossom", "L", "Проверено")));
+        Assert.That(corrected.Product, Is.EqualTo(new OrderProductDto("Исправленный товар", new(281.25m, Currency.Usd), 4, "Cherry Blossom", "L", "Проверено")));
         Assert.That(corrected.SubmittedProduct, Is.EqualTo(original.SubmittedProduct));
         Assert.That(corrected.Status, Is.EqualTo(OrderStatus.UnderReview));
         Assert.That(corrected.UpdatedAt, Is.GreaterThan(details.UpdatedAt));
@@ -98,7 +98,7 @@ public sealed class OrderProductApiTests
         Assert.That(latest.Customer, Is.EqualTo(new BackofficeOrderCustomerDto("Иванов", "Иван", "Иванович",
             "+79993332211", "test@example.com", "1234", "123456", new(2020, 1, 1), "Тестовый орган",
             "123456789012", "123456", "Москва", "Тестовая улица")));
-        Assert.That(latest.LimitCheck.MaximumTotalUsd, Is.EqualTo(5m));
+        Assert.That(latest.LimitCheck.MaximumTotalUsd, Is.EqualTo(4.5m));
         using var changedRatesReplay = await Create(key);
         changedRatesReplay.EnsureSuccessStatusCode();
         using var newAtChangedRate = await Create(Guid.NewGuid());
@@ -133,13 +133,38 @@ public sealed class OrderProductApiTests
     }
 
     [Test]
+    public async Task ReserveLimitAppliesToCreationCorrectionAndMetadata()
+    {
+        using var response = await Create(Guid.NewGuid(), price: 281.25m, quantity: 4);
+        response.EnsureSuccessStatusCode();
+        var order = (await response.Content.ReadFromJsonAsync<OrderDto>())!;
+        var details = await Details(order.OrderNumber);
+        var ops = await _customer.GetFromJsonAsync<OrderOpsDto>("/api/v1/orders/ops");
+        var staffOps = await _staff.GetFromJsonAsync<BackofficeOrderOpsDto>("/api/v1/backoffice/orders/ops");
+        Assert.That(ops!.ProductLimits, Is.EqualTo(staffOps!.ProductLimits));
+        Assert.That(details.LimitCheck, Is.EqualTo(ops.ProductLimits!.ValueLimit));
+        Assert.That(details.LimitCheck.MaximumAmount, Is.EqualTo(900m));
+        Assert.That(details.LimitCheck.MaximumTotalUsd, Is.EqualTo(1125m));
+
+        using var rejected = await Put(order.OrderNumber, Update(details, "Выше лимита", 281.26m, 4));
+        Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        var problem = (await rejected.Content.ReadFromJsonAsync<SarafanProblemDetails>())!;
+        Assert.That(problem.Code, Is.EqualTo("order_value_limit_exceeded"));
+        Assert.That(problem.Errors!["sellerPrice"], Is.EqualTo(new[]
+        {
+            "Максимальная стоимость заказа при экспресс-перевозке 900 евро с учётом резерва 10% на изменение курса"
+        }));
+        Assert.That((await Details(order.OrderNumber)).Product, Is.EqualTo(details.Product));
+    }
+
+    [Test]
     public async Task QuantityMoneyAndUnavailableRatesRejectBeforeAllocatingIdentity()
     {
         using var missing = await Create(Guid.NewGuid(), includeProduct: false);
         await Problem(missing, HttpStatusCode.BadRequest, "invalid_order_product_name");
         using var quantity = await Create(Guid.NewGuid(), quantity: 5);
         await Problem(quantity, HttpStatusCode.BadRequest, "order_quantity_limit_exceeded");
-        using var excess = await Create(Guid.NewGuid(), price: 312.51m, quantity: 4);
+        using var excess = await Create(Guid.NewGuid(), price: 281.26m, quantity: 4);
         await Problem(excess, HttpStatusCode.BadRequest, "order_value_limit_exceeded");
         foreach (var (raw, expectedMessage) in new[]
         {
@@ -180,6 +205,7 @@ public sealed class OrderProductApiTests
         var staffOps = await _staff.GetFromJsonAsync<BackofficeOrderOpsDto>("/api/v1/backoffice/orders/ops");
         Assert.That(ops!.ProductLimits, Is.EqualTo(staffOps!.ProductLimits));
         Assert.That(ops.ProductLimits!.ValueLimit.Available, Is.False);
+        Assert.That(ops.ProductLimits.ValueLimit.MaximumAmount, Is.EqualTo(900m));
         Assert.That(await _customer.GetFromJsonAsync<CustomerOrderListItemDto[]>("/api/v1/orders"), Is.Empty);
     }
 
