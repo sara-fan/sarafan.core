@@ -8,7 +8,7 @@ This guide describes the configuration shipped in this repository. Run commands 
 - For native development, the .NET 10 SDK selected by [global.json](../global.json): version `10.0.303` with `latestFeature` roll-forward. Container builds include their own SDK.
 - PostgreSQL 17, supplied by the Docker commands below.
 - For Back Office source development, a sibling `sarafan.back.office` checkout and Node matching its `package.json` (`^22.23.0 || ^24.15.0`). The Core-only build does not require frontend repositories.
-- For cloud deployment, a Linux host with Bash, the `C.UTF-8` locale, OpenSSL, registry access, durable storage, DNS and TLS certificates. The deployment account needs Docker access and permission to create/write the configured storage directories.
+- For cloud deployment, a Linux host with Bash, the `C.UTF-8` locale, OpenSSL, registry access, durable storage and DNS pointing at the VPS. The deployment account needs Docker access and permission to create/write the configured storage directories.
 
 ## Local development
 
@@ -134,105 +134,92 @@ This alternative writes reports to `TestResults/`. Direct local `--wait` command
 
 ## Cloud production environment
 
-The cloud topology runs PostgreSQL, backup, a one-shot migration service, Core, the customer UI and Back Office. Core and PostgreSQL stay on the private application network; each frontend proxies API requests on its own origin. Adminer is absent.
+Deploy to a dedicated Linux VPS using [docker-compose.production.yml](../docker-compose.production.yml), which includes the application and its Traefik wrapper. This follows the sibling Logibooks deployment: Traefik discovers frontend Docker labels and manages Let's Encrypt certificates. All services use the Compose default network; no external edge network is needed. Only Traefik publishes host ports (80 and 443). Core, PostgreSQL and frontend ports stay private.
 
-**Release gate:** the current application verifies customer phone numbers with their last four digits in every runtime environment, including `Production`. This demonstration mechanism permits all non-payment functionality, including orders, but must be replaced and disabled before real payment integration. Keep the real-payment integration flag false until that work is complete. Active demo staff accounts also block startup with real payment integration. Track the release gate in the [MVP delivery plan](https://github.com/sara-fan/sarafan.spec/issues/26).
+| Public hostname | Service |
+| --- | --- |
+| `sarafanof.com`, `www.sarafanof.com` | Customer UI |
+| `gtc.sarafanof.com` | Back Office |
 
-### Choose one edge mode
+Each frontend proxies its same-origin API requests to Core and preserves the forwarded HTTPS scheme for secure cookies. HTTP redirects to HTTPS. Create DNS A records for all three names pointing to the VPS; publish AAAA records only if IPv6 reaches that VPS. Allow inbound ports 80 and 443 and outbound access to Let's Encrypt. Traefik uses HTTP-01 validation and automatic renewal; no manually supplied certificate/key files are needed. See the [Traefik ACME reference](https://doc.traefik.io/traefik/v3.6/reference/install-configuration/tls/certificate-resolvers/acme/).
 
-| Mode | Compose overlay | Requirements |
+### Persistent files
+
+| Host path (default) | Container path | Purpose |
 | --- | --- | --- |
-| `edge` | `docker-compose.edge.yml` | Existing shared edge on external `sw-consulting-edge` network, routing the two hostnames to `sarafan-ui:8080` and `sarafan-backoffice:8080` |
-| `production` | `docker-compose.production.yml` | Dedicated Nginx edge publishing ports 80/443; certificate files `s.crt` and `s.key` |
+| `/srv/sarafan/pgdata` | `/var/lib/postgresql/data` | PostgreSQL 17 data |
+| `/srv/sarafan/backup` | `/backups` | Database backups |
+| `/srv/sarafan/backup/logs` | `/var/log` | Backup service logs |
+| `/srv/sarafan/certificate` | `/letsencrypt` | Traefik ACME account and certificates |
+| `/srv/sarafan/settings/appsettings.json` | `/app/appsettings.json` (read-only) | Core configuration, mounted in API and migration containers |
 
-Configure DNS for both `sarafan.sw.consulting` and `sb.sw.consulting` to point at the selected edge. Allow inbound HTTP/HTTPS to the edge, and keep database/API ports private. For the dedicated mode, place the certificate chain and private key in `/srv/sarafan/certificate` or the chosen `SARAFAN_CERTIFICATE_DIR`. The certificate must cover both names; `*.sw.consulting` covers both. For shared mode, start and configure the shared edge before bootstrapping Sarafan.
+Bootstrap creates storage directories and initializes `acme.json` with mode 600 without replacing existing contents. Preserve the certificate directory across updates. Prepare the settings file yourself; a missing file fails deployment instead of becoming a directory. Ensure the API container user (UID 1654 in the .NET image) can read it and the deployment account can manage the storage directories.
 
-### Prepare the checkout and environment file
+### Prepare configuration
 
-Clone or update the Core checkout to the reviewed deployment revision. On a new installation, create the private configuration file without overwriting an existing one:
+Run from the Core checkout on the VPS:
 
 ```bash
 umask 077
 test -e sarafan.env || cp sarafan.env.example sarafan.env
 chmod 600 sarafan.env
+mkdir -p /srv/sarafan/settings
+test -e /srv/sarafan/settings/appsettings.json || cp src/Sarafan.Core/appsettings.json /srv/sarafan/settings/appsettings.json
 chmod +x scripts/bootstrap-cloud.sh scripts/update-cloud.sh
 ```
 
-Edit `sarafan.env` before deployment. It is ignored by Git. The scripts **source it as Bash** as well as passing it to Compose: keep it trusted, use shell-safe assignments and quote values containing spaces or shell metacharacters. Hexadecimal random values are convenient for database/JWT secrets; for example, `openssl rand -hex 32` generates one value. Generate distinct values and store them privately.
+Edit `sarafan.env` and the mounted settings before deployment. Arrange read permissions for the settings file without making secrets publicly readable (for example a group readable by UID 1654). The scripts source the env file as trusted Bash: use shell-safe assignments and quote special characters. It is ignored by Git.
 
-| Setting | Required configuration |
-| --- | --- |
-| `COMPOSE_PROJECT_NAME` | Stable project name, default `sarafan` |
-| `SARAFAN_POSTGRES_DB`, `SARAFAN_POSTGRES_USER` | Database/user, default `sarafan` / `postgres` |
-| `SARAFAN_POSTGRES_PASSWORD` | Replace the example placeholder with a strong database password |
-| `SARAFAN_JWT_SECRET`, `SARAFAN_BACKOFFICE_JWT_SECRET` | Different random secrets, each at least 32 characters; replace both placeholders |
-| `SARAFAN_POSTGRES_DATA_DIR` | Durable absolute non-root directory for PostgreSQL |
-| `SARAFAN_BACKUP_DATA_DIR`, `SARAFAN_BACKUP_LOG_DIR` | Separate durable absolute non-root directories for backup files and logs |
-| `SARAFAN_BACKUP_RETENTION_DAYS` | Backup retention, default 7 days |
-| `SARAFAN_CORE_IMAGE_TAG`, `SARAFAN_UI_IMAGE_TAG` | Available, reviewed image versions; release numbers are independent |
-| `SARAFAN_BACKOFFICE_IMAGE`, `SARAFAN_BACKOFFICE_IMAGE_TAG` | Repository without a tag and its independent version; default repository `ghcr.io/sara-fan/sarafan.back.office` |
-| `SW_CONSULTING_EDGE_NETWORK` | Existing external network for `edge`, default `sw-consulting-edge` |
-| `SARAFAN_CERTIFICATE_DIR` | Certificate directory for `production` |
-| `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT` | Positive health-wait timeout in seconds, default 180 |
-| `SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED` | `true` only when creating the first Administrator |
-| `SARAFAN_BACKOFFICE_BOOTSTRAP_EMAIL`, `SARAFAN_BACKOFFICE_BOOTSTRAP_PASSWORD` | Supply securely only for bootstrap; password must contain 8 to 18 characters |
-| `SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED` | `false` while demonstration authentication is in use |
-| `SARAFAN_UI_LOGGING_ENABLED`, `SARAFAN_BACKOFFICE_LOGGING_ENABLED` | Independent frontend logging switches, default `false` |
-| `OTEL_LOGS_EXPORTER`, `OTEL_TRACES_EXPORTER` | Default `none`; use `otlp` only when sending telemetry to a configured collector |
+- Set `SARAFAN_ACME_EMAIL` to the certificate administrator's email.
+- Replace the database password and both JWT secrets; the JWT secrets must differ and each contain at least 32 characters. `openssl rand -hex 32` can generate each value independently.
+- Select available Core, UI and Back Office image tags. Core and UI retain the existing `ghcr.io/maxirmx` image paths; Back Office defaults to `ghcr.io/sara-fan/sarafan.back.office`. Verify the exact image/tag exists before deployment; Core's publish workflow uses the GitHub repository owner, which may differ from the deployment path.
+- Keep `COMPOSE_PROJECT_NAME=sarafan` stable. Storage path and image tag overrides are listed in the example env file.
+- Set additional Core options, including Quartz schedules, in the mounted JSON. Compose environment values override the JSON for database connection, identity keys, secure cookies, migration policy and forwarded headers. Keep secrets out of tracked files.
 
-Bootstrap creates and checks the configured storage directories. Choose distinct locations and ensure the container processes can write their mounts. On an existing database, changing `SARAFAN_POSTGRES_PASSWORD` does not change the stored PostgreSQL role password; credential rotation requires a coordinated database operation.
+For a new database, set `ScheduledJobs:IanaTldUpdate:RunOnStartup` to `true` in the mounted JSON to populate the TLD catalogue immediately. Restore `false` after the first successful download. Without a catalogue, URL preview, new order creation and anonymous order Ops return `503 tld_catalog_unavailable`.
 
-**Image namespace:** [docker-compose-ghrc.yml](../docker-compose-ghrc.yml) currently pins the Core and customer UI repositories to `ghcr.io/maxirmx/sarafan.core` and `ghcr.io/maxirmx/sarafan.ui`. Their tag variables do not change those repositories. Core's publish workflow uses the GitHub repository owner, currently `sara-fan`, so a newly published tag is not automatically available at the older deployment path. Verify availability at the exact configured paths before deployment; deploying images that exist only under another owner requires a reviewed cloud Compose change. Back Office already supports its separate image-repository variable.
+**Release gate:** predictable phone-suffix verification allows non-payment functionality, including orders, but must be replaced and disabled before real payments. Keep `SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED=false` until then. Active demo staff accounts also block real-payment startup. See the [MVP delivery plan](https://github.com/sara-fan/sarafan.spec/issues/26).
 
-Only settings wired into the Compose files reach containers. Quartz schedules are supplied by Core's tracked `ScheduledJobs` section in `appsettings.json`; they are not overridden through `sarafan.env`. Other additional runtime options require explicit Compose environment entries. A blank cron disables recurrence independently of the startup switch. The local port settings in the example file do not publish cloud database or frontend ports.
-
-A fresh database has no embedded TLD fallback. For an initial deployment that must populate the catalogue immediately, publish Core with `ScheduledJobs:IanaTldUpdate:RunOnStartup` temporarily set to `true` in `appsettings.json`; restore the default `false` after the first successful catalogue download. Until then, URL preview, genuinely new order creation and anonymous order Ops return `503 tld_catalog_unavailable`, while unrelated endpoints remain available.
+For the first Administrator only, set `SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED=true` and supply the bootstrap email and password securely (8 to 18 characters). After successful login, change that password, disable bootstrap and remove the credentials from the env file, then run the update script. Publish current legal documents through Back Office before customer registration.
 
 ### Validate and deploy
 
-Validate without starting services or printing resolved secrets. Choose one value for `target` and retain it for updates:
+Read-only validation does not start containers or apply migrations:
 
 ```bash
-target=production # Use edge for the shared server.
-docker compose --env-file sarafan.env -f docker-compose-ghrc.yml -f "docker-compose.${target}.yml" config --quiet
+docker compose --env-file sarafan.env -f docker-compose.production.yml config --quiet
 ```
 
-If a registry package is private, authenticate the deployment account to GHCR with pull permission before proceeding. On an existing installation, take and verify a database backup before applying new migrations.
+Authenticate to GHCR if packages are private. Before updating an existing database, take and verify a backup. Deploy:
 
 ```bash
-scripts/bootstrap-cloud.sh "$target"
+scripts/bootstrap-cloud.sh
 ```
 
-The script validates Compose wait support, environment values, storage paths, and the selected edge prerequisite; dedicated mode also checks certificate hostname coverage. It then validates Compose, pulls images, starts backup/API dependencies, and waits for the frontends and dedicated edge when selected. Each scripted `--wait` uses `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT`; this is not a total script, image-pull or migration deadline.
+The script checks configuration, storage and Compose wait support, pulls images, starts the migration/API dependencies, and waits for the frontends, backup and Traefik. Each health wait uses `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT` (default 180 seconds); this is not a total migration or image-pull deadline. Traefik's health check confirms the proxy process, not certificate issuance: verify public HTTPS separately.
 
-The `migrate` service runs `dotnet Sarafan.Core.dll --migrate-only` and must exit successfully before the API starts. The long-running API has `Database__ApplyMigrations=false`. Bootstrap does not create legal documents: publish them through Back Office before customer registration can succeed.
-
-### Verify and finish bootstrap
+The one-shot migration service runs the image entrypoint with `--migrate-only`. API startup requires successful migration completion and keeps automatic migrations disabled. Both use the same mounted settings.
 
 ```bash
-docker compose --env-file sarafan.env -f docker-compose-ghrc.yml -f "docker-compose.${target}.yml" ps -a
-docker compose --env-file sarafan.env -f docker-compose-ghrc.yml -f "docker-compose.${target}.yml" logs --tail=100 migrate api backup
-curl --fail --silent --show-error https://sarafan.sw.consulting/api/v1/status/status
-curl --fail --silent --show-error https://sb.sw.consulting/health
+docker compose --env-file sarafan.env -f docker-compose.production.yml ps -a
+docker compose --env-file sarafan.env -f docker-compose.production.yml logs --tail=100 migrate api backup traefik
+curl --fail --silent --show-error https://sarafanof.com/api/v1/status/status
+curl --fail --silent --show-error https://www.sarafanof.com/health
+curl --fail --silent --show-error https://gtc.sarafanof.com/health
 ```
 
-Confirm the migration container exited with code 0, the running services are healthy, and both frontends load through HTTPS. Check a staff login/session refresh, change the bootstrap Administrator password, then set `SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED=false` and remove both bootstrap credential values from `sarafan.env`. Reapply the deployment using the update command below so the migration container no longer retains them in its configuration. Provisioning is idempotent, but credentials should not remain configured.
+Verify customer and staff login/session refresh. Core trusts private Docker ranges with a forwarded-header limit of two, matching Traefik and the frontend proxy.
 
-Both cloud modes use two proxy hops (edge and frontend). Preserve the original HTTPS scheme at each hop so secure customer/staff refresh cookies work. Cloud Compose configures a forwarded-header limit of 2 and trusts private Docker network ranges; Core's standalone default trusts only loopback proxies. Other network layouts must set `ForwardedHeaders__KnownNetworks__N` or `ForwardedHeaders__KnownProxies__N` for their actual trusted boundary. Docker assigns container addresses dynamically; no custom IPAM subnet is required.
+### Updates and backups
 
-### Updates, backups and diagnosis
-
-Update the checkout/configuration and select the intended Core/UI/Back Office tags, then run the same mode:
+Update the checkout and selected image tags, then run:
 
 ```bash
-scripts/update-cloud.sh "$target"
+scripts/update-cloud.sh
 ```
 
-The update script delegates to bootstrap, including image pulls, migrations and health checks. For a non-default environment-file path, set `SARAFAN_ENV_FILE` for either script and use the same path in manual Compose commands.
+The update script repeats bootstrap, including pulls, migrations and health checks. Set `SARAFAN_ENV_FILE` for a non-default env path and use that same file with manual Compose commands. Local Compose port variables in the example env do not publish cloud ports.
 
-The backup service uses `ghcr.io/sw-consulting/db-backup:latest`, with data and logs in the configured durable directories. Verify successful backup creation and practice restoration into separate disposable storage. Restoring a database or rolling back a migration is a separate operation: reverting an image tag does not revert the schema. Review migrations and preserve a verified backup before attempting recovery.
+The backup container retains backups for seven days by default. Check its logs and generated files; API health alone does not prove backups work. Practice restoration only into separate disposable storage. Changing the env database password does not rotate an existing database role's password, and reverting an image does not roll back schema migrations.
 
-For startup failure, inspect `migrate` logs first, then API and edge health. A missing edge network or invalid certificate must be corrected before retrying. An unhealthy backup service requires checking its logs, mounts and generated files; a successful API health response alone does not prove backups work. For login/session problems, verify DNS/TLS, forwarded HTTPS headers and the distinct JWT keys.
-
-Core writes privacy-filtered logs to stdout and supports optional OTLP export. Choose stdout collection or OTLP delivery to a given backend to avoid duplicate ingestion. environment-setup.md
-
+For deployment failure, inspect migration/API logs first. For HTTPS failure, inspect Traefik logs, DNS, ports 80/443 and ACME storage permissions. Choose stdout collection or optional OTLP export (`OTEL_*`) to avoid duplicate log ingestion.

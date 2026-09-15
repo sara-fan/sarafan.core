@@ -5,7 +5,6 @@
 
 set -euo pipefail
 
-readonly DEPLOYMENT_TARGET="${1:-${SARAFAN_DEPLOYMENT_TARGET:-production}}"
 readonly ENV_FILE="${SARAFAN_ENV_FILE:-sarafan.env}"
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
@@ -21,7 +20,13 @@ export LC_ALL=C.UTF-8
   || fail "C.UTF-8 locale is required for character-count validation"
 
 readonly PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sarafan}"
-readonly CERTIFICATE_DIR="${SARAFAN_CERTIFICATE_DIR:-/srv/sarafan/certificate}"
+export SARAFAN_CERTIFICATE_DIR="${SARAFAN_CERTIFICATE_DIR:-/srv/sarafan/certificate}"
+export SARAFAN_POSTGRES_DATA_DIR="${SARAFAN_POSTGRES_DATA_DIR:-/srv/sarafan/pgdata}"
+export SARAFAN_BACKUP_DATA_DIR="${SARAFAN_BACKUP_DATA_DIR:-/srv/sarafan/backup}"
+export SARAFAN_BACKUP_LOG_DIR="${SARAFAN_BACKUP_LOG_DIR:-/srv/sarafan/backup/logs}"
+readonly APPSETTINGS_FILE="${SARAFAN_APPSETTINGS_FILE:-/srv/sarafan/settings/appsettings.json}"
+[[ "$APPSETTINGS_FILE" = /* && -f "$APPSETTINGS_FILE" && -r "$APPSETTINGS_FILE" ]] \
+  || fail "A readable appsettings.json file is required at $APPSETTINGS_FILE"
 readonly DEPLOYMENT_WAIT_TIMEOUT="${SARAFAN_DEPLOYMENT_WAIT_TIMEOUT:-180}"
 [[ "$DEPLOYMENT_WAIT_TIMEOUT" =~ ^[1-9][0-9]*$ ]] \
   || fail "SARAFAN_DEPLOYMENT_WAIT_TIMEOUT must be a positive number of seconds"
@@ -62,31 +67,17 @@ if [[ "${SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED:-false}" == true ]]; then
     || fail "SARAFAN_BACKOFFICE_BOOTSTRAP_PASSWORD must contain 8 to 18 characters"
 fi
 
-case "$DEPLOYMENT_TARGET" in
-  edge)
-    readonly OVERLAY_FILE=docker-compose.edge.yml
-    docker network inspect "${SW_CONSULTING_EDGE_NETWORK:-sw-consulting-edge}" >/dev/null 2>&1 \
-      || fail "Shared edge network does not exist; start sw-consulting-edge first"
-    ;;
-  production)
-    readonly OVERLAY_FILE=docker-compose.production.yml
-    [[ -f "$CERTIFICATE_DIR/s.crt" && -f "$CERTIFICATE_DIR/s.key" ]] \
-      || fail "TLS certificate files s.crt and s.key are required in $CERTIFICATE_DIR"
-    openssl x509 -in "$CERTIFICATE_DIR/s.crt" -noout -checkhost sarafan.sw.consulting >/dev/null \
-      || fail "Certificate does not cover sarafan.sw.consulting: $CERTIFICATE_DIR/s.crt"
-    openssl x509 -in "$CERTIFICATE_DIR/s.crt" -noout -checkhost sb.sw.consulting >/dev/null \
-      || fail "Certificate does not cover sb.sw.consulting: $CERTIFICATE_DIR/s.crt"
-    ;;
-  *) fail "Deployment target must be 'edge' or 'production'" ;;
-esac
+[[ -n "${SARAFAN_ACME_EMAIL:-}" ]] || fail "SARAFAN_ACME_EMAIL must be configured"
+ensure_durable_directory SARAFAN_CERTIFICATE_DIR
+# Preserve the existing ACME account and certificates on every update.
+if [[ ! -e "$SARAFAN_CERTIFICATE_DIR/acme.json" ]]; then
+  (umask 077; set -o noclobber; : > "$SARAFAN_CERTIFICATE_DIR/acme.json")
+fi
+chmod 600 "$SARAFAN_CERTIFICATE_DIR/acme.json"
 
-readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f docker-compose-ghrc.yml -f "$OVERLAY_FILE")
+readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f docker-compose.production.yml)
 "${COMPOSE[@]}" config --quiet
 "${COMPOSE[@]}" pull
 "${COMPOSE[@]}" up -d backup api
-"${COMPOSE[@]}" up -d --wait --wait-timeout "$DEPLOYMENT_WAIT_TIMEOUT" ui
-if [[ "$DEPLOYMENT_TARGET" == production ]]; then
-  "${COMPOSE[@]}" up -d --wait --wait-timeout "$DEPLOYMENT_WAIT_TIMEOUT" production-edge
-fi
-"${COMPOSE[@]}" up -d --wait --wait-timeout "$DEPLOYMENT_WAIT_TIMEOUT" backoffice
+"${COMPOSE[@]}" up -d --wait --wait-timeout "$DEPLOYMENT_WAIT_TIMEOUT" ui backoffice backup traefik
 "${COMPOSE[@]}" ps
