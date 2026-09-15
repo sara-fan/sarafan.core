@@ -58,6 +58,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(item => item.SubmittedColor).HasColumnName("submitted_color").HasMaxLength(200).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         builder.Property(item => item.SubmittedSize).HasColumnName("submitted_size").HasMaxLength(200).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         builder.Property(item => item.OverrideProductName).HasColumnName("override_product_name").HasMaxLength(500);
+        builder.Property(item => item.OverrideStoreName).HasColumnName("override_store_name").HasMaxLength(200);
         builder.Property(item => item.OverrideSellerPrice).HasColumnName("override_seller_price").HasPrecision(10, 2);
         builder.Property(item => item.OverrideSellerPriceCurrency).HasColumnName("override_seller_price_currency");
         builder.Property(item => item.OverrideColor).HasColumnName("override_color").HasMaxLength(200);
@@ -109,7 +110,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.ToTable(table =>
         {
             table.HasCheckConstraint("ck_orders_submitted_product", "(submitted_product_name IS NULL AND submitted_seller_price IS NULL AND submitted_seller_price_currency IS NULL AND submitted_color IS NULL AND submitted_size IS NULL) OR (submitted_product_name IS NOT NULL AND char_length(submitted_product_name) > 0 AND submitted_seller_price IS NOT NULL AND submitted_seller_price > 0 AND submitted_seller_price_currency IS NOT NULL AND submitted_seller_price_currency = 840 AND quantity BETWEEN 1 AND 4)");
-            table.HasCheckConstraint("ck_orders_override_product", "(override_quantity IS NULL AND override_product_name IS NULL AND override_seller_price IS NULL AND override_seller_price_currency IS NULL AND override_color IS NULL AND override_size IS NULL AND override_comment IS NULL) OR (override_quantity IS NOT NULL AND override_quantity BETWEEN 1 AND 4 AND override_product_name IS NOT NULL AND char_length(override_product_name) > 0 AND override_seller_price IS NOT NULL AND override_seller_price > 0 AND override_seller_price_currency IS NOT NULL AND override_seller_price_currency = 840)");
+            table.HasCheckConstraint("ck_orders_override_product", "(override_quantity IS NULL AND override_store_name IS NULL AND override_product_name IS NULL AND override_seller_price IS NULL AND override_seller_price_currency IS NULL AND override_color IS NULL AND override_size IS NULL AND override_comment IS NULL) OR (override_quantity IS NOT NULL AND override_quantity BETWEEN 1 AND 4 AND override_product_name IS NOT NULL AND char_length(override_product_name) > 0 AND override_seller_price IS NOT NULL AND override_seller_price > 0 AND override_seller_price_currency IS NOT NULL AND override_seller_price_currency = 840)");
             table.HasCheckConstraint("ck_orders_created_limit_pair", "(created_limit_usd_rate_id IS NULL) = (created_limit_eur_rate_id IS NULL)");
             table.HasCheckConstraint("ck_orders_updated_limit_pair", "(updated_limit_usd_rate_id IS NULL) = (updated_limit_eur_rate_id IS NULL)");
             table.HasCheckConstraint("ck_orders_customer_order_number", "customer_order_number > 0");

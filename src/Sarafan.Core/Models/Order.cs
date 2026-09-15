@@ -65,6 +65,7 @@ public sealed class Order
     public string? SubmittedColor { get; private set; }
     public string? SubmittedSize { get; private set; }
     public string? OverrideProductName { get; private set; }
+    public string? OverrideStoreName { get; private set; }
     public decimal? OverrideSellerPrice { get; private set; }
     public Currency? OverrideSellerPriceCurrency { get; private set; }
     public string? OverrideColor { get; private set; }
@@ -88,8 +89,10 @@ public sealed class Order
         CreatedLimitEurRateId = eurRateId;
     }
 
-    internal void CorrectProduct(Sarafan.Core.RestModels.OrderProductDto product, long usdRateId, long eurRateId, DateTimeOffset now)
+    internal void CorrectProduct(string? storeName, Sarafan.Core.RestModels.OrderProductDto product,
+        long usdRateId, long eurRateId, DateTimeOffset now)
     {
+        OverrideStoreName = storeName;
         OverrideProductName = product.ProductName;
         OverrideSellerPrice = product.SellerPrice?.Amount;
         OverrideSellerPriceCurrency = product.SellerPrice?.Currency;

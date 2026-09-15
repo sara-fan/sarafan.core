@@ -50,16 +50,17 @@ public sealed partial class OrderService
                     Size = request.Size
                 }, request.Quantity ?? 0, request.Comment);
                 OrderProductRules.Validate(product);
+                var storeName = NormalizeStoreName(request.StoreName);
                 var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
-                var before = Effective(order);
-                order.CorrectProduct(product, pair.Usd.Id, pair.Eur.Id, timeProvider.GetUtcNow());
+                var before = AuditSnapshot(EffectiveStoreName(order), Effective(order));
+                order.CorrectProduct(storeName, product, pair.Usd.Id, pair.Eur.Id, timeProvider.GetUtcNow());
                 database.Set<OrderProductAuditEvent>().Add(new()
                 {
                     OrderId = order.Id,
                     ActorId = actorId,
                     OccurredAt = order.UpdatedAt,
                     Before = JsonSerializer.Serialize(before),
-                    After = JsonSerializer.Serialize(product),
+                    After = JsonSerializer.Serialize(AuditSnapshot(storeName, product)),
                     UsdRateId = pair.Usd.Id,
                     EurRateId = pair.Eur.Id
                 });
@@ -106,7 +107,7 @@ public sealed partial class OrderService
             OrderLimitService.ToDto(pair), order.Status == OrderStatus.UnderReview
                 && BackofficeAuthorization.IsAllowed(roles, BackofficeAction.EditOrderProduct))
         {
-            StoreName = order.StoreName,
+            StoreName = EffectiveStoreName(order),
             ImageUrl = order.ImageUrl,
             Dimensions = order.LengthCm.HasValue && order.WidthCm.HasValue && order.HeightCm.HasValue
                 ? new(order.LengthCm.Value, order.WidthCm.Value, order.HeightCm.Value) : null,
@@ -125,6 +126,23 @@ public sealed partial class OrderService
             ? new(order.OverrideProductName, Price(order.OverrideSellerPrice, order.OverrideSellerPriceCurrency),
                 order.OverrideQuantity.Value, order.OverrideColor, order.OverrideSize, order.OverrideComment)
             : Submitted(order);
+
+    internal static string? EffectiveStoreName(Order order)
+        => order.OverrideQuantity.HasValue ? order.OverrideStoreName : order.StoreName;
+
+    private static string? NormalizeStoreName(string? value)
+    {
+        var normalized = value?.Trim();
+        if (normalized?.Length > 200) throw new ServiceException(400, "invalid_order_store_name");
+        return string.IsNullOrEmpty(normalized) ? null : normalized;
+    }
+
+    private static ProductCorrectionSnapshot AuditSnapshot(string? storeName, OrderProductDto product)
+        => new(product.ProductName, product.SellerPrice, product.Quantity, product.Color,
+            product.Size, product.Comment, storeName);
+
+    private sealed record ProductCorrectionSnapshot(string? ProductName, OrderSellerPriceDto? SellerPrice,
+        int Quantity, string? Color, string? Size, string? Comment, string? StoreName);
 
     private static OrderSellerPriceDto? Price(decimal? amount, Currency? currency)
         => amount.HasValue && currency.HasValue ? new(amount.Value, currency.Value) : null;

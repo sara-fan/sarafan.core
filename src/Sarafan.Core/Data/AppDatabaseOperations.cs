@@ -173,7 +173,8 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
                 StringComparison.OrdinalIgnoreCase)
             || item.SourceUrl.Contains(search, StringComparison.OrdinalIgnoreCase)
             || (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName) != null && (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)!.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || item.StoreName != null && item.StoreName.Contains(search, StringComparison.OrdinalIgnoreCase));
+            || (item.OverrideQuantity.HasValue ? item.OverrideStoreName : item.StoreName) != null
+                && (item.OverrideQuantity.HasValue ? item.OverrideStoreName : item.StoreName)!.Contains(search, StringComparison.OrdinalIgnoreCase));
 }
 
 internal sealed class InMemoryAppDatabaseTransaction : IAppDatabaseTransaction

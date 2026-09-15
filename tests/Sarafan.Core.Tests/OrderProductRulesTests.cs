@@ -139,7 +139,7 @@ public sealed class OrderProductRulesTests
         var price = factory.Create(new DefaultHttpContext(), 400, "order_value_limit_exceeded");
         Assert.That(price.Detail, Is.EqualTo("Максимальная стоимость заказа при экспресс-перевозке 900 евро с учётом резерва 10% на изменение курса"));
         Assert.That(price.Errors!["sellerPrice"], Is.EqualTo(new[] { price.Detail }));
-        foreach (var code in new[] { "invalid_order_product_name", "invalid_order_seller_price", "invalid_order_color", "invalid_order_size" })
+        foreach (var code in new[] { "invalid_order_product_name", "invalid_order_store_name", "invalid_order_seller_price", "invalid_order_color", "invalid_order_size" })
             Assert.That(factory.Create(new DefaultHttpContext(), 400, code).Errors, Has.Count.EqualTo(1));
     }
 
@@ -150,15 +150,30 @@ public sealed class OrderProductRulesTests
         var order = new Order(1, 1, "https://shop.example.com/", 1, null, Guid.NewGuid(), now);
         order.SetSubmittedProduct(Product, 1, 2);
         Assert.Throws<InvalidOperationException>(() => order.SetSubmittedProduct(Product, 1, 2));
-        order.CorrectProduct(Product with { Quantity = 4, Color = "Red", Size = "L", Comment = "note" }, 3, 4, now.AddTicks(1));
+        order.CorrectProduct(" Shop ", Product with { Quantity = 4, Color = "Red", Size = "L", Comment = "note" }, 3, 4, now.AddTicks(1));
         Assert.That(order.UpdatedAt, Is.EqualTo(now.AddMicroseconds(1)));
-        order.CorrectProduct(Product, 5, 6, now.AddSeconds(-1));
+        order.CorrectProduct(null, Product, 5, 6, now.AddSeconds(-1));
         Assert.That(order.UpdatedAt, Is.EqualTo(now.AddMicroseconds(2)));
         Assert.That(OrderService.Effective(order), Is.EqualTo(Product));
         Assert.That(OrderService.Submitted(order), Is.EqualTo(Product));
+        Assert.That(OrderService.EffectiveStoreName(order), Is.Null);
         Assert.That(order.CreatedLimitUsdRateId, Is.EqualTo(1));
         Assert.That(order.UpdatedLimitEurRateId, Is.EqualTo(6));
         Assert.That(order.AppliedExchangeRateHistoryId, Is.Null);
+    }
+
+    [Test]
+    public void StoreCorrectionCanClearRecognizedValueWithoutChangingRecognitionSnapshot()
+    {
+        var now = DateTimeOffset.Parse("2026-09-15T00:00:00Z");
+        var order = new Order(1, 1, "https://shop.example.com/", 1, null, Guid.NewGuid(), now);
+        order.SetSubmittedProduct(Product, 1, 2);
+        order.SetProductSnapshot(null, "Распознанный магазин", null, null, null,
+            null, null, null, null, null, now);
+        order.CorrectProduct(null, Product, 3, 4, now.AddSeconds(1));
+
+        Assert.That(order.StoreName, Is.EqualTo("Распознанный магазин"));
+        Assert.That(OrderService.EffectiveStoreName(order), Is.Null);
     }
 
     private static void Reject(OrderProductDto product, string code)

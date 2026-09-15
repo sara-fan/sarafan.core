@@ -18,6 +18,7 @@ public sealed class SubmittedProductRequest
 public sealed class UpdateOrderProductRequest
 {
     public DateTimeOffset? ExpectedUpdatedAt { get; set; }
+    public string? StoreName { get; set; }
     public string? ProductName { get; set; }
     public OrderSellerPriceDto? SellerPrice { get; set; }
     public int? Quantity { get; set; }
@@ -36,7 +37,7 @@ public sealed record OrderLimitCheckDto(decimal MaximumAmount, Currency Currency
 }
 
 public sealed record OrderProductLimitsDto(int MinimumQuantity, int MaximumQuantity,
-    int DefaultQuantity, int ProductNameMaximumLength, int ColorMaximumLength,
+    int DefaultQuantity, int StoreNameMaximumLength, int ProductNameMaximumLength, int ColorMaximumLength,
     int SizeMaximumLength, int CommentMaximumLength, Currency SellerPriceCurrency,
     decimal MaximumUnitPrice, int PriceDecimalPlaces, OrderLimitCheckDto ValueLimit);
 

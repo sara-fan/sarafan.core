@@ -49,7 +49,7 @@ public sealed class OrderLimitService(AppDbContext database, TimeProvider timePr
         => pair?.ToDto() ?? new(OrderLimitService.MaximumAmountEur, Currency.Eur, false, null, null);
 
     internal static OrderProductLimitsDto Limits(OrderLimitRatePair? pair)
-        => new(1, 4, 1, 500, 200, 200, 2000, Currency.Usd, 99999999.99m, 2, ToDto(pair));
+        => new(1, 4, 1, 200, 500, 200, 200, 2000, Currency.Usd, 99999999.99m, 2, ToDto(pair));
 
     internal static OrderLimitRatePair Validate(OrderProductDto product, OrderLimitRatePair? pair)
     {

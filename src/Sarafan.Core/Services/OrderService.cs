@@ -312,10 +312,10 @@ public sealed partial class OrderService(
                 .ThenBy(item => (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)).ThenBy(item => item.Id),
             ("productName", true) => query.OrderBy(item => (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName) == null)
                 .ThenByDescending(item => (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)).ThenByDescending(item => item.Id),
-            ("storeName", false) => query.OrderBy(item => item.StoreName == null)
-                .ThenBy(item => item.StoreName).ThenBy(item => item.Id),
-            ("storeName", true) => query.OrderBy(item => item.StoreName == null)
-                .ThenByDescending(item => item.StoreName).ThenByDescending(item => item.Id),
+            ("storeName", false) => query.OrderBy(item => (item.OverrideQuantity.HasValue ? item.OverrideStoreName : item.StoreName) == null)
+                .ThenBy(item => (item.OverrideQuantity.HasValue ? item.OverrideStoreName : item.StoreName)).ThenBy(item => item.Id),
+            ("storeName", true) => query.OrderBy(item => (item.OverrideQuantity.HasValue ? item.OverrideStoreName : item.StoreName) == null)
+                .ThenByDescending(item => (item.OverrideQuantity.HasValue ? item.OverrideStoreName : item.StoreName)).ThenByDescending(item => item.Id),
             ("sellerPrice", false) => query.OrderBy(item => (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice) == null)
                 .ThenBy(item => (item.OverrideSellerPriceCurrency ?? item.SubmittedSellerPriceCurrency ?? item.SellerPriceCurrency)).ThenBy(item => (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice)).ThenBy(item => item.Id),
             ("sellerPrice", true) => query.OrderBy(item => (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice) == null)
@@ -338,7 +338,7 @@ public sealed partial class OrderService(
                     item.Status,
                     item.SourceUrl,
                     (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName),
-                    item.StoreName,
+                    (item.OverrideQuantity.HasValue ? item.OverrideStoreName : item.StoreName),
                     (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice),
                     (item.OverrideSellerPriceCurrency ?? item.SubmittedSellerPriceCurrency ?? item.SellerPriceCurrency),
                     (item.OverrideQuantity ?? item.Quantity),
@@ -404,7 +404,7 @@ public sealed partial class OrderService(
                 item.Status,
                 item.SourceUrl,
                 (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName),
-                item.StoreName,
+                (item.OverrideQuantity.HasValue ? item.OverrideStoreName : item.StoreName),
                 item.ImageUrl,
                 (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice),
                 (item.OverrideSellerPriceCurrency ?? item.SubmittedSellerPriceCurrency ?? item.SellerPriceCurrency),
@@ -468,7 +468,7 @@ public sealed partial class OrderService(
         order.Status,
         ProductSourceUrl.NormalizeStored(order.SourceUrl),
         Effective(order).ProductName,
-        order.StoreName,
+        EffectiveStoreName(order),
         order.ImageUrl,
         Effective(order).SellerPrice,
         order.LengthCm.HasValue && order.WidthCm.HasValue && order.HeightCm.HasValue
