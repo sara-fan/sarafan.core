@@ -32,6 +32,15 @@ public sealed class SarafanProblemDetailsFactory(
     private static readonly IReadOnlyDictionary<string, ProblemDefinition> Definitions =
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
+            ["order_quantity_limit_exceeded"] = new(400, "Превышено количество товара", "Такое количество товара может быть признано коммерческой партией и запрещено к ввозу"),
+            ["order_value_limit_exceeded"] = new(400, "Превышена стоимость заказа", "Максимальная стоимость заказа при экспресс-перевозке 1000 евро"),
+            ["order_limit_rates_unavailable"] = new(503, "Курсы временно недоступны", "Не удалось проверить стоимость. Повторите попытку позже."),
+            ["order_update_conflict"] = new(409, "Заказ изменился", "Обновите карточку и повторите изменения."),
+            ["order_not_editable"] = new(409, "Товар недоступен для редактирования", "Изменять товар можно только во время проверки заказа."),
+            ["invalid_order_product_name"] = new(400, "Некорректное название товара", "Укажите название товара длиной от 1 до 500 символов."),
+            ["invalid_order_seller_price"] = new(400, "Некорректная цена товара", "Укажите положительную цену в USD не более 99999999,99, максимум с двумя дробными знаками."),
+            ["invalid_order_color"] = new(400, "Некорректный цвет товара", "Цвет не должен превышать 200 символов."),
+            ["invalid_order_size"] = new(400, "Некорректный размер товара", "Размер не должен превышать 200 символов."),
             ["invalid_legal_document_kind"] = new(400, "Некорректный вид документа", "Выберите вид документа из предложенного списка."),
             ["invalid_legal_document_locale"] = new(400, "Некорректный язык документа", "Для документа укажите язык ru."),
             ["invalid_legal_document_title"] = new(400, "Некорректное название документа", "Укажите непустое название длиной не более 200 символов."),
@@ -256,6 +265,20 @@ public sealed class SarafanProblemDetailsFactory(
         }
 
         var traceId = SarafanTraceIdentifiers.GetOrCreate(context);
+        var field = code switch
+        {
+            "order_quantity_limit_exceeded" => "quantity",
+            "order_value_limit_exceeded" => "sellerPrice",
+            "invalid_order_product_name" => "productName",
+            "invalid_order_seller_price" => "sellerPrice",
+            "invalid_order_color" => "color",
+            "invalid_order_size" => "size",
+            "invalid_order_quantity" => "quantity",
+            "invalid_order_comment" => "comment",
+            _ => null
+        };
+        if (errors is null && field is not null)
+            errors = new Dictionary<string, string[]> { [field] = [definition.Detail] };
         context.Response.Headers.ContentLanguage = "ru";
         var details = new SarafanProblemDetails
         {

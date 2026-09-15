@@ -36,6 +36,7 @@ public sealed class OrderCreationTests
     public async Task SetUp()
     {
         await IntegrationTestEnvironment.ResetAsync();
+        await OrderProductTestData.SeedRates();
         await DemoteDemoBackofficeUsers();
         _app = IsolatedApp();
         _client = CreateClient(_app);
@@ -101,10 +102,10 @@ public sealed class OrderCreationTests
             Assert.That(first.SourceUrl, Is.EqualTo("https://shop.example.com/product?id=1"));
             Assert.That(first.Quantity, Is.EqualTo(2));
             Assert.That(first.Comment, Is.EqualTo("Упаковать бережно"));
-            Assert.That(first.ProductName, Is.Null);
+            Assert.That(first.ProductName, Is.EqualTo("Тестовый товар"));
             Assert.That(first.StoreName, Is.Null);
             Assert.That(first.ImageUrl, Is.Null);
-            Assert.That(first.SellerPrice, Is.Null);
+            Assert.That(first.SellerPrice, Is.EqualTo(new OrderSellerPriceDto(10m, Currency.Usd)));
             Assert.That(first.Dimensions, Is.Null);
             Assert.That(first.Characteristics, Is.Null);
             Assert.That(first.AppliedExchangeRate, Is.Null);
@@ -190,10 +191,10 @@ public sealed class OrderCreationTests
             Assert.That(customerItems, Has.None.Property(nameof(CustomerOrderListItemDto.Id)).EqualTo(other.Id));
             Assert.That(customerItems[0].OrderNumber, Is.EqualTo(second.OrderNumber));
             Assert.That(customerItems[0].CreatedAt, Is.Not.EqualTo(default(DateTimeOffset)));
-            Assert.That(customerItems[1].ProductName, Is.EqualTo("Первый товар"));
+            Assert.That(customerItems[1].ProductName, Is.EqualTo("Тестовый товар"));
             Assert.That(customerItems[1].StoreName, Is.EqualTo("Магазин"));
             Assert.That(customerItems[1].ImageUrl, Is.EqualTo("https://images.example/first.jpg"));
-            Assert.That(customerItems[1].SellerPrice, Is.EqualTo(new OrderSellerPriceDto(12.34m, Currency.Usd)));
+            Assert.That(customerItems[1].SellerPrice, Is.EqualTo(new OrderSellerPriceDto(10m, Currency.Usd)));
             Assert.That(customerItems[1].Quantity, Is.EqualTo(2));
             Assert.That(otherItems, Has.One.Property(nameof(CustomerOrderListItemDto.Id)).EqualTo(other.Id));
             Assert.That(anonymousResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
@@ -254,7 +255,7 @@ public sealed class OrderCreationTests
         using var replayResponse = await Create(_client, "https://shop.example.com/product", idempotencyKey);
         var replayDto = await replayResponse.Content.ReadFromJsonAsync<OrderDto>();
         var expectedRate = new OrderAppliedExchangeRateDto(
-            1,
+            3,
             "CBR",
             Currency.Usd,
             Currency.Rub,
@@ -266,10 +267,10 @@ public sealed class OrderCreationTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
-            Assert.That(orderDto?.ProductName, Is.EqualTo("Товар"));
+            Assert.That(orderDto?.ProductName, Is.EqualTo("Тестовый товар"));
             Assert.That(orderDto?.StoreName, Is.EqualTo("Магазин"));
             Assert.That(orderDto?.ImageUrl, Is.EqualTo("https://images.example/product.jpg"));
-            Assert.That(orderDto?.SellerPrice, Is.EqualTo(new OrderSellerPriceDto(12.34m, Currency.Usd)));
+            Assert.That(orderDto?.SellerPrice, Is.EqualTo(new OrderSellerPriceDto(10m, Currency.Usd)));
             Assert.That(orderDto?.Dimensions, Is.EqualTo(new OrderDimensionsDto(10.25m, 20.50m, 30.75m)));
             Assert.That(orderDto?.Characteristics, Is.EqualTo(new Dictionary<string, string> { ["Цвет"] = "Синий" }));
             Assert.That(orderDto?.AppliedExchangeRate, Is.EqualTo(expectedRate));
@@ -529,6 +530,7 @@ public sealed class OrderCreationTests
         {
             Content = JsonContent.Create(new CreateOrderRequest
             {
+                SubmittedProduct = OrderProductTestData.Product(),
                 SourceUrl = sourceUrl,
                 Quantity = quantity,
                 Comment = comment

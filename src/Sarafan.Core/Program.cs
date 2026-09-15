@@ -81,6 +81,7 @@ builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddSingleton<ICustomerOrderCodeGenerator, CustomerOrderCodeGenerator>();
 builder.Services.AddScoped<ICustomerOrderCodeCollisionDetector, CustomerOrderCodeCollisionDetector>();
 builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<OrderLimitService>();
 builder.Services.AddScoped<ProductPreviewService>();
 builder.Services.AddOptions<ConsentOptions>().Bind(builder.Configuration.GetSection(ConsentOptions.SectionName))
     .ValidateDataAnnotations().ValidateOnStart();
