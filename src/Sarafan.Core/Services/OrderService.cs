@@ -117,7 +117,16 @@ public sealed class OrderService(
         Guid idempotencyKey,
         CancellationToken cancellationToken)
     {
-        var normalizedSourceUrl = NormalizeSourceUrl(sourceUrl);
+        string? normalizedSourceUrl = null;
+        ServiceException? sourceUrlError = null;
+        try
+        {
+            normalizedSourceUrl = NormalizeSourceUrl(sourceUrl);
+        }
+        catch (ServiceException exception) when (exception.Code == "invalid_order_url")
+        {
+            sourceUrlError = exception;
+        }
         var normalizedQuantity = NormalizeQuantity(quantity);
         var normalizedComment = NormalizeComment(comment);
         if (idempotencyKey == Guid.Empty)
@@ -144,7 +153,7 @@ public sealed class OrderService(
                             cancellationToken);
                     if (existing is not null)
                     {
-                        if (!string.Equals(existing.SourceUrl, normalizedSourceUrl, StringComparison.Ordinal)
+                        if (!ProductSourceUrl.MatchesStored(existing.SourceUrl, sourceUrl)
                             || existing.Quantity != normalizedQuantity
                             || !string.Equals(existing.Comment, normalizedComment, StringComparison.Ordinal))
                         {
@@ -155,13 +164,18 @@ public sealed class OrderService(
                             ?? throw new InvalidOperationException("An existing order must have a customer order code."));
                     }
 
+                    if (sourceUrlError is not null)
+                    {
+                        throw sourceUrlError;
+                    }
+
                     assignedNewCode = customer.OrderCode is null;
                     var customerOrderNumber = customer.AllocateOrderNumber(
                         customer.OrderCode ?? codeGenerator.Generate());
                     var order = new Order(
                         customerId,
                         customerOrderNumber,
-                        normalizedSourceUrl,
+                        normalizedSourceUrl!,
                         normalizedQuantity,
                         normalizedComment,
                         idempotencyKey,
@@ -390,19 +404,7 @@ public sealed class OrderService(
     }
 
     private static string NormalizeSourceUrl(string? sourceUrl)
-    {
-        var normalized = sourceUrl?.Trim();
-        if (string.IsNullOrEmpty(normalized)
-            || normalized.Length > 2048
-            || !Uri.TryCreate(normalized, UriKind.Absolute, out var uri)
-            || string.IsNullOrEmpty(uri.Host)
-            || uri.Scheme is not ("http" or "https"))
-        {
-            throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_url");
-        }
-
-        return normalized;
-    }
+        => ProductSourceUrl.Normalize(sourceUrl);
 
     private static int NormalizeQuantity(int? quantity)
     {
@@ -455,7 +457,7 @@ public sealed class OrderService(
         order.Id,
         $"{customerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
-        order.SourceUrl,
+        ProductSourceUrl.NormalizeStored(order.SourceUrl),
         order.ProductName,
         order.StoreName,
         order.ImageUrl,
@@ -482,7 +484,7 @@ public sealed class OrderService(
     private static BackofficeOrderListItemDto ToBackofficeDto(BackofficeOrderProjection order) => new(
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
-        order.SourceUrl,
+        ProductSourceUrl.NormalizeStored(order.SourceUrl),
         order.ProductName,
         order.StoreName,
         order.SellerPrice.HasValue && order.SellerPriceCurrency.HasValue
@@ -496,7 +498,7 @@ public sealed class OrderService(
         order.Id,
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
-        order.SourceUrl,
+        ProductSourceUrl.NormalizeStored(order.SourceUrl),
         order.ProductName,
         order.StoreName,
         order.ImageUrl,

@@ -45,6 +45,7 @@
 ### Order product snapshots
 
 - Keep recognized product, seller-price, per-item dimension, characteristic and applied-rate data server-owned. Seller price uses `decimal(10,2)` with a currency enum; an applied rate is only a restricted reference to an immutable `ExchangeRateHistory` row whose base currency matches the seller-price currency. Customer order creation accepts only source URL, positive quantity and optional comment as product inputs.
+- Normalize product source addresses in Core for anonymous preview, order creation and API projections. Preserve explicit HTTP/HTTPS, assume HTTPS for scheme-less or scheme-relative addresses, reject other explicit schemes and URL userinfo credentials, and return/store the same canonical absolute URL. New inputs must use a DNS hostname with an IANA-listed top-level domain and must reject IP literals; validate against the embedded versioned IANA snapshot without DNS or runtime network access, and publish that single Core-owned catalogue and its version through anonymous order Ops for client-side validation. Legacy projections are non-throwing and fall back to the unchanged stored URL when its canonical form cannot fit the response contract. Idempotency replay equivalence uses the pre-v0.1.0 URL rules without rewriting, suffix-validating or canonical-length-validating the immutable legacy row; new orders remain strict. The v0.1.0 preview is stateless and deterministically selects manual review.
 
 ### Controller Error Responses
 

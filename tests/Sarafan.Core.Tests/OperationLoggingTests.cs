@@ -85,6 +85,23 @@ public sealed class OperationLoggingTests
     }
 
     [Test]
+    public void ProductPreviewSummaries_RedactTheSourceAddress()
+    {
+        var request = new ProductPreviewRequest { SourceUrl = $"https://shop.example.com/?token={Secret}" };
+        var result = new ProductPreviewDto(request.SourceUrl, ProductPreviewDto.ManualReviewOutcome);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(LogValueSummary.Describe(request),
+                Is.EqualTo("ProductPreviewRequest(sourceUrl=[redacted])"));
+            Assert.That(LogValueSummary.Describe(result),
+                Is.EqualTo("ProductPreviewDto(sourceUrl=[redacted]; outcome=manual_review)"));
+            Assert.That(LogValueSummary.Describe(request), Does.Not.Contain(Secret));
+            Assert.That(LogValueSummary.Describe(result), Does.Not.Contain(Secret));
+        }
+    }
+
+    [Test]
     public void SynchronousFailure_PreservesExceptionAndStackAndLogsWarning()
     {
         var failure = new InvalidOperationException(Secret);
@@ -450,6 +467,10 @@ public sealed class OperationLoggingTests
         using var authOps = await client.GetAsync("/api/v1/auth/ops");
         using var customerOps = await client.GetAsync("/api/v1/customers/ops");
         using var orderOps = await client.GetAsync("/api/v1/orders/ops");
+        var previewSourceUrl = $"shop.example.com/product?token={Secret}";
+        using var preview = await client.PostAsJsonAsync(
+            "/api/v1/orders/preview",
+            new ProductPreviewRequest { SourceUrl = previewSourceUrl });
         using var resolve = await client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
         using var invalid = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone = "" });
         using var request = await client.PostAsJsonAsync("/api/v1/auth/code/request", await ConsentTestData.Request(client, phone));
@@ -464,7 +485,7 @@ public sealed class OperationLoggingTests
         var session = (await verify.Content.ReadFromJsonAsync<AuthenticationSessionDto>())!;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
         var orderKey = Guid.NewGuid();
-        var orderSourceUrl = $"https://shop.example/product?token={Secret}";
+        var orderSourceUrl = $"https://shop.example.com/product?token={Secret}";
         using var orderRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
         {
             Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = orderSourceUrl, Quantity = 1 })
@@ -500,6 +521,7 @@ public sealed class OperationLoggingTests
         Assert.That(authOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(customerOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(orderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(preview.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(createOrder.StatusCode, Is.EqualTo(HttpStatusCode.Created));
@@ -521,6 +543,7 @@ public sealed class OperationLoggingTests
             typeof(CustomerOperationsController),
             typeof(CustomersController),
             typeof(OrderOperationsController),
+            typeof(OrderPreviewController),
             typeof(OrdersController),
             typeof(StatusController)
         ];
@@ -538,7 +561,13 @@ public sealed class OperationLoggingTests
             .Where(record => Equals(record.Attributes["code.function.name"], statusOperation))
             .Select(record => record.Level), Is.All.EqualTo(LogLevel.Trace));
 
-        foreach (var type in new[] { typeof(AuthenticationService), typeof(JwtTokenService), typeof(OrderService) })
+        foreach (var type in new[]
+                 {
+                     typeof(AuthenticationService),
+                     typeof(JwtTokenService),
+                     typeof(OrderService),
+                     typeof(ProductPreviewService)
+                 })
         {
             foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
@@ -556,7 +585,8 @@ public sealed class OperationLoggingTests
             Does.Not.Contain(phone)
                 .And.Not.Contain(session.AccessToken)
                 .And.Not.Contain(orderKey.ToString("D"))
-                .And.Not.Contain(orderSourceUrl));
+                .And.Not.Contain(orderSourceUrl)
+                .And.Not.Contain(previewSourceUrl));
         AssertPrivate();
     }
 

@@ -350,7 +350,7 @@ public sealed class BackofficeOrderTests
             var order = new Order(
                 customer.Id,
                 number,
-                index == 3 ? "https://shop.example/source-token" : $"https://shop.example/item-{index}",
+                index == 3 ? "https://shop.example.com/source-token" : $"https://shop.example.com/item-{index}",
                 index + 1,
                 null,
                 Guid.NewGuid(),
@@ -374,7 +374,7 @@ public sealed class BackofficeOrderTests
         var beforeMoscowDate = new Order(
             customers[1].Id,
             customers[1].AllocateOrderNumber("22222222"),
-            "https://shop.example/before-date",
+            "https://shop.example.com/before-date",
             1,
             null,
             Guid.NewGuid(),
@@ -382,7 +382,7 @@ public sealed class BackofficeOrderTests
         var afterMoscowDate = new Order(
             customers[1].Id,
             customers[1].AllocateOrderNumber("22222222"),
-            "https://shop.example/after-date",
+            "https://shop.example.com/after-date",
             1,
             null,
             Guid.NewGuid(),

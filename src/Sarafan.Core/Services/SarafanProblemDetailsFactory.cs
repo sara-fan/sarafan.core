@@ -97,7 +97,7 @@ public sealed class SarafanProblemDetailsFactory(
             ["invalid_order_url"] = new(
                 StatusCodes.Status400BadRequest,
                 "Некорректная ссылка на товар",
-                "Укажите абсолютную ссылку на страницу товара с протоколом http или https."),
+                "Проверьте ссылку на товар и попробуйте ещё раз"),
             ["invalid_order_quantity"] = new(
                 StatusCodes.Status400BadRequest,
                 "Некорректное количество товара",

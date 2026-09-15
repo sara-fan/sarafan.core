@@ -20,6 +20,16 @@ public sealed class CreateOrderRequest
     public string? Comment { get; set; }
 }
 
+public sealed class ProductPreviewRequest
+{
+    public string? SourceUrl { get; set; }
+}
+
+public sealed record ProductPreviewDto(string SourceUrl, string Outcome)
+{
+    public const string ManualReviewOutcome = "manual_review";
+}
+
 public sealed record OrderSellerPriceDto(decimal Amount, Currency Currency);
 
 public sealed record OrderDimensionsDto(decimal LengthCm, decimal WidthCm, decimal HeightCm);
@@ -70,9 +80,15 @@ public sealed record OrderStatusOpsItemDto(
     bool IsTerminal,
     int ProgressPercent);
 
+public sealed record ProductSourceUrlOpsDto(
+    int MaximumLength,
+    string TopLevelDomainListVersion,
+    IReadOnlyList<string> TopLevelDomains);
+
 public sealed record OrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,
-    IReadOnlyList<EnumOpsItemDto> Currencies);
+    IReadOnlyList<EnumOpsItemDto> Currencies,
+    ProductSourceUrlOpsDto ProductSourceUrl);
 
 public sealed record BackofficeOrderStatusFilterGroupDto(
     string RouteAlias,
