@@ -49,13 +49,13 @@ public sealed class OrderProductApiTests
     public void Cleanup() { _customer.Dispose(); _staff.Dispose(); }
 
     [Test]
-    public async Task CreationCorrectionAndReplayPreserveOriginalAndUseEffectiveFieldsEverywhere()
+    public async Task CreationCorrectionAndReplayUseCurrentProductAndPreserveAuditHistory()
     {
         var key = Guid.NewGuid();
         using var response = await Create(key);
         response.EnsureSuccessStatusCode();
         var original = (await response.Content.ReadFromJsonAsync<OrderDto>())!;
-        Assert.That(original.Product, Is.EqualTo(original.SubmittedProduct));
+        Assert.That(original.Product.ProductName, Is.EqualTo("Тестовый товар"));
         Assert.That(original.ShowReviewFields, Is.True);
         var details = await Details(original.OrderNumber);
         Assert.That(details.CanEditProduct, Is.True);
@@ -68,7 +68,6 @@ public sealed class OrderProductApiTests
         Assert.That(changed.Headers.CacheControl!.NoStore, Is.True);
         var corrected = (await changed.Content.ReadFromJsonAsync<BackofficeOrderDetailsDto>())!;
         Assert.That(corrected.Product, Is.EqualTo(new OrderProductDto("Исправленный товар", new(281.25m, Currency.Usd), 4, "Cherry Blossom", "L", "Проверено")));
-        Assert.That(corrected.SubmittedProduct, Is.EqualTo(original.SubmittedProduct));
         Assert.That(corrected.Status, Is.EqualTo(OrderStatus.UnderReview));
         Assert.That(corrected.UpdatedAt, Is.GreaterThan(details.UpdatedAt));
         Assert.That(corrected.SourceUrl, Is.EqualTo(original.SourceUrl));
@@ -99,6 +98,8 @@ public sealed class OrderProductApiTests
             "+79993332211", "test@example.com", "1234", "123456", new(2020, 1, 1), "Тестовый орган",
             "123456789012", "123456", "Москва", "Тестовая улица")));
         Assert.That(latest.LimitCheck.MaximumTotalUsd, Is.EqualTo(4.5m));
+        Assert.That(latest.SavedLimitSourceEffectiveDate, Is.EqualTo(new DateOnly(2026, 9, 1)));
+        Assert.That(latest.LimitCheck.SourceEffectiveDate, Is.EqualTo(new DateOnly(2026, 9, 2)));
         using var changedRatesReplay = await Create(key);
         changedRatesReplay.EnsureSuccessStatusCode();
         using var newAtChangedRate = await Create(Guid.NewGuid());
@@ -106,16 +107,27 @@ public sealed class OrderProductApiTests
         await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var audit = await db.Set<OrderProductAuditEvent>().SingleAsync();
-            Assert.That(audit.Id, Is.Positive);
-            Assert.That(JsonSerializer.Deserialize<OrderProductDto>(audit.Before), Is.EqualTo(original.Product));
-            Assert.That(JsonSerializer.Deserialize<OrderProductDto>(audit.After), Is.EqualTo(corrected.Product));
+            var audits = await db.Set<OrderProductAuditEvent>().OrderBy(item => item.Kind).ToListAsync();
+            Assert.That(audits, Has.Count.EqualTo(2));
+            var createdAudit = audits.Single(item => item.Kind == OrderProductAuditKind.Created);
+            var audit = audits.Single(item => item.Kind == OrderProductAuditKind.StaffCorrected);
+            Assert.That(createdAudit.Id, Is.Positive);
+            Assert.That(createdAudit.Before, Is.Null);
+            Assert.That(createdAudit.ActorId, Is.Null);
+            using var createdAfter = JsonDocument.Parse(createdAudit.After);
+            Assert.That(createdAfter.RootElement.Deserialize<OrderProductDto>(), Is.EqualTo(original.Product));
+            using var before = JsonDocument.Parse(audit.Before!);
+            using var after = JsonDocument.Parse(audit.After);
+            Assert.That(before.RootElement.Deserialize<OrderProductDto>(), Is.EqualTo(original.Product));
+            Assert.That(after.RootElement.Deserialize<OrderProductDto>(), Is.EqualTo(corrected.Product));
+            Assert.That(before.RootElement.GetProperty("StoreName").ValueKind, Is.EqualTo(JsonValueKind.Null));
+            Assert.That(after.RootElement.GetProperty("StoreName").ValueKind, Is.EqualTo(JsonValueKind.Null));
             Assert.That(audit.ActorId, Is.EqualTo((await db.BackofficeUsers.SingleAsync()).Id));
             var stored = await db.Orders.SingleAsync();
-            Assert.That(stored.ProductName, Is.Null); // Recognition snapshot remains server owned.
-            Assert.That(stored.Quantity, Is.EqualTo(1));
-            Assert.That(stored.CreatedLimitUsdRateId, Is.EqualTo(audit.UsdRateId));
-            Assert.That(stored.UpdatedLimitEurRateId, Is.EqualTo(audit.EurRateId));
+            Assert.That(stored.ProductName, Is.EqualTo("Исправленный товар"));
+            Assert.That(stored.Quantity, Is.EqualTo(4));
+            Assert.That(createdAudit.UsdRateId, Is.Not.Null);
+            Assert.That(audit.EurRateId, Is.Not.Null);
             // InMemory simulates unavailable catalogues without exercising provider FK behavior.
             db.ChangeTracker.Clear();
             db.ExchangeRateHistory.RemoveRange(db.ExchangeRateHistory);
@@ -125,11 +137,55 @@ public sealed class OrderProductApiTests
         using var replay = await Create(key);
         replay.EnsureSuccessStatusCode();
         var replayed = (await replay.Content.ReadFromJsonAsync<OrderDto>())!;
-        Assert.That(replayed.SubmittedProduct, Is.EqualTo(original.SubmittedProduct));
         Assert.That(replayed.Product, Is.EqualTo(corrected.Product));
         using var conflict = await Create(key, name: "Другой товар");
         await Problem(conflict, HttpStatusCode.Conflict, "order_creation_conflict");
         Assert.That((await Details(original.OrderNumber)).LimitCheck.Available, Is.False);
+    }
+
+    [Test]
+    public async Task StaffDetailsExposeMetadataAllowStoreCorrectionAndKeepSharedLimitMessage()
+    {
+        using var created = await Create(Guid.NewGuid(), store: "Магазин");
+        var order = (await created.Content.ReadFromJsonAsync<OrderDto>())!;
+        Assert.That((await Details(order.OrderNumber)).Dimensions, Is.Null);
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var recognizedOrder = await db.Orders.SingleAsync();
+            recognizedOrder.SetProductMetadata("https://shop.example/image.png",
+                1m, 2m, 3m, new Dictionary<string, string> { ["Материал"] = "Сталь" }, null, recognizedOrder.UpdatedAt);
+            await db.SaveChangesAsync();
+        }
+        var details = await Details(order.OrderNumber);
+        Assert.That(details.Product.StoreName, Is.EqualTo("Магазин"));
+        Assert.That(details.SavedLimitSourceEffectiveDate, Is.EqualTo(details.LimitCheck.SourceEffectiveDate));
+        Assert.That(details.ImageUrl, Is.EqualTo("https://shop.example/image.png"));
+        Assert.That(details.Dimensions, Is.EqualTo(new OrderDimensionsDto(1, 2, 3)));
+        Assert.That(details.Characteristics!["Материал"], Is.EqualTo("Сталь"));
+        Assert.That(details.LimitCheck.ExceededMessage, Is.EqualTo(OrderLimitService.ExceededMessage));
+        var update = Update(details, "Исправлено", 20, 1);
+        update.StoreName = " Новый магазин ";
+        using var saved = await Put(order.OrderNumber, update);
+        var corrected = (await saved.Content.ReadFromJsonAsync<BackofficeOrderDetailsDto>())!;
+        Assert.That(corrected.Characteristics, Is.EqualTo(details.Characteristics));
+        Assert.That(corrected.Dimensions, Is.EqualTo(details.Dimensions));
+        Assert.That(corrected.Product.StoreName, Is.EqualTo("Новый магазин"));
+        Assert.That(corrected.ImageUrl, Is.EqualTo(details.ImageUrl));
+        Assert.That(corrected.SavedLimitSourceEffectiveDate, Is.EqualTo(details.SavedLimitSourceEffectiveDate));
+        await using var verification = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var verifiedOrder = await verification.ServiceProvider.GetRequiredService<AppDbContext>().Orders.SingleAsync();
+        Assert.That(verifiedOrder.StoreName, Is.EqualTo("Новый магазин"));
+        var audit = await verification.ServiceProvider.GetRequiredService<AppDbContext>().Set<OrderProductAuditEvent>()
+            .SingleAsync(item => item.Kind == OrderProductAuditKind.StaffCorrected);
+        using var before = JsonDocument.Parse(audit.Before!);
+        using var after = JsonDocument.Parse(audit.After);
+        Assert.That(before.RootElement.GetProperty("StoreName").GetString(), Is.EqualTo("Магазин"));
+        Assert.That(after.RootElement.GetProperty("StoreName").GetString(), Is.EqualTo("Новый магазин"));
+        var customerRead = await _customer.GetFromJsonAsync<OrderDto>($"/api/v1/orders/{order.Id}");
+        Assert.That(customerRead!.StoreName, Is.EqualTo("Новый магазин"));
+        var staffList = await _staff.GetFromJsonAsync<BackofficeOrderPageDto>("/api/v1/backoffice/orders?search=Новый%20магазин&sortBy=storeName");
+        Assert.That(staffList!.Items.Single().StoreName, Is.EqualTo("Новый магазин"));
     }
 
     [Test]
@@ -145,6 +201,7 @@ public sealed class OrderProductApiTests
         Assert.That(details.LimitCheck, Is.EqualTo(ops.ProductLimits!.ValueLimit));
         Assert.That(details.LimitCheck.MaximumAmount, Is.EqualTo(900m));
         Assert.That(details.LimitCheck.MaximumTotalUsd, Is.EqualTo(1125m));
+        Assert.That(ops.ProductLimits.StoreNameMaximumLength, Is.EqualTo(200));
 
         using var rejected = await Put(order.OrderNumber, Update(details, "Выше лимита", 281.26m, 4));
         Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
@@ -225,13 +282,17 @@ public sealed class OrderProductApiTests
         request.ExpectedUpdatedAt = details.UpdatedAt; request.Quantity = 5;
         using var invalid = await Put(order.OrderNumber, request);
         await Problem(invalid, HttpStatusCode.BadRequest, "order_quantity_limit_exceeded");
+        request.Quantity = 1; request.StoreName = new string('я', 201);
+        using var invalidStore = await Put(order.OrderNumber, request);
+        await Problem(invalidStore, HttpStatusCode.BadRequest, "invalid_order_store_name");
         await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var stored = await db.Orders.SingleAsync();
             db.Entry(stored).Property(item => item.Status).CurrentValue = OrderStatus.Cancelled;
             await db.SaveChangesAsync();
-            Assert.That(await db.Set<OrderProductAuditEvent>().CountAsync(), Is.Zero);
+            Assert.That(await db.Set<OrderProductAuditEvent>()
+                .CountAsync(item => item.Kind == OrderProductAuditKind.StaffCorrected), Is.Zero);
         }
         using var closed = await Put(order.OrderNumber, request);
         await Problem(closed, HttpStatusCode.Conflict, "order_not_editable");
@@ -316,7 +377,8 @@ public sealed class OrderProductApiTests
         }
         Assert.That((await Details(order.OrderNumber)).Product, Is.EqualTo(details.Product));
         await using var verification = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
-        Assert.That(await verification.ServiceProvider.GetRequiredService<AppDbContext>().Set<OrderProductAuditEvent>().CountAsync(), Is.Zero);
+        Assert.That(await verification.ServiceProvider.GetRequiredService<AppDbContext>().Set<OrderProductAuditEvent>()
+            .CountAsync(item => item.Kind == OrderProductAuditKind.StaffCorrected), Is.Zero);
     }
 
     private sealed class RejectCorrection : SaveChangesInterceptor
@@ -324,7 +386,8 @@ public sealed class OrderProductApiTests
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            if (eventData.Context!.ChangeTracker.Entries<OrderProductAuditEvent>().Any(entry => entry.State == EntityState.Added))
+            if (eventData.Context!.ChangeTracker.Entries<OrderProductAuditEvent>().Any(entry =>
+                    entry.State == EntityState.Added && entry.Entity.Kind == OrderProductAuditKind.StaffCorrected))
                 throw new DbUpdateConcurrencyException();
             return ValueTask.FromResult(result);
         }
@@ -335,8 +398,9 @@ public sealed class OrderProductApiTests
     private Task<HttpResponseMessage> Put(string number, UpdateOrderProductRequest request)
         => _staff.PutAsJsonAsync($"/api/v1/backoffice/orders/{number}/product", request);
     private static UpdateOrderProductRequest Update(BackofficeOrderDetailsDto details, string name, decimal price, int quantity)
-        => new() { ExpectedUpdatedAt = details.UpdatedAt, ProductName = name, SellerPrice = new(price, Currency.Usd), Quantity = quantity };
-    private async Task<HttpResponseMessage> Create(Guid key, string name = "Тестовый товар", decimal price = 10, int quantity = 1, bool includeProduct = true)
+        => new() { ExpectedUpdatedAt = details.UpdatedAt, StoreName = details.Product.StoreName, ProductName = name, SellerPrice = new(price, Currency.Usd), Quantity = quantity };
+    private async Task<HttpResponseMessage> Create(Guid key, string name = "Тестовый товар", decimal price = 10,
+        int quantity = 1, bool includeProduct = true, string? store = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
         {
@@ -344,7 +408,7 @@ public sealed class OrderProductApiTests
             {
                 SourceUrl = "https://shop.example.com/",
                 Quantity = quantity,
-                SubmittedProduct = includeProduct ? new() { ProductName = name, SellerPrice = new(price, Currency.Usd) } : null
+                Product = includeProduct ? new() { ProductName = name, StoreName = store, SellerPrice = new(price, Currency.Usd) } : null
             })
         };
         request.Headers.Add("Idempotency-Key", key.ToString());

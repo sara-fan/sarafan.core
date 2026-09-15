@@ -218,13 +218,13 @@ public sealed class OperationLoggingTests
         cancellation.Cancel();
         object?[] values =
         [
-            new SubmittedProductRequest { ProductName = Secret, Color = Secret, Size = Secret },
+            new OrderProductRequest { ProductName = Secret, Color = Secret, Size = Secret },
             new UpdateOrderProductRequest { ProductName = Secret, Comment = Secret },
             new OrderProductDto(Secret, new(10, Currency.Usd), 1, Secret, Secret, Secret),
-            new CreateOrderRequest { SourceUrl = Secret, SubmittedProduct = new() { ProductName = Secret } },
+            new CreateOrderRequest { SourceUrl = Secret, Product = new() { ProductName = Secret } },
             new OrderLimitRatePair(OrderProductTestData.Rate(Currency.Usd, 80), OrderProductTestData.Rate(Currency.Eur, 100)),
             new BackofficeOrderDetailsDto(Secret, OrderStatus.UnderReview, Secret, default, default,
-                new(Secret, null, 1, null, null, null), new(Secret, null, 1, null, null, null),
+                new(Secret, null, 1, null, null, null),
                 new(Secret, Secret, Secret, Secret, Secret, Secret, Secret, null, Secret, Secret, Secret, Secret, Secret),
                 new(1000, Currency.Eur, false, null, null), true),
             Secret, new PoisonValue(), null, customer, dto, session, new AuthenticationSession(session, Secret),
@@ -505,7 +505,7 @@ public sealed class OperationLoggingTests
         var orderSourceUrl = $"https://shop.example.com/product?token={Secret}";
         using var orderRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
         {
-            Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = orderSourceUrl, Quantity = 1, SubmittedProduct = OrderProductTestData.Product() })
+            Content = JsonContent.Create(new CreateOrderRequest { SourceUrl = orderSourceUrl, Quantity = 1, Product = OrderProductTestData.Product() })
         };
         orderRequest.Headers.Add("Idempotency-Key", orderKey.ToString("D"));
         using var createOrder = await client.SendAsync(orderRequest);

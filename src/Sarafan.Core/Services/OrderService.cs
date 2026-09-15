@@ -3,6 +3,7 @@
 // This file is a part of the Sarafan application
 
 using System.Globalization;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -60,7 +61,7 @@ public sealed partial class OrderService(
         string? comment,
         Guid idempotencyKey,
         CancellationToken cancellationToken,
-        SubmittedProductRequest? submittedProduct = null)
+        OrderProductRequest? product = null)
         => OperationLogging.RunAsync(
             logger,
             $"{typeof(OrderService).FullName}.{nameof(CreateAsync)}",
@@ -69,10 +70,10 @@ public sealed partial class OrderService(
                 (nameof(sourceUrl), sourceUrl),
                 (nameof(quantity), quantity),
                 (nameof(comment), comment),
-                (nameof(submittedProduct), submittedProduct),
+                (nameof(product), product),
                 (nameof(idempotencyKey), idempotencyKey),
                 (nameof(cancellationToken), cancellationToken)),
-            () => CreateCoreAsync(customerId, sourceUrl, quantity, comment, idempotencyKey, cancellationToken, submittedProduct),
+            () => CreateCoreAsync(customerId, sourceUrl, quantity, comment, idempotencyKey, cancellationToken, product),
             cancellationToken);
 
     public Task<BackofficeOrderPageDto> ListForBackofficeAsync(
@@ -120,7 +121,7 @@ public sealed partial class OrderService(
         string? comment,
         Guid idempotencyKey,
         CancellationToken cancellationToken,
-        SubmittedProductRequest? submittedProduct)
+        OrderProductRequest? productRequest)
     {
         string? normalizedSourceUrl = null;
         ServiceException? sourceUrlError = null;
@@ -135,7 +136,7 @@ public sealed partial class OrderService(
         }
         var normalizedQuantity = NormalizeQuantity(quantity);
         var normalizedComment = NormalizeComment(comment);
-        var submitted = OrderProductRules.Normalize(submittedProduct, normalizedQuantity, normalizedComment);
+        var product = OrderProductRules.Normalize(productRequest, normalizedQuantity, normalizedComment);
         if (idempotencyKey == Guid.Empty)
         {
             throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_order_idempotency_key");
@@ -161,9 +162,7 @@ public sealed partial class OrderService(
                     if (existing is not null)
                     {
                         if (!ProductSourceUrl.MatchesStored(existing.SourceUrl, sourceUrl)
-                            || existing.Quantity != normalizedQuantity
-                            || !string.Equals(existing.Comment, normalizedComment, StringComparison.Ordinal)
-                            || Submitted(existing, legacySnapshot: false) != submitted)
+                            || await ProductAtCreation(existing, cancellationToken) != product)
                         {
                             throw new ServiceException(StatusCodes.Status409Conflict, "order_creation_conflict");
                         }
@@ -177,8 +176,8 @@ public sealed partial class OrderService(
                         throw sourceUrlError;
                     }
 
-                    OrderProductRules.Validate(submitted);
-                    var pair = OrderLimitService.Validate(submitted, await limits.GetPairAsync(cancellationToken));
+                    OrderProductRules.Validate(product);
+                    var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
 
                     assignedNewCode = customer.OrderCode is null;
                     var customerOrderNumber = customer.AllocateOrderNumber(
@@ -192,7 +191,16 @@ public sealed partial class OrderService(
                         idempotencyKey,
                         timeProvider.GetUtcNow());
                     database.Orders.Add(order);
-                    order.SetSubmittedProduct(submitted, pair.Usd.Id, pair.Eur.Id);
+                    order.SetProduct(product);
+                    database.Set<OrderProductAuditEvent>().Add(new()
+                    {
+                        Order = order,
+                        Kind = OrderProductAuditKind.Created,
+                        OccurredAt = order.CreatedAt,
+                        After = JsonSerializer.Serialize(product),
+                        UsdRateId = pair.Usd.Id,
+                        EurRateId = pair.Eur.Id
+                    });
                     return new Allocation(order, customer.OrderCode!);
                 }, cancellationToken);
 
@@ -308,21 +316,21 @@ public sealed partial class OrderService(
                 .ThenByDescending(item => item.CustomerOrderNumber).ThenByDescending(item => item.Id),
             ("status", false) => query.OrderBy(item => item.Status).ThenBy(item => item.Id),
             ("status", true) => query.OrderByDescending(item => item.Status).ThenByDescending(item => item.Id),
-            ("productName", false) => query.OrderBy(item => (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName) == null)
-                .ThenBy(item => (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)).ThenBy(item => item.Id),
-            ("productName", true) => query.OrderBy(item => (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName) == null)
-                .ThenByDescending(item => (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName)).ThenByDescending(item => item.Id),
+            ("productName", false) => query.OrderBy(item => item.ProductName == null)
+                .ThenBy(item => item.ProductName).ThenBy(item => item.Id),
+            ("productName", true) => query.OrderBy(item => item.ProductName == null)
+                .ThenByDescending(item => item.ProductName).ThenByDescending(item => item.Id),
             ("storeName", false) => query.OrderBy(item => item.StoreName == null)
                 .ThenBy(item => item.StoreName).ThenBy(item => item.Id),
             ("storeName", true) => query.OrderBy(item => item.StoreName == null)
                 .ThenByDescending(item => item.StoreName).ThenByDescending(item => item.Id),
-            ("sellerPrice", false) => query.OrderBy(item => (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice) == null)
-                .ThenBy(item => (item.OverrideSellerPriceCurrency ?? item.SubmittedSellerPriceCurrency ?? item.SellerPriceCurrency)).ThenBy(item => (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice)).ThenBy(item => item.Id),
-            ("sellerPrice", true) => query.OrderBy(item => (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice) == null)
-                .ThenByDescending(item => (item.OverrideSellerPriceCurrency ?? item.SubmittedSellerPriceCurrency ?? item.SellerPriceCurrency)).ThenByDescending(item => (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice))
+            ("sellerPrice", false) => query.OrderBy(item => item.SellerPrice == null)
+                .ThenBy(item => item.SellerPriceCurrency).ThenBy(item => item.SellerPrice).ThenBy(item => item.Id),
+            ("sellerPrice", true) => query.OrderBy(item => item.SellerPrice == null)
+                .ThenByDescending(item => item.SellerPriceCurrency).ThenByDescending(item => item.SellerPrice)
                 .ThenByDescending(item => item.Id),
-            ("quantity", false) => query.OrderBy(item => (item.OverrideQuantity ?? item.Quantity)).ThenBy(item => item.Id),
-            ("quantity", true) => query.OrderByDescending(item => (item.OverrideQuantity ?? item.Quantity)).ThenByDescending(item => item.Id),
+            ("quantity", false) => query.OrderBy(item => item.Quantity).ThenBy(item => item.Id),
+            ("quantity", true) => query.OrderByDescending(item => item.Quantity).ThenByDescending(item => item.Id),
             ("updatedAt", false) => query.OrderBy(item => item.UpdatedAt).ThenBy(item => item.Id),
             ("updatedAt", true) => query.OrderByDescending(item => item.UpdatedAt).ThenByDescending(item => item.Id),
             ("createdAt", false) => query.OrderBy(item => item.CreatedAt).ThenBy(item => item.Id),
@@ -337,11 +345,11 @@ public sealed partial class OrderService(
                     item.CustomerOrderNumber,
                     item.Status,
                     item.SourceUrl,
-                    (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName),
+                    item.ProductName,
                     item.StoreName,
-                    (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice),
-                    (item.OverrideSellerPriceCurrency ?? item.SubmittedSellerPriceCurrency ?? item.SellerPriceCurrency),
-                    (item.OverrideQuantity ?? item.Quantity),
+                    item.SellerPrice,
+                    item.SellerPriceCurrency,
+                    item.Quantity,
                     item.CreatedAt,
                     item.UpdatedAt))
                 .ToArrayAsync(cancellationToken);
@@ -403,12 +411,12 @@ public sealed partial class OrderService(
                 item.CustomerOrderNumber,
                 item.Status,
                 item.SourceUrl,
-                (item.OverrideProductName ?? item.SubmittedProductName ?? item.ProductName),
+                item.ProductName,
                 item.StoreName,
                 item.ImageUrl,
-                (item.OverrideSellerPrice ?? item.SubmittedSellerPrice ?? item.SellerPrice),
-                (item.OverrideSellerPriceCurrency ?? item.SubmittedSellerPriceCurrency ?? item.SellerPriceCurrency),
-                (item.OverrideQuantity ?? item.Quantity),
+                item.SellerPrice,
+                item.SellerPriceCurrency,
+                item.Quantity,
                 item.CreatedAt))
             .ToArrayAsync(cancellationToken);
 
@@ -467,16 +475,16 @@ public sealed partial class OrderService(
         $"{customerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
         ProductSourceUrl.NormalizeStored(order.SourceUrl),
-        Effective(order).ProductName,
+        order.ProductName,
         order.StoreName,
         order.ImageUrl,
-        Effective(order).SellerPrice,
+        Price(order.SellerPrice, order.SellerPriceCurrency),
         order.LengthCm.HasValue && order.WidthCm.HasValue && order.HeightCm.HasValue
             ? new OrderDimensionsDto(order.LengthCm.Value, order.WidthCm.Value, order.HeightCm.Value)
             : null,
         order.Characteristics,
-        Effective(order).Quantity,
-        Effective(order).Comment,
+        order.Quantity,
+        order.Comment,
         order.AppliedExchangeRateHistory is { } rate
             ? new OrderAppliedExchangeRateDto(
                 rate.Id,
@@ -488,8 +496,7 @@ public sealed partial class OrderService(
                 rate.SourceEffectiveDate)
             : null)
     {
-        Product = Effective(order),
-        SubmittedProduct = Submitted(order),
+        Product = CurrentProduct(order),
         CreatedAt = order.CreatedAt,
         ShowReviewFields = order.Status == OrderStatus.UnderReview
     };

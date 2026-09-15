@@ -10,7 +10,7 @@ namespace Sarafan.Core.RestModels;
 
 public sealed class CreateOrderRequest
 {
-    public SubmittedProductRequest? SubmittedProduct { get; set; }
+    public OrderProductRequest? Product { get; set; }
     public string? SourceUrl { get; set; }
 
     [Required(ErrorMessage = "Поле обязательно для заполнения.")]
@@ -61,8 +61,7 @@ public sealed record OrderDto(
     string? Comment,
     OrderAppliedExchangeRateDto? AppliedExchangeRate)
 {
-    public OrderProductDto? Product { get; init; }
-    public OrderProductDto? SubmittedProduct { get; init; }
+    public required OrderProductDto Product { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public bool ShowReviewFields { get; init; }
 }
