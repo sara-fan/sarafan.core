@@ -99,6 +99,8 @@ public sealed class OrderProductApiTests
             "+79993332211", "test@example.com", "1234", "123456", new(2020, 1, 1), "Тестовый орган",
             "123456789012", "123456", "Москва", "Тестовая улица")));
         Assert.That(latest.LimitCheck.MaximumTotalUsd, Is.EqualTo(4.5m));
+        Assert.That(latest.SavedLimitSourceEffectiveDate, Is.EqualTo(new DateOnly(2026, 9, 1)));
+        Assert.That(latest.LimitCheck.SourceEffectiveDate, Is.EqualTo(new DateOnly(2026, 9, 2)));
         using var changedRatesReplay = await Create(key);
         changedRatesReplay.EnsureSuccessStatusCode();
         using var newAtChangedRate = await Create(Guid.NewGuid());
@@ -130,6 +132,36 @@ public sealed class OrderProductApiTests
         using var conflict = await Create(key, name: "Другой товар");
         await Problem(conflict, HttpStatusCode.Conflict, "order_creation_conflict");
         Assert.That((await Details(original.OrderNumber)).LimitCheck.Available, Is.False);
+    }
+
+    [Test]
+    public async Task StaffDetailsExposeReadOnlyRecognitionAndSharedLimitMessage()
+    {
+        using var created = await Create(Guid.NewGuid());
+        var order = (await created.Content.ReadFromJsonAsync<OrderDto>())!;
+        Assert.That((await Details(order.OrderNumber)).Dimensions, Is.Null);
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var stored = await db.Orders.SingleAsync();
+            stored.SetProductSnapshot("Распознано", "Магазин", "https://shop.example/image.png", 10m, Currency.Usd,
+                1m, 2m, 3m, new Dictionary<string, string> { ["Материал"] = "Сталь" }, null, stored.UpdatedAt);
+            await db.SaveChangesAsync();
+        }
+        var details = await Details(order.OrderNumber);
+        Assert.That(details.StoreName, Is.EqualTo("Магазин"));
+        Assert.That(details.SavedLimitSourceEffectiveDate, Is.EqualTo(details.LimitCheck.SourceEffectiveDate));
+        Assert.That(details.ImageUrl, Is.EqualTo("https://shop.example/image.png"));
+        Assert.That(details.Dimensions, Is.EqualTo(new OrderDimensionsDto(1, 2, 3)));
+        Assert.That(details.Characteristics!["Материал"], Is.EqualTo("Сталь"));
+        Assert.That(details.LimitCheck.ExceededMessage, Is.EqualTo(OrderLimitService.ExceededMessage));
+        using var saved = await Put(order.OrderNumber, Update(details, "Исправлено", 20, 1));
+        var corrected = (await saved.Content.ReadFromJsonAsync<BackofficeOrderDetailsDto>())!;
+        Assert.That(corrected.Characteristics, Is.EqualTo(details.Characteristics));
+        Assert.That(corrected.Dimensions, Is.EqualTo(details.Dimensions));
+        Assert.That(corrected.StoreName, Is.EqualTo(details.StoreName));
+        Assert.That(corrected.ImageUrl, Is.EqualTo(details.ImageUrl));
+        Assert.That(corrected.SavedLimitSourceEffectiveDate, Is.EqualTo(details.SavedLimitSourceEffectiveDate));
     }
 
     [Test]

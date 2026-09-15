@@ -30,7 +30,10 @@ public sealed record OrderProductDto(string? ProductName, OrderSellerPriceDto? S
     int Quantity, string? Color, string? Size, string? Comment);
 
 public sealed record OrderLimitCheckDto(decimal MaximumAmount, Currency Currency, bool Available,
-    DateOnly? SourceEffectiveDate, decimal? MaximumTotalUsd);
+    DateOnly? SourceEffectiveDate, decimal? MaximumTotalUsd)
+{
+    public string ExceededMessage => Services.OrderLimitService.ExceededMessage;
+}
 
 public sealed record OrderProductLimitsDto(int MinimumQuantity, int MaximumQuantity,
     int DefaultQuantity, int ProductNameMaximumLength, int ColorMaximumLength,
@@ -45,4 +48,11 @@ public sealed record BackofficeOrderCustomerDto(string? LastName, string? FirstN
 public sealed record BackofficeOrderDetailsDto(string OrderNumber, OrderStatus Status,
     string SourceUrl, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     OrderProductDto Product, OrderProductDto SubmittedProduct, BackofficeOrderCustomerDto Customer,
-    OrderLimitCheckDto LimitCheck, bool CanEditProduct);
+    OrderLimitCheckDto LimitCheck, bool CanEditProduct)
+{
+    public string? StoreName { get; init; }
+    public string? ImageUrl { get; init; }
+    public OrderDimensionsDto? Dimensions { get; init; }
+    public IReadOnlyDictionary<string, string>? Characteristics { get; init; }
+    public DateOnly? SavedLimitSourceEffectiveDate { get; init; }
+}

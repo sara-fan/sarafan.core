@@ -21,7 +21,14 @@ public sealed partial class OrderService
             {
                 RequireStaff(roles, BackofficeAction.ManualQuotes);
                 var order = await FindPublicOrder(orderNumber, cancellationToken);
-                return StaffDetails(order, roles, await limits.GetPairAsync(cancellationToken));
+                var details = StaffDetails(order, roles, await limits.GetPairAsync(cancellationToken));
+                var savedRateId = order.UpdatedLimitEurRateId ?? order.CreatedLimitEurRateId;
+                return details with
+                {
+                    SavedLimitSourceEffectiveDate = await database.ExchangeRateHistory.AsNoTracking()
+                        .Where(rate => rate.Id == savedRateId).Select(rate => (DateOnly?)rate.SourceEffectiveDate)
+                        .SingleOrDefaultAsync(cancellationToken)
+                };
             }, cancellationToken);
 
     public Task<BackofficeOrderDetailsDto> UpdateProductAsync(string orderNumber, UpdateOrderProductRequest request,
@@ -67,7 +74,7 @@ public sealed partial class OrderService
                     database.ChangeTracker.Clear();
                     throw new ServiceException(409, "order_update_conflict");
                 }
-                return StaffDetails(order, roles, pair);
+                return StaffDetails(order, roles, pair) with { SavedLimitSourceEffectiveDate = pair.Usd.SourceEffectiveDate };
             }, cancellationToken);
 
     private static void RequireStaff(string[] roles, BackofficeAction action)
@@ -97,7 +104,14 @@ public sealed partial class OrderService
                 order.Customer.Phone, profile?.Email, profile?.PassportSeries, profile?.PassportNumber,
                 profile?.PassportIssueDate, profile?.PassportIssuedBy, profile?.Inn, profile?.PostalCode, profile?.City, profile?.Address),
             OrderLimitService.ToDto(pair), order.Status == OrderStatus.UnderReview
-                && BackofficeAuthorization.IsAllowed(roles, BackofficeAction.EditOrderProduct));
+                && BackofficeAuthorization.IsAllowed(roles, BackofficeAction.EditOrderProduct))
+        {
+            StoreName = order.StoreName,
+            ImageUrl = order.ImageUrl,
+            Dimensions = order.LengthCm.HasValue && order.WidthCm.HasValue && order.HeightCm.HasValue
+                ? new(order.LengthCm.Value, order.WidthCm.Value, order.HeightCm.Value) : null,
+            Characteristics = order.Characteristics
+        };
     }
 
     internal static OrderProductDto Submitted(Order order, bool legacySnapshot = true)

@@ -28,6 +28,7 @@ public sealed class OrderLimitService(AppDbContext database, TimeProvider timePr
     public const decimal ExchangeRateReserveCoefficient = 0.9m;
     public static readonly decimal MaximumAmountEur = BaseMaximumAmountEur * ExchangeRateReserveCoefficient;
     public static readonly decimal ExchangeRateReservePercent = (1m - ExchangeRateReserveCoefficient) * 100m;
+    public static string ExceededMessage => FormattableString.Invariant($"Максимальная стоимость заказа при экспресс-перевозке {MaximumAmountEur:0.############################} евро с учётом резерва {ExchangeRateReservePercent:0.############################}% на изменение курса");
 
     public Task<OrderLimitRatePair?> GetPairAsync(CancellationToken cancellationToken)
         => OperationLogging.RunAsync(logger, $"{typeof(OrderLimitService).FullName}.{nameof(GetPairAsync)}",
