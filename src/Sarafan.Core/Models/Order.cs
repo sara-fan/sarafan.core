@@ -61,25 +61,16 @@ public sealed class Order
     internal Guid CreationIdempotencyKey { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
-    public long? CreatedLimitUsdRateId { get; private set; }
-    public long? CreatedLimitEurRateId { get; private set; }
-    public long? UpdatedLimitUsdRateId { get; private set; }
-    public long? UpdatedLimitEurRateId { get; private set; }
-
-    internal void SetProduct(Sarafan.Core.RestModels.OrderProductDto product, long usdRateId, long eurRateId)
+    internal void SetProduct(Sarafan.Core.RestModels.OrderProductDto product)
     {
-        if (CreatedLimitUsdRateId.HasValue) throw new InvalidOperationException("The order product is already initialized.");
+        if (ProductName is not null || SellerPrice.HasValue)
+            throw new InvalidOperationException("The order product is already initialized.");
         ApplyProduct(product);
-        CreatedLimitUsdRateId = usdRateId;
-        CreatedLimitEurRateId = eurRateId;
     }
 
-    internal void CorrectProduct(string? storeName, Sarafan.Core.RestModels.OrderProductDto product,
-        long usdRateId, long eurRateId, DateTimeOffset now)
+    internal void CorrectProduct(string? storeName, Sarafan.Core.RestModels.OrderProductDto product, DateTimeOffset now)
     {
         ApplyProduct(product with { StoreName = storeName });
-        UpdatedLimitUsdRateId = usdRateId;
-        UpdatedLimitEurRateId = eurRateId;
         var timestamp = NormalizeToPostgresTimestamp(now);
         UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
     }

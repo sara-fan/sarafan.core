@@ -22,12 +22,9 @@ public sealed partial class OrderService
                 RequireStaff(roles, BackofficeAction.ManualQuotes);
                 var order = await FindPublicOrder(orderNumber, cancellationToken);
                 var details = StaffDetails(order, roles, await limits.GetPairAsync(cancellationToken));
-                var savedRateId = order.UpdatedLimitEurRateId ?? order.CreatedLimitEurRateId;
                 return details with
                 {
-                    SavedLimitSourceEffectiveDate = await database.ExchangeRateHistory.AsNoTracking()
-                        .Where(rate => rate.Id == savedRateId).Select(rate => (DateOnly?)rate.SourceEffectiveDate)
-                        .SingleOrDefaultAsync(cancellationToken)
+                    SavedLimitSourceEffectiveDate = await SavedLimitSourceEffectiveDate(order.Id, cancellationToken)
                 };
             }, cancellationToken);
 
@@ -53,7 +50,7 @@ public sealed partial class OrderService
                 OrderProductRules.Validate(product);
                 var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
                 var before = CurrentProduct(order);
-                order.CorrectProduct(product.StoreName, product, pair.Usd.Id, pair.Eur.Id, timeProvider.GetUtcNow());
+                order.CorrectProduct(product.StoreName, product, timeProvider.GetUtcNow());
                 database.Set<OrderProductAuditEvent>().Add(new()
                 {
                     OrderId = order.Id,
@@ -133,6 +130,14 @@ public sealed partial class OrderService
             : JsonSerializer.Deserialize<OrderProductDto>(snapshot)
                 ?? throw new InvalidOperationException("The order creation audit snapshot is invalid.");
     }
+
+    private Task<DateOnly?> SavedLimitSourceEffectiveDate(long orderId, CancellationToken cancellationToken)
+        => (from audit in database.Set<OrderProductAuditEvent>().AsNoTracking()
+            where audit.OrderId == orderId && audit.EurRateId != null
+            join rate in database.ExchangeRateHistory.AsNoTracking()
+                on audit.EurRateId equals rate.Id
+            orderby audit.OccurredAt descending, audit.Id descending
+            select (DateOnly?)rate.SourceEffectiveDate).FirstOrDefaultAsync(cancellationToken);
 
     private static OrderSellerPriceDto? Price(decimal? amount, Currency? currency)
         => amount.HasValue && currency.HasValue ? new(amount.Value, currency.Value) : null;

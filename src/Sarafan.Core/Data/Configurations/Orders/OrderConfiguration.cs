@@ -54,15 +54,6 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         var createdAt = builder.Property(item => item.CreatedAt).HasColumnName("created_at");
         builder.Property(item => item.UpdatedAt).HasColumnName("updated_at").IsConcurrencyToken();
         builder.Property(item => item.Status).IsConcurrencyToken();
-        builder.Property(item => item.CreatedLimitUsdRateId).HasColumnName("created_limit_usd_rate_id").Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
-        builder.HasOne<ExchangeRateHistory>().WithMany().HasForeignKey(item => item.CreatedLimitUsdRateId).OnDelete(DeleteBehavior.Restrict);
-        builder.Property(item => item.CreatedLimitEurRateId).HasColumnName("created_limit_eur_rate_id").Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
-        builder.HasOne<ExchangeRateHistory>().WithMany().HasForeignKey(item => item.CreatedLimitEurRateId).OnDelete(DeleteBehavior.Restrict);
-        builder.Property(item => item.UpdatedLimitUsdRateId).HasColumnName("updated_limit_usd_rate_id");
-        builder.HasOne<ExchangeRateHistory>().WithMany().HasForeignKey(item => item.UpdatedLimitUsdRateId).OnDelete(DeleteBehavior.Restrict);
-        builder.Property(item => item.UpdatedLimitEurRateId).HasColumnName("updated_limit_eur_rate_id");
-        builder.HasOne<ExchangeRateHistory>().WithMany().HasForeignKey(item => item.UpdatedLimitEurRateId).OnDelete(DeleteBehavior.Restrict);
-
         customerId.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         customerOrderNumber.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
         sourceUrl.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
@@ -96,8 +87,6 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         builder.ToTable(table =>
         {
-            table.HasCheckConstraint("ck_orders_created_limit_pair", "(created_limit_usd_rate_id IS NULL) = (created_limit_eur_rate_id IS NULL)");
-            table.HasCheckConstraint("ck_orders_updated_limit_pair", "(updated_limit_usd_rate_id IS NULL) = (updated_limit_eur_rate_id IS NULL)");
             table.HasCheckConstraint("ck_orders_customer_order_number", "customer_order_number > 0");
             table.HasCheckConstraint("ck_orders_creation_idempotency_key", "creation_idempotency_key <> '00000000-0000-0000-0000-000000000000'::uuid");
             table.HasCheckConstraint("ck_orders_status", "status IN (0, 100, 200, 300, 310, 320, 330, 340, 360, 380, 400, 500)");

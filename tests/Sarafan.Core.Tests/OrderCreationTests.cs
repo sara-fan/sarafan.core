@@ -151,8 +151,7 @@ public sealed class OrderCreationTests
         {
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var firstOrder = await database.Orders.SingleAsync(item => item.Id == first.Id);
-            firstOrder.CorrectProduct("Магазин", OrderService.CurrentProduct(firstOrder),
-                firstOrder.CreatedLimitUsdRateId!.Value, firstOrder.CreatedLimitEurRateId!.Value, DateTimeOffset.UtcNow);
+            firstOrder.CorrectProduct("Магазин", OrderService.CurrentProduct(firstOrder), DateTimeOffset.UtcNow);
             firstOrder.SetProductMetadata("https://images.example/first.jpg",
                 null, null, null, null, null, DateTimeOffset.UtcNow);
             await database.SaveChangesAsync();
@@ -227,8 +226,7 @@ public sealed class OrderCreationTests
             database.ExchangeRateHistory.Add(rate);
             await database.SaveChangesAsync();
             var order = await database.Orders.SingleAsync(item => item.Id == created.Id);
-            order.CorrectProduct("Магазин", OrderService.CurrentProduct(order),
-                order.CreatedLimitUsdRateId!.Value, order.CreatedLimitEurRateId!.Value, DateTimeOffset.UtcNow);
+            order.CorrectProduct("Магазин", OrderService.CurrentProduct(order), DateTimeOffset.UtcNow);
             order.SetProductMetadata("https://images.example/product.jpg",
                 10.25m, 20.50m, 30.75m, new Dictionary<string, string> { ["Цвет"] = "Синий" },
                 rate, DateTimeOffset.UtcNow);

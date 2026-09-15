@@ -191,7 +191,7 @@ public sealed partial class OrderService(
                         idempotencyKey,
                         timeProvider.GetUtcNow());
                     database.Orders.Add(order);
-                    order.SetProduct(product, pair.Usd.Id, pair.Eur.Id);
+                    order.SetProduct(product);
                     database.Set<OrderProductAuditEvent>().Add(new()
                     {
                         Order = order,

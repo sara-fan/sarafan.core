@@ -364,7 +364,7 @@ public sealed class BackofficeOrderTests
                 null)
             {
                 StoreName = index == 2 ? "Rare Shop" : index == statuses.Length - 1 ? null : $"Store {index}"
-            }, 1, 2);
+            });
             order.SetProductMetadata(null, null, null, null, null, null, created.AddMinutes(index));
             database.Orders.Add(order);
             database.Entry(order).Property(item => item.Status).CurrentValue = statuses[index];

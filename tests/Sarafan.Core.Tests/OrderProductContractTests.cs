@@ -108,7 +108,7 @@ public sealed class OrderProductContractTests
         order.SetProduct(new OrderProductDto("Товар", new(12.34m, Currency.Usd), 1, null, null, null)
         {
             StoreName = "Магазин"
-        }, 1, 2);
+        });
         order.SetProductMetadata(
             "https://images.example/product.jpg",
             10.25m,
@@ -174,7 +174,7 @@ public sealed class OrderProductContractTests
         decimal? height = null,
         ExchangeRateHistory? rate = null)
     {
-        order.SetProduct(new OrderProductDto("Товар", new(10, Currency.Usd), 1, null, null, null), 1, 2);
+        order.SetProduct(new OrderProductDto("Товар", new(10, Currency.Usd), 1, null, null, null));
         order.SetProductMetadata(
             null,
             length,

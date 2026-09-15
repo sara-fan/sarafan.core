@@ -889,14 +889,6 @@ namespace Sarafan.Core.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<long?>("CreatedLimitEurRateId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("created_limit_eur_rate_id");
-
-                    b.Property<long?>("CreatedLimitUsdRateId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("created_limit_usd_rate_id");
-
                     b.Property<Guid>("CreationIdempotencyKey")
                         .HasColumnType("uuid")
                         .HasColumnName("creation_idempotency_key");
@@ -970,14 +962,6 @@ namespace Sarafan.Core.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
-                    b.Property<long?>("UpdatedLimitEurRateId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("updated_limit_eur_rate_id");
-
-                    b.Property<long?>("UpdatedLimitUsdRateId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("updated_limit_usd_rate_id");
-
                     b.Property<decimal?>("WidthCm")
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)")
@@ -987,14 +971,6 @@ namespace Sarafan.Core.Data.Migrations
 
                     b.HasIndex("AppliedExchangeRateHistoryId")
                         .HasDatabaseName("ix_orders_applied_exchange_rate_history_id");
-
-                    b.HasIndex("CreatedLimitEurRateId");
-
-                    b.HasIndex("CreatedLimitUsdRateId");
-
-                    b.HasIndex("UpdatedLimitEurRateId");
-
-                    b.HasIndex("UpdatedLimitUsdRateId");
 
                     b.HasIndex("CreatedAt", "Id")
                         .HasDatabaseName("ix_orders_created_at_id");
@@ -1017,8 +993,6 @@ namespace Sarafan.Core.Data.Migrations
                         {
                             t.HasCheckConstraint("ck_orders_applied_exchange_rate", "applied_exchange_rate_history_id IS NULL OR seller_price_currency IS NOT NULL");
 
-                            t.HasCheckConstraint("ck_orders_created_limit_pair", "(created_limit_usd_rate_id IS NULL) = (created_limit_eur_rate_id IS NULL)");
-
                             t.HasCheckConstraint("ck_orders_creation_idempotency_key", "creation_idempotency_key <> '00000000-0000-0000-0000-000000000000'::uuid");
 
                             t.HasCheckConstraint("ck_orders_customer_order_number", "customer_order_number > 0");
@@ -1034,8 +1008,6 @@ namespace Sarafan.Core.Data.Migrations
                             t.HasCheckConstraint("ck_orders_source_url", "source_url ~* '^https?://' AND char_length(source_url) <= 2048");
 
                             t.HasCheckConstraint("ck_orders_status", "status IN (0, 100, 200, 300, 310, 320, 330, 340, 360, 380, 400, 500)");
-
-                            t.HasCheckConstraint("ck_orders_updated_limit_pair", "(updated_limit_usd_rate_id IS NULL) = (updated_limit_eur_rate_id IS NULL)");
                         });
                 });
 
@@ -1292,31 +1264,11 @@ namespace Sarafan.Core.Data.Migrations
                         .HasForeignKey("AppliedExchangeRateHistoryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Sarafan.Core.Models.ExchangeRateHistory", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedLimitEurRateId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Sarafan.Core.Models.ExchangeRateHistory", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedLimitUsdRateId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Sarafan.Core.Models.Customer", "Customer")
                         .WithMany("Orders")
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.HasOne("Sarafan.Core.Models.ExchangeRateHistory", null)
-                        .WithMany()
-                        .HasForeignKey("UpdatedLimitEurRateId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Sarafan.Core.Models.ExchangeRateHistory", null)
-                        .WithMany()
-                        .HasForeignKey("UpdatedLimitUsdRateId")
-                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("AppliedExchangeRateHistory");
 

@@ -88,7 +88,7 @@ public sealed class OrderIdentityContractTests
             Assert.That(order.GetIndexes().Select(index => index.GetDatabaseName()), Does.Contain("ix_orders_created_at_id"));
             Assert.That(order.GetIndexes().Select(index => index.GetDatabaseName()), Does.Contain("ix_orders_status_created_at_id"));
             Assert.That(order.GetIndexes().Select(index => index.GetDatabaseName()), Does.Contain("ix_orders_updated_at_id"));
-            Assert.That(order.GetForeignKeys(), Has.Count.EqualTo(6));
+            Assert.That(order.GetForeignKeys(), Has.Count.EqualTo(2));
             Assert.That(order.GetForeignKeys(), Has.All.Property(nameof(IMutableForeignKey.DeleteBehavior)).EqualTo(DeleteBehavior.Restrict));
         }
     }

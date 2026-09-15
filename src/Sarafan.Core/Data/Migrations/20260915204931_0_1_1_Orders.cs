@@ -11,7 +11,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Sarafan.Core.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class _0_1_0_Orders : Migration
+    public partial class _0_1_1_Orders : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -35,35 +35,11 @@ namespace Sarafan.Core.Data.Migrations
                 maxLength: 200,
                 nullable: true);
 
-            migrationBuilder.AddColumn<long>(
-                name: "created_limit_eur_rate_id",
-                table: "orders",
-                type: "bigint",
-                nullable: true);
-
-            migrationBuilder.AddColumn<long>(
-                name: "created_limit_usd_rate_id",
-                table: "orders",
-                type: "bigint",
-                nullable: true);
-
             migrationBuilder.AddColumn<string>(
                 name: "size",
                 table: "orders",
                 type: "character varying(200)",
                 maxLength: 200,
-                nullable: true);
-
-            migrationBuilder.AddColumn<long>(
-                name: "updated_limit_eur_rate_id",
-                table: "orders",
-                type: "bigint",
-                nullable: true);
-
-            migrationBuilder.AddColumn<long>(
-                name: "updated_limit_usd_rate_id",
-                table: "orders",
-                type: "bigint",
                 nullable: true);
 
             migrationBuilder.CreateTable(
@@ -113,40 +89,10 @@ namespace Sarafan.Core.Data.Migrations
                         onDelete: ReferentialAction.Restrict);
                 });
 
-            migrationBuilder.CreateIndex(
-                name: "IX_orders_created_limit_eur_rate_id",
-                table: "orders",
-                column: "created_limit_eur_rate_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_orders_created_limit_usd_rate_id",
-                table: "orders",
-                column: "created_limit_usd_rate_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_orders_updated_limit_eur_rate_id",
-                table: "orders",
-                column: "updated_limit_eur_rate_id");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_orders_updated_limit_usd_rate_id",
-                table: "orders",
-                column: "updated_limit_usd_rate_id");
-
-            migrationBuilder.AddCheckConstraint(
-                name: "ck_orders_created_limit_pair",
-                table: "orders",
-                sql: "(created_limit_usd_rate_id IS NULL) = (created_limit_eur_rate_id IS NULL)");
-
             migrationBuilder.AddCheckConstraint(
                 name: "ck_orders_seller_price",
                 table: "orders",
                 sql: "(seller_price IS NULL AND seller_price_currency IS NULL) OR (seller_price > 0 AND seller_price_currency IN (643, 840, 978))");
-
-            migrationBuilder.AddCheckConstraint(
-                name: "ck_orders_updated_limit_pair",
-                table: "orders",
-                sql: "(updated_limit_usd_rate_id IS NULL) = (updated_limit_eur_rate_id IS NULL)");
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_exchange_rate_base_currency",
@@ -182,88 +128,16 @@ namespace Sarafan.Core.Data.Migrations
                 name: "IX_order_product_audit_events_usd_rate_id",
                 table: "order_product_audit_events",
                 column: "usd_rate_id");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_orders_exchange_rate_history_created_limit_eur_rate_id",
-                table: "orders",
-                column: "created_limit_eur_rate_id",
-                principalTable: "exchange_rate_history",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Restrict);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_orders_exchange_rate_history_created_limit_usd_rate_id",
-                table: "orders",
-                column: "created_limit_usd_rate_id",
-                principalTable: "exchange_rate_history",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Restrict);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_orders_exchange_rate_history_updated_limit_eur_rate_id",
-                table: "orders",
-                column: "updated_limit_eur_rate_id",
-                principalTable: "exchange_rate_history",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Restrict);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_orders_exchange_rate_history_updated_limit_usd_rate_id",
-                table: "orders",
-                column: "updated_limit_usd_rate_id",
-                principalTable: "exchange_rate_history",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Restrict);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_orders_exchange_rate_history_created_limit_eur_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_orders_exchange_rate_history_created_limit_usd_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_orders_exchange_rate_history_updated_limit_eur_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_orders_exchange_rate_history_updated_limit_usd_rate_id",
-                table: "orders");
-
             migrationBuilder.DropTable(
                 name: "order_product_audit_events");
 
-            migrationBuilder.DropIndex(
-                name: "IX_orders_created_limit_eur_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropIndex(
-                name: "IX_orders_created_limit_usd_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropIndex(
-                name: "IX_orders_updated_limit_eur_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropIndex(
-                name: "IX_orders_updated_limit_usd_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropCheckConstraint(
-                name: "ck_orders_created_limit_pair",
-                table: "orders");
-
             migrationBuilder.DropCheckConstraint(
                 name: "ck_orders_seller_price",
-                table: "orders");
-
-            migrationBuilder.DropCheckConstraint(
-                name: "ck_orders_updated_limit_pair",
                 table: "orders");
 
             migrationBuilder.DropCheckConstraint(
@@ -279,23 +153,7 @@ namespace Sarafan.Core.Data.Migrations
                 table: "orders");
 
             migrationBuilder.DropColumn(
-                name: "created_limit_eur_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "created_limit_usd_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
                 name: "size",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "updated_limit_eur_rate_id",
-                table: "orders");
-
-            migrationBuilder.DropColumn(
-                name: "updated_limit_usd_rate_id",
                 table: "orders");
 
             migrationBuilder.AddCheckConstraint(

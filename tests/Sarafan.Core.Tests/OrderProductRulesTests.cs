@@ -153,15 +153,13 @@ public sealed class OrderProductRulesTests
     {
         var now = DateTimeOffset.Parse("2026-09-15T00:00:00Z");
         var order = new Order(1, 1, "https://shop.example.com/", 1, null, Guid.NewGuid(), now);
-        order.SetProduct(Product, 1, 2);
-        Assert.Throws<InvalidOperationException>(() => order.SetProduct(Product, 1, 2));
-        order.CorrectProduct(" Shop ", Product with { Quantity = 4, Color = "Red", Size = "L", Comment = "note" }, 3, 4, now.AddTicks(1));
+        order.SetProduct(Product);
+        Assert.Throws<InvalidOperationException>(() => order.SetProduct(Product));
+        order.CorrectProduct(" Shop ", Product with { Quantity = 4, Color = "Red", Size = "L", Comment = "note" }, now.AddTicks(1));
         Assert.That(order.UpdatedAt, Is.EqualTo(now.AddMicroseconds(1)));
-        order.CorrectProduct(null, Product, 5, 6, now.AddSeconds(-1));
+        order.CorrectProduct(null, Product, now.AddSeconds(-1));
         Assert.That(order.UpdatedAt, Is.EqualTo(now.AddMicroseconds(2)));
         Assert.That(OrderService.CurrentProduct(order), Is.EqualTo(Product));
-        Assert.That(order.CreatedLimitUsdRateId, Is.EqualTo(1));
-        Assert.That(order.UpdatedLimitEurRateId, Is.EqualTo(6));
         Assert.That(order.AppliedExchangeRateHistoryId, Is.Null);
     }
 
@@ -170,9 +168,9 @@ public sealed class OrderProductRulesTests
     {
         var now = DateTimeOffset.Parse("2026-09-15T00:00:00Z");
         var order = new Order(1, 1, "https://shop.example.com/", 1, null, Guid.NewGuid(), now);
-        order.SetProduct(Product with { StoreName = "Распознанный магазин" }, 1, 2);
+        order.SetProduct(Product with { StoreName = "Распознанный магазин" });
         Assert.That(order.StoreName, Is.EqualTo("Распознанный магазин"));
-        order.CorrectProduct(null, Product, 3, 4, now.AddSeconds(1));
+        order.CorrectProduct(null, Product, now.AddSeconds(1));
 
         Assert.That(order.StoreName, Is.Null);
         Assert.That(OrderService.CurrentProduct(order), Is.EqualTo(Product));
