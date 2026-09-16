@@ -24,9 +24,16 @@
 - The local PostgreSQL data directory is `R:/Projects/30.Projects/sarafan/.pgdata`, mounted at `/var/lib/postgresql/data`. Do not change this mapping or modify, delete, move, reset, restore over, or change permissions on that directory without explicit user authorization. This includes database writes through SQL, migrations, bootstrap, tests, and containers. Use a separate disposable database and storage for agent verification.
 - Do not start or recreate the user's database/application stack merely to validate configuration. Validate with `docker compose config`; keep the existing services and data untouched unless the user explicitly authorizes the runtime action.
 
+### Cloud deployment
+
+- Bootstrap validates bind-mount path syntax only; do not require the deployment shell user to read/write container storage or create/chmod ACME files. Provision host paths with container ownership separately; Docker and service startup enforce actual mount access.
+
+- Use the standalone `docker-compose.production.yml` for the application and its Traefik wrapper on a dedicated VPS. Use only the Compose default network; no external edge network is required. Publish only Traefik ports 80/443 and preserve automatic Let's Encrypt renewal.
+- Default durable mounts are `/srv/sarafan/pgdata`, `/srv/sarafan/backup`, `/srv/sarafan/certificate`, and read-only `/srv/sarafan/settings/appsettings.json` for both API and migration services. Preserve ACME state during updates. Compose environment settings override the mounted JSON.
+
 ### Back-office identity boundary
 
-- Serve the back-office SPA in its independent `backoffice` container at `sb.sw.consulting`, with shared-edge alias `sarafan-backoffice`. Preserve the same-origin API proxy and forwarded HTTPS scheme so secure staff cookies work. Keep its image/tag/logging settings independent from the customer UI; the local sibling build belongs in the explicit backoffice Compose overlay.
+- Serve the back-office SPA in its independent `backoffice` container at `gtc.sarafanof.com`; customer UI uses `sarafanof.com` and `www.sarafanof.com`. Preserve the same-origin API proxy and forwarded HTTPS scheme so secure staff cookies work. Keep its image/tag/logging settings independent from the customer UI; the local sibling build belongs in the explicit backoffice Compose overlay.
 - Cloud bootstrap must check Compose wait support and bound service health waits using the configured deployment timeout; documentation must distinguish bootstrap guarantees from direct local Compose commands.
 
 - Keep back-office users, roles, refresh sessions, credentials, JWT issuer/audience/signing key, cookie, authentication scheme, and `/api/v1/backoffice` routes separate from customer identity and `/api/v1/auth`.

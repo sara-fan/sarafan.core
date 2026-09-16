@@ -2,22 +2,199 @@
 # All rights reserved.
 # This file is a part of the Sarafan application
 
+name: sarafan
+
+x-api-environment: &api-environment
+  ASPNETCORE_ENVIRONMENT: Production
+  ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${SARAFAN_POSTGRES_DB:-sarafan};Username=${SARAFAN_POSTGRES_USER:-postgres};Password=${SARAFAN_POSTGRES_PASSWORD:?Set SARAFAN_POSTGRES_PASSWORD}
+  Authentication__SigningKey: ${SARAFAN_JWT_SECRET:?Set SARAFAN_JWT_SECRET}
+  Authentication__SecureCookies: "true"
+  BackofficeAuthentication__SigningKey: ${SARAFAN_BACKOFFICE_JWT_SECRET:?Set SARAFAN_BACKOFFICE_JWT_SECRET}
+  BackofficeAuthentication__SecureCookies: "true"
+  BackofficeBootstrap__RealPaymentIntegrationEnabled: ${SARAFAN_REAL_PAYMENT_INTEGRATION_ENABLED:-false}
+  Database__ApplyMigrations: "false"
+  ForwardedHeaders__ForwardLimit: "2"
+  ForwardedHeaders__KnownNetworks__0: "10.0.0.0/8"
+  ForwardedHeaders__KnownNetworks__1: "172.16.0.0/12"
+  ForwardedHeaders__KnownNetworks__2: "192.168.0.0/16"
+  ForwardedHeaders__KnownNetworks__3: "fc00::/7"
+  OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
+  OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
+  OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
+
 services:
-  production-edge:
-    image: nginx:1.31.1-alpine
+  traefik:
+    image: traefik:v3.6
     restart: always
-    depends_on:
-      ui:
-        condition: service_healthy
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=${SARAFAN_ACME_EMAIL:?Set SARAFAN_ACME_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--ping=true"
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./config/nginx.production.conf:/etc/nginx/conf.d/default.conf:ro
-      - ${SARAFAN_CERTIFICATE_DIR:-/srv/sarafan/certificate}:/etc/nginx/certificate:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - type: bind
+        source: ${SARAFAN_CERTIFICATE_DIR:-/srv/sarafan/certificate}
+        target: /letsencrypt
+        bind:
+          create_host_path: false
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  db:
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_DB: ${SARAFAN_POSTGRES_DB:-sarafan}
+      POSTGRES_USER: ${SARAFAN_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${SARAFAN_POSTGRES_PASSWORD:?Set SARAFAN_POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SARAFAN_POSTGRES_USER:-postgres} -d ${SARAFAN_POSTGRES_DB:-sarafan}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - type: bind
+        source: ${SARAFAN_POSTGRES_DATA_DIR:-/srv/sarafan/pgdata}
+        target: /var/lib/postgresql/data
+
+  backup:
+    image: ghcr.io/sw-consulting/db-backup:latest
+    restart: always
+    init: true
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${SARAFAN_POSTGRES_DB:-sarafan}
+      DB_USER: ${SARAFAN_POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${SARAFAN_POSTGRES_PASSWORD:?Set SARAFAN_POSTGRES_PASSWORD}
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: ${SARAFAN_BACKUP_RETENTION_DAYS:-7}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 1h
+      start_period: 5s
+    volumes:
+      - type: bind
+        source: ${SARAFAN_BACKUP_DATA_DIR:-/srv/sarafan/backup}
+        target: /backups
+      - type: bind
+        source: ${SARAFAN_BACKUP_LOG_DIR:-/srv/sarafan/backup/logs}
+        target: /var/log
+    depends_on:
+      db:
+        condition: service_healthy
+
+  migrate:
+    image: ghcr.io/maxirmx/sarafan.core:${SARAFAN_CORE_IMAGE_TAG:-latest}
+    restart: "no"
+    environment:
+      <<: *api-environment
+      BackofficeBootstrap__Enabled: ${SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED:-false}
+      BackofficeBootstrap__FirstName: Maxim
+      BackofficeBootstrap__LastName: Samsonov
+      BackofficeBootstrap__Email: ${SARAFAN_BACKOFFICE_BOOTSTRAP_EMAIL:-}
+      BackofficeBootstrap__Password: ${SARAFAN_BACKOFFICE_BOOTSTRAP_PASSWORD:-}
+    volumes: &core-settings
+      - type: bind
+        source: ${SARAFAN_APPSETTINGS_FILE:-/srv/sarafan/settings/appsettings.json}
+        target: /app/appsettings.json
+        read_only: true
+        bind:
+          create_host_path: false
+    command: ["--migrate-only"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    image: ghcr.io/maxirmx/sarafan.core:${SARAFAN_CORE_IMAGE_TAG:-latest}
+    restart: always
+    environment: *api-environment
+    volumes: *core-settings
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/api/v1/status/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      default:
+        aliases:
+          - api
+
+  backoffice:
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.sarafan-backoffice.rule: 'Host(`gtc.sarafanof.com`)'
+      traefik.http.routers.sarafan-backoffice.entrypoints: websecure
+      traefik.http.routers.sarafan-backoffice.tls: "true"
+      traefik.http.routers.sarafan-backoffice.tls.certresolver: myresolver
+      traefik.http.routers.sarafan-backoffice.service: sarafan-backoffice
+      traefik.http.services.sarafan-backoffice.loadbalancer.server.port: "8080"
+    image: ghcr.io/sara-fan/sarafan.back.office:${SARAFAN_BACKOFFICE_IMAGE_TAG:-latest}
+    restart: always
+    environment:
+      SARAFAN_BACKOFFICE_LOGGING_ENABLED: ${SARAFAN_BACKOFFICE_LOGGING_ENABLED:-false}
+    depends_on:
+      api:
+        condition: service_healthy
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 5s
+
+  ui:
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.sarafan-ui.rule: 'Host(`sarafanof.com`) || Host(`www.sarafanof.com`)'
+      traefik.http.routers.sarafan-ui.entrypoints: websecure
+      traefik.http.routers.sarafan-ui.tls: "true"
+      traefik.http.routers.sarafan-ui.tls.certresolver: myresolver
+      traefik.http.routers.sarafan-ui.service: sarafan-ui
+      traefik.http.services.sarafan-ui.loadbalancer.server.port: "8080"
+    image: ghcr.io/maxirmx/sarafan.ui:${SARAFAN_UI_IMAGE_TAG:-latest}
+    restart: always
+    environment:
+      SARAFAN_UI_LOGGING_ENABLED: ${SARAFAN_UI_LOGGING_ENABLED:-false}
+    depends_on:
+      api:
+        condition: service_healthy
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      default:
+        aliases:
+          - ui
