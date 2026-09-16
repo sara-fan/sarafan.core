@@ -154,7 +154,7 @@ services:
       traefik.http.routers.sarafan-backoffice.tls.certresolver: myresolver
       traefik.http.routers.sarafan-backoffice.service: sarafan-backoffice
       traefik.http.services.sarafan-backoffice.loadbalancer.server.port: "8080"
-    image: ${SARAFAN_BACKOFFICE_IMAGE:-ghcr.io/sara-fan/sarafan.back.office}:${SARAFAN_BACKOFFICE_IMAGE_TAG:-latest}
+    image: ghcr.io/sara-fan/sarafan.back.office:${SARAFAN_BACKOFFICE_IMAGE_TAG:-latest}
     restart: always
     environment:
       SARAFAN_BACKOFFICE_LOGGING_ENABLED: ${SARAFAN_BACKOFFICE_LOGGING_ENABLED:-false}

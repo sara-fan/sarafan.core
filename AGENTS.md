@@ -26,6 +26,8 @@
 
 ### Cloud deployment
 
+- Bootstrap validates bind-mount path syntax only; do not require the deployment shell user to read/write container storage or create/chmod ACME files. Provision host paths with container ownership separately; Docker and service startup enforce actual mount access.
+
 - Use the standalone `docker-compose.production.yml` for the application and its Traefik wrapper on a dedicated VPS. Use only the Compose default network; no external edge network is required. Publish only Traefik ports 80/443 and preserve automatic Let's Encrypt renewal.
 - Default durable mounts are `/srv/sarafan/pgdata`, `/srv/sarafan/backup`, `/srv/sarafan/certificate`, and read-only `/srv/sarafan/settings/appsettings.json` for both API and migration services. Preserve ACME state during updates. Compose environment settings override the mounted JSON.
 

@@ -8,7 +8,7 @@ This guide describes the configuration shipped in this repository. Run commands 
 - For native development, the .NET 10 SDK selected by [global.json](../global.json): version `10.0.303` with `latestFeature` roll-forward. Container builds include their own SDK.
 - PostgreSQL 17, supplied by the Docker commands below.
 - For Back Office source development, a sibling `sarafan.back.office` checkout and Node matching its `package.json` (`^22.23.0 || ^24.15.0`). The Core-only build does not require frontend repositories.
-- For cloud deployment, a Linux host with Bash, the `C.UTF-8` locale, OpenSSL, registry access, durable storage and DNS pointing at the VPS. The deployment account needs Docker access and permission to create/write the configured storage directories.
+- For cloud deployment, a Linux host with Bash, the `C.UTF-8` locale, OpenSSL, registry access, durable storage and DNS pointing at the VPS. The deployment account needs Docker access and read access to its env file. Bind-mount permissions must suit the Docker daemon and container users; the deployment account does not need read/write access to container storage.
 
 ## Local development
 
@@ -153,7 +153,7 @@ Each frontend proxies its same-origin API requests to Core and preserves the for
 | `/srv/sarafan/certificate` | `/letsencrypt` | Traefik ACME account and certificates |
 | `/srv/sarafan/settings/appsettings.json` | `/app/appsettings.json` (read-only) | Core configuration, mounted in API and migration containers |
 
-Bootstrap creates storage directories and initializes `acme.json` with mode 600 without replacing existing contents. Preserve the certificate directory across updates. Prepare the settings file yourself; a missing file fails deployment instead of becoming a directory. Ensure the API container user (UID 1654 in the .NET image) can read it and the deployment account can manage the storage directories.
+Provision the host directories separately with administrative privileges and ownership appropriate to the containers. Bootstrap checks only absolute, non-root path syntax; it does not test the shell user's access or create/chmod storage files. Docker validates mounts and services enforce their actual access permissions at startup. Traefik creates `acme.json` with mode 600 under its container credentials; an existing file must already have that mode and be accessible to Traefik. Preserve it across updates. Prepare the settings file yourself; a missing file fails the bind mount instead of becoming a directory. Ensure the API container user (UID 1654 in the .NET image) can read it.
 
 ### Prepare configuration
 
@@ -163,10 +163,10 @@ Run from the Core checkout on the VPS:
 umask 077
 test -e sarafan.env || cp sarafan.env.example sarafan.env
 chmod 600 sarafan.env
-mkdir -p /srv/sarafan/settings
-test -e /srv/sarafan/settings/appsettings.json || cp src/Sarafan.Core/appsettings.json /srv/sarafan/settings/appsettings.json
 chmod +x scripts/bootstrap-cloud.sh scripts/update-cloud.sh
 ```
+
+Separately, have the VPS administrator provision the directories in the table and install `src/Sarafan.Core/appsettings.json` at `/srv/sarafan/settings/appsettings.json` if it does not already exist. Set ownership and permissions for the actual container users, including any rootless Docker or user-namespace mapping. Do not recursively change ownership on an existing PostgreSQL data directory or replace existing settings/certificates during an update.
 
 Edit `sarafan.env` and the mounted settings before deployment. Arrange read permissions for the settings file without making secrets publicly readable (for example a group readable by UID 1654). The scripts source the env file as trusted Bash: use shell-safe assignments and quote special characters. It is ignored by Git.
 
@@ -196,7 +196,7 @@ Authenticate to GHCR if packages are private. Before updating an existing databa
 scripts/bootstrap-cloud.sh
 ```
 
-The script checks configuration, storage and Compose wait support, pulls images, starts the migration/API dependencies, and waits for the frontends, backup and Traefik. Each health wait uses `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT` (default 180 seconds); this is not a total migration or image-pull deadline. Traefik's health check confirms the proxy process, not certificate issuance: verify public HTTPS separately.
+The script checks configuration, storage path syntax and Compose wait support, pulls images, starts the migration/API dependencies, and waits for the frontends, backup and Traefik. Each health wait uses `SARAFAN_DEPLOYMENT_WAIT_TIMEOUT` (default 180 seconds); this is not a total migration or image-pull deadline. Traefik's health check confirms the proxy process, not certificate issuance: verify public HTTPS separately.
 
 The one-shot migration service runs the image entrypoint with `--migrate-only`. API startup requires successful migration completion and keeps automatic migrations disabled. Both use the same mounted settings.
 

@@ -25,8 +25,8 @@ export SARAFAN_POSTGRES_DATA_DIR="${SARAFAN_POSTGRES_DATA_DIR:-/srv/sarafan/pgda
 export SARAFAN_BACKUP_DATA_DIR="${SARAFAN_BACKUP_DATA_DIR:-/srv/sarafan/backup}"
 export SARAFAN_BACKUP_LOG_DIR="${SARAFAN_BACKUP_LOG_DIR:-/srv/sarafan/backup/logs}"
 readonly APPSETTINGS_FILE="${SARAFAN_APPSETTINGS_FILE:-/srv/sarafan/settings/appsettings.json}"
-[[ "$APPSETTINGS_FILE" = /* && -f "$APPSETTINGS_FILE" && -r "$APPSETTINGS_FILE" ]] \
-  || fail "A readable appsettings.json file is required at $APPSETTINGS_FILE"
+[[ "$APPSETTINGS_FILE" = /* && "$APPSETTINGS_FILE" != "/" ]] \
+  || fail "SARAFAN_APPSETTINGS_FILE must be an absolute non-root path"
 readonly DEPLOYMENT_WAIT_TIMEOUT="${SARAFAN_DEPLOYMENT_WAIT_TIMEOUT:-180}"
 [[ "$DEPLOYMENT_WAIT_TIMEOUT" =~ ^[1-9][0-9]*$ ]] \
   || fail "SARAFAN_DEPLOYMENT_WAIT_TIMEOUT must be a positive number of seconds"
@@ -36,18 +36,18 @@ fi
 [[ "$compose_up_help" == *"--wait-timeout"* ]] \
   || fail "Upgrade Docker Compose: up --wait and --wait-timeout support is required"
 
-ensure_durable_directory() {
+# Bind mounts use Docker/container credentials, not this shell user's permissions.
+# Check path syntax only; do not inspect or change storage contents.
+validate_durable_directory() {
   local variable_name="$1"
   local path="${!variable_name:-}"
   [[ -n "$path" ]] || fail "$variable_name must be configured"
   [[ "$path" = /* && "$path" != "/" ]] || fail "$variable_name must be an absolute non-root path"
-  mkdir -p -- "$path"
-  [[ -d "$path" && -w "$path" ]] || fail "$variable_name is not a writable directory: $path"
 }
 
-ensure_durable_directory SARAFAN_POSTGRES_DATA_DIR
-ensure_durable_directory SARAFAN_BACKUP_DATA_DIR
-ensure_durable_directory SARAFAN_BACKUP_LOG_DIR
+validate_durable_directory SARAFAN_POSTGRES_DATA_DIR
+validate_durable_directory SARAFAN_BACKUP_DATA_DIR
+validate_durable_directory SARAFAN_BACKUP_LOG_DIR
 [[ -n "${SARAFAN_POSTGRES_PASSWORD:-}" && "${SARAFAN_POSTGRES_PASSWORD}" != "postgres" ]] \
   || fail "SARAFAN_POSTGRES_PASSWORD must be set to a non-default value"
 readonly JWT_SECRET="${SARAFAN_JWT_SECRET:-}"
@@ -68,12 +68,8 @@ if [[ "${SARAFAN_BACKOFFICE_BOOTSTRAP_ENABLED:-false}" == true ]]; then
 fi
 
 [[ -n "${SARAFAN_ACME_EMAIL:-}" ]] || fail "SARAFAN_ACME_EMAIL must be configured"
-ensure_durable_directory SARAFAN_CERTIFICATE_DIR
-# Preserve the existing ACME account and certificates on every update.
-if [[ ! -e "$SARAFAN_CERTIFICATE_DIR/acme.json" ]]; then
-  (umask 077; set -o noclobber; : > "$SARAFAN_CERTIFICATE_DIR/acme.json")
-fi
-chmod 600 "$SARAFAN_CERTIFICATE_DIR/acme.json"
+validate_durable_directory SARAFAN_CERTIFICATE_DIR
+# Traefik creates its own ACME storage using its container credentials.
 
 readonly COMPOSE=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f docker-compose.production.yml)
 "${COMPOSE[@]}" config --quiet
