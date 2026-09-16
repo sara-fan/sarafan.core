@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -96,7 +97,8 @@ public sealed class OrderCreationTests
             Assert.That(firstResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(firstResponse.Headers.Location, Is.Not.Null);
             Assert.That(first, Is.Not.Null);
-            Assert.That(first!.Id, Is.Positive);
+            Assert.That(firstResponse.Headers.Location!.ToString(), Does.EndWith($"/api/v1/orders/{first!.OrderNumber}"));
+            Assert.That(replayResponse.Headers.Location, Is.EqualTo(firstResponse.Headers.Location));
             Assert.That(first.OrderNumber, Does.Match("^[0-9]{8}-1$"));
             Assert.That(first.Status, Is.EqualTo(OrderStatus.UnderReview));
             Assert.That(first.SourceUrl, Is.EqualTo("https://shop.example.com/product?id=1"));
@@ -119,14 +121,14 @@ public sealed class OrderCreationTests
             Assert.That(commentConflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
             Assert.That(secondResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(second!.OrderNumber, Is.EqualTo(first.OrderNumber[..^1] + "2"));
-            Assert.That(second.Id, Is.Not.EqualTo(first.Id));
+            Assert.That(second.OrderNumber, Is.Not.EqualTo(first.OrderNumber));
             Assert.That(customer?.OrderCode, Is.EqualTo(first.OrderNumber[..8]));
         }
 
         await using var scope = _app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var storedCustomer = await database.Customers.AsNoTracking().SingleAsync(item => item.Id == _session.Customer.Id);
-        var storedFirstOrder = await database.Orders.AsNoTracking().SingleAsync(item => item.Id == first!.Id);
+        var storedFirstOrder = await database.Orders.AsNoTracking().SingleAsync(item => item.CustomerId == _session.Customer.Id && item.CustomerOrderNumber == 1);
         using (Assert.EnterMultipleScope())
         {
             Assert.That(storedCustomer.NextOrderNumber, Is.EqualTo(3));
@@ -150,7 +152,7 @@ public sealed class OrderCreationTests
         await using (var scope = _app.Services.CreateAsyncScope())
         {
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var firstOrder = await database.Orders.SingleAsync(item => item.Id == first.Id);
+            var firstOrder = await database.Orders.SingleAsync(item => item.CustomerId == _session.Customer.Id && item.CustomerOrderNumber == 1);
             firstOrder.CorrectProduct("Магазин", OrderService.CurrentProduct(firstOrder), DateTimeOffset.UtcNow);
             firstOrder.SetProductMetadata("https://images.example/first.jpg",
                 null, null, null, null, null, DateTimeOffset.UtcNow);
@@ -178,8 +180,8 @@ public sealed class OrderCreationTests
         {
             Assert.That(emptyItems, Is.Empty);
             Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
-            Assert.That(customerItems.Select(item => item.Id), Is.EqualTo(new[] { second.Id, first.Id }));
-            Assert.That(customerItems, Has.None.Property(nameof(CustomerOrderListItemDto.Id)).EqualTo(other.Id));
+            Assert.That(customerItems.Select(item => item.OrderNumber), Is.EqualTo(new[] { second.OrderNumber, first.OrderNumber }));
+            Assert.That(customerItems, Has.None.Property(nameof(CustomerOrderListItemDto.OrderNumber)).EqualTo(other.OrderNumber));
             Assert.That(customerItems[0].OrderNumber, Is.EqualTo(second.OrderNumber));
             Assert.That(customerItems[0].CreatedAt, Is.Not.EqualTo(default(DateTimeOffset)));
             Assert.That(customerItems[1].ProductName, Is.EqualTo("Тестовый товар"));
@@ -187,19 +189,72 @@ public sealed class OrderCreationTests
             Assert.That(customerItems[1].ImageUrl, Is.EqualTo("https://images.example/first.jpg"));
             Assert.That(customerItems[1].SellerPrice, Is.EqualTo(new OrderSellerPriceDto(10m, Currency.Usd)));
             Assert.That(customerItems[1].Quantity, Is.EqualTo(2));
-            Assert.That(otherItems, Has.One.Property(nameof(CustomerOrderListItemDto.Id)).EqualTo(other.Id));
+            Assert.That(otherItems, Has.One.Property(nameof(CustomerOrderListItemDto.OrderNumber)).EqualTo(other.OrderNumber));
             Assert.That(anonymousResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
         }
     }
 
-    [Test]
-    public async Task Get_UnknownOrder_ReturnsNotFound()
+    [TestCase("9223372036854775807")]
+    [TestCase("01234567-1")]
+    [TestCase("01234567-0")]
+    [TestCase("01234567-01")]
+    [TestCase("01234567-9223372036854775808")]
+    [TestCase("0123456x-1")]
+    [TestCase("0123456-1")]
+    [TestCase("01234567-1-2")]
+    public async Task Get_UnknownOrMalformedOrder_ReturnsNotFound(string number)
     {
-        using var response = await _client.GetAsync("/api/v1/orders/9223372036854775807");
+        using var response = await _client.GetAsync($"/api/v1/orders/{number}");
         var body = await response.Content.ReadFromJsonAsync<SarafanProblemDetails>();
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         Assert.That(body?.Code, Is.EqualTo("resource_not_found"));
+    }
+
+    [Test]
+    public async Task PublicIdentity_PreservesLeadingZeroesAndNeverExposesOrderId()
+    {
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var customer = await database.Customers.SingleAsync(item => item.Id == _session.Customer.Id);
+            var order = new Order(customer.Id, customer.AllocateOrderNumber("01234567"),
+                "https://shop.example.com/seed", 1, null, Guid.NewGuid(), DateTimeOffset.UtcNow);
+            database.Orders.Add(order);
+            await database.SaveChangesAsync();
+        }
+
+        var key = Guid.NewGuid();
+        using var create = await Create(_client, "https://shop.example.com/product", key);
+        using var replay = await Create(_client, "https://shop.example.com/product", key);
+        using var detail = await _client.GetAsync(create.Headers.Location!);
+        using var list = await _client.GetAsync("/api/v1/orders");
+        foreach (var response in new[] { create, replay, detail })
+        {
+            response.EnsureSuccessStatusCode();
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.That(json.RootElement.TryGetProperty("id", out _), Is.False);
+            Assert.That(json.RootElement.GetProperty("orderNumber").GetString(), Is.EqualTo("01234567-2"));
+        }
+        using var listJson = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        Assert.That(listJson.RootElement.EnumerateArray().All(item => !item.TryGetProperty("id", out _)), Is.True);
+        Assert.That(create.Headers.Location!.ToString(), Does.EndWith("/api/v1/orders/01234567-2"));
+        Assert.That(replay.Headers.Location, Is.EqualTo(create.Headers.Location));
+
+        using var otherClient = CreateClient(_app);
+        await Register(otherClient);
+        using var foreign = await otherClient.GetAsync(create.Headers.Location!);
+        Assert.That(foreign.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That((await foreign.Content.ReadFromJsonAsync<SarafanProblemDetails>())?.Code,
+            Is.EqualTo("resource_not_found"));
+
+        await using var verification = _app.Services.CreateAsyncScope();
+        var stored = await verification.ServiceProvider.GetRequiredService<AppDbContext>().Orders
+            .SingleAsync(item => item.CustomerId == _session.Customer.Id && item.CustomerOrderNumber == 2);
+        using var numeric = await _client.GetAsync($"/api/v1/orders/{stored.Id}");
+        Assert.That(numeric.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That((await numeric.Content.ReadFromJsonAsync<SarafanProblemDetails>())?.Code,
+            Is.EqualTo("resource_not_found"));
     }
 
     [Test]
@@ -225,7 +280,7 @@ public sealed class OrderCreationTests
             };
             database.ExchangeRateHistory.Add(rate);
             await database.SaveChangesAsync();
-            var order = await database.Orders.SingleAsync(item => item.Id == created.Id);
+            var order = await database.Orders.SingleAsync(item => item.CustomerId == _session.Customer.Id && item.CustomerOrderNumber == 1);
             order.CorrectProduct("Магазин", OrderService.CurrentProduct(order), DateTimeOffset.UtcNow);
             order.SetProductMetadata("https://images.example/product.jpg",
                 10.25m, 20.50m, 30.75m, new Dictionary<string, string> { ["Цвет"] = "Синий" },
@@ -233,7 +288,7 @@ public sealed class OrderCreationTests
             await database.SaveChangesAsync();
         }
 
-        using var response = await _client.GetAsync($"/api/v1/orders/{created.Id}");
+        using var response = await _client.GetAsync($"/api/v1/orders/{created.OrderNumber}");
         var orderDto = await response.Content.ReadFromJsonAsync<OrderDto>();
         using var replayResponse = await Create(_client, "https://shop.example.com/product", idempotencyKey);
         var replayDto = await replayResponse.Content.ReadFromJsonAsync<OrderDto>();
@@ -273,7 +328,7 @@ public sealed class OrderCreationTests
             Is.TypeOf<PhoneSuffixVerificationCodeProvider>());
         using var create = await Create(_client, "https://shop.example.com/product", Guid.NewGuid());
         var order = await create.Content.ReadFromJsonAsync<OrderDto>();
-        using var get = await _client.GetAsync($"/api/v1/orders/{order!.Id}");
+        using var get = await _client.GetAsync($"/api/v1/orders/{order!.OrderNumber}");
         var stored = await get.Content.ReadFromJsonAsync<OrderDto>();
 
         using (Assert.EnterMultipleScope())

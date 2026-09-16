@@ -511,7 +511,7 @@ public sealed class OperationLoggingTests
         using var createOrder = await client.SendAsync(orderRequest);
         var createdOrder = (await createOrder.Content.ReadFromJsonAsync<OrderDto>())!;
         using var listOrders = await client.GetAsync("/api/v1/orders");
-        using var getOrder = await client.GetAsync($"/api/v1/orders/{createdOrder.Id}");
+        using var getOrder = await client.GetAsync($"/api/v1/orders/{createdOrder.OrderNumber}");
         var customerToken = session.AccessToken;
         using var backofficeLogin = await client.PostAsJsonAsync("/api/v1/backoffice/auth/login", new BackofficeLoginRequest
         {

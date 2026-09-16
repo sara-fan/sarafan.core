@@ -47,7 +47,6 @@ public sealed record OrderAppliedExchangeRateDto(
     DateOnly SourceEffectiveDate);
 
 public sealed record OrderDto(
-    long Id,
     string OrderNumber,
     OrderStatus Status,
     string SourceUrl,
@@ -67,7 +66,6 @@ public sealed record OrderDto(
 }
 
 public sealed record CustomerOrderListItemDto(
-    long Id,
     string OrderNumber,
     OrderStatus Status,
     string SourceUrl,

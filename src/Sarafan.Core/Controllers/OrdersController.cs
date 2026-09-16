@@ -23,12 +23,12 @@ public sealed class OrdersController(
         CancellationToken cancellationToken)
         => Ok(await orders.ListAsync(CurrentCustomerId(), cancellationToken));
 
-    [HttpGet("{id:long}")]
+    [HttpGet("{orderNumber}")]
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<OrderDto>> Get(
-        long id,
+        string orderNumber,
         CancellationToken cancellationToken)
-        => Ok(await orders.GetAsync(CurrentCustomerId(), id, cancellationToken));
+        => Ok(await orders.GetAsync(CurrentCustomerId(), orderNumber, cancellationToken));
 
     [HttpPost]
     [ServiceFilter(typeof(PersonalDataConsentFilter))]
@@ -51,6 +51,6 @@ public sealed class OrdersController(
             parsedKey,
             cancellationToken,
             request.Product);
-        return CreatedAtAction(nameof(Get), new { id = order.Id }, order);
+        return CreatedAtAction(nameof(Get), new { orderNumber = order.OrderNumber }, order);
     }
 }
