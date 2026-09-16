@@ -350,6 +350,12 @@ public sealed class ConsentApiTests
         Assert.That(filteredQueuePage.Items, Has.All.Property(nameof(CustomerConsentWithdrawalRequestDto.Processed)).False);
         Assert.That(filteredQueuePage.Sorting.SortBy, Is.EqualTo("customerId"));
         Assert.That(filteredQueuePage.Search, Is.EqualTo(customerSearch));
+        var requestDate = DateOnly.FromDateTime(request.RequestedAt.ToOffset(TimeSpan.FromHours(3)).DateTime);
+        using var dateQueue = await _client.GetAsync($"/api/v1/backoffice/consents/withdrawal-requests?requestedFrom={requestDate:yyyy-MM-dd}&requestedTo={requestDate:yyyy-MM-dd}");
+        var datePage = await Read<CustomerConsentWithdrawalRequestPageDto>(dateQueue);
+        Assert.That(datePage.Items, Has.Some.EqualTo(request));
+        Assert.That(datePage.RequestedFrom, Is.EqualTo(requestDate));
+        Assert.That(datePage.RequestedTo, Is.EqualTo(requestDate));
         using var invalidQueue = await _client.GetAsync("/api/v1/backoffice/consents/withdrawal-requests?search=customer");
         Assert.That((await invalidQueue.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(),
             Is.EqualTo("invalid_consent_withdrawal_request_filter"));

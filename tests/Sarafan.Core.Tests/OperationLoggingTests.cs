@@ -468,6 +468,42 @@ public sealed class OperationLoggingTests
         Assert.That(fallback.Attributes, Does.Not.ContainKey("ProblemCode"));
     }
 
+    [TestCase(null, "null")]
+    [TestCase(PhoneValidationReason.Empty, "Empty")]
+    [TestCase(PhoneValidationReason.UnsupportedCharacters, "UnsupportedCharacters")]
+    [TestCase(PhoneValidationReason.WrongPrefix, "WrongPrefix")]
+    [TestCase(PhoneValidationReason.TooShort, "TooShort")]
+    [TestCase(PhoneValidationReason.TooLong, "TooLong")]
+    [TestCase(PhoneValidationReason.FormattedDomesticNumber, "FormattedDomesticNumber")]
+    [TestCase((PhoneValidationReason)999, "other")]
+    public async Task PhoneProblemBoundariesLogOnlyAllowlistedReasons(PhoneValidationReason? reason, string summary)
+    {
+        using var body = new MemoryStream();
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString($"?phone={Secret}");
+        context.Response.Body = body;
+        var factory = new SarafanProblemDetailsFactory(_factory.CreateLogger<SarafanProblemDetailsFactory>());
+        factory.Create(context, 400, "invalid_phone", new Dictionary<string, string[]> { ["phone"] = [Secret] }, reason);
+        await factory.WriteAsync(context, 400, "invalid_phone", phoneValidationReason: reason);
+        var entries = _logs.Records.Where(record => record.Event.Name == SarafanEvents.OperationEnteredName).ToArray();
+        Assert.That(entries, Has.Length.EqualTo(2));
+        Assert.That(entries.Select(record => record.Message), Has.All.Contains($"phoneValidationReason={summary};"));
+        AssertPrivate();
+    }
+
+    [Test]
+    public async Task WithdrawalDateInputsRemainRedactedAtTheServiceBoundary()
+    {
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var service = new ConsentWithdrawalRequestService(database, TimeProvider.System,
+            _factory.CreateLogger<ConsentWithdrawalRequestService>());
+        await service.ListAsync(1, 10, "processed", "asc", null, null, default, "2026-09-01", "2026-09-17");
+        var entry = _logs.Records.Single(record => record.Event.Name == SarafanEvents.OperationEnteredName);
+        Assert.That(entry.Message, Does.Contain("request=[redacted]"));
+        Assert.That(string.Join(" ", _logs.Records.Select(record => record.Message)), Does.Not.Contain("2026-09"));
+    }
+
     [Test]
     public async Task HttpFlow_LogsEveryControllerActionAndServiceBoundaryWithSafeOutputs()
     {

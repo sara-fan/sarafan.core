@@ -250,7 +250,7 @@ public sealed class SarafanProblemDetailsFactory(
         IReadOnlyDictionary<string, string[]>? errors = null,
         PhoneValidationReason? phoneValidationReason = null)
         => OperationLogging.Run(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(Create)}",
-            () => ProblemInputs(statusCode, code), () =>
+            () => ProblemInputs(statusCode, code, phoneValidationReason), () =>
             {
                 var details = CreateCore(context, statusCode, code, errors, phoneValidationReason);
                 LogProblemEmitted(details);
@@ -337,7 +337,7 @@ public sealed class SarafanProblemDetailsFactory(
         IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds = null,
         PhoneValidationReason? phoneValidationReason = null)
         => new(OperationLogging.RunAsync(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(WriteAsync)}",
-            () => ProblemInputs(statusCode, code), () => WriteCoreAsync(context, statusCode, code, cancellationToken,
+            () => ProblemInputs(statusCode, code, phoneValidationReason), () => WriteCoreAsync(context, statusCode, code, cancellationToken,
                 requiredDocumentId, consentKind, nextStep, requiredDocumentKinds, phoneValidationReason), cancellationToken));
 
     private async Task WriteCoreAsync(
@@ -408,8 +408,20 @@ public sealed class SarafanProblemDetailsFactory(
         _ => "internal_error"
     };
 
-    private static string ProblemInputs(int statusCode, string code)
-        => $"statusCode={statusCode}; code={(code is not null && Definitions.ContainsKey(code) ? code : "other")}; context/errors=[redacted]";
+    private static string ProblemInputs(int statusCode, string code, PhoneValidationReason? phoneValidationReason = null)
+        => $"statusCode={statusCode}; code={(code is not null && Definitions.ContainsKey(code) ? code : "other")}; phoneValidationReason={PhoneReasonSummary(phoneValidationReason)}; context/errors=[redacted]";
+
+    private static string PhoneReasonSummary(PhoneValidationReason? reason) => reason switch
+    {
+        null => "null",
+        PhoneValidationReason.Empty => nameof(PhoneValidationReason.Empty),
+        PhoneValidationReason.UnsupportedCharacters => nameof(PhoneValidationReason.UnsupportedCharacters),
+        PhoneValidationReason.WrongPrefix => nameof(PhoneValidationReason.WrongPrefix),
+        PhoneValidationReason.TooShort => nameof(PhoneValidationReason.TooShort),
+        PhoneValidationReason.TooLong => nameof(PhoneValidationReason.TooLong),
+        PhoneValidationReason.FormattedDomesticNumber => nameof(PhoneValidationReason.FormattedDomesticNumber),
+        _ => "other"
+    };
 
     private static ObjectResult Result(SarafanProblemDetails details)
     {

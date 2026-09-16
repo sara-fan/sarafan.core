@@ -36,10 +36,17 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
     public Task<LegalDocumentDto[]> ListAsync(LegalDocumentKind? kind, CancellationToken token) => Run(nameof(ListAsync), async () =>
     {
         if (kind is { } value) ValidateKind(value);
-        var rows = await database.LegalDocuments.AsNoTracking().Where(x => kind == null || x.Kind == kind)
-            .OrderByDescending(x => x.EffectiveAt).ThenByDescending(x => x.CreatedAt).Take(200).ToArrayAsync(token);
         var now = clock.GetUtcNow();
-        return rows.Select(x => ToDto(x, now, true)).ToArray();
+        var rows = await database.LegalDocuments.AsNoTracking().Where(x => kind == null || x.Kind == kind)
+            .OrderByDescending(x => x.EffectiveAt).ThenByDescending(x => x.CreatedAt).Take(200)
+            .Select(x => new
+            {
+                Document = x,
+                Status = x.EffectiveAt > now ? "future" : database.LegalDocuments.Any(other =>
+                    other.Kind == x.Kind && other.Locale == x.Locale && other.EffectiveAt <= now
+                    && other.EffectiveAt > x.EffectiveAt) ? "outdated" : "current"
+            }).ToArrayAsync(token);
+        return rows.Select(x => ToDto(x.Document, now, true) with { Status = x.Status }).ToArray();
     }, token, kind);
 
     public Task<LegalDocumentPreviewDto> PreviewAsync(LegalDocumentPreviewRequest request, CancellationToken token) => Run(nameof(PreviewAsync), async () =>

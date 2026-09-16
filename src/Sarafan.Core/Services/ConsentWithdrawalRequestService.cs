@@ -2,6 +2,7 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 
 using Sarafan.Core.Data;
@@ -52,9 +53,22 @@ public sealed class ConsentWithdrawalRequestService(
         string sortOrder,
         string? search,
         bool? processed,
-        CancellationToken token)
+        CancellationToken token,
+        string? requestedFrom = null,
+        string? requestedTo = null)
         => Run(nameof(ListAsync), async () =>
         {
+            DateOnly? ParseDate(string? value)
+            {
+                if (value is null) return null;
+                if (!DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+                    throw new ServiceException(400, "invalid_consent_withdrawal_request_filter");
+                return date;
+            }
+            var fromDate = ParseDate(requestedFrom);
+            var toDate = ParseDate(requestedTo);
+            if (fromDate > toDate || fromDate == DateOnly.MinValue || toDate == DateOnly.MaxValue)
+                throw new ServiceException(400, "invalid_consent_withdrawal_request_filter");
             search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
             var sortByKey = sortBy?.Trim().ToLowerInvariant();
             var sortOrderKey = sortOrder?.Trim().ToLowerInvariant();
@@ -68,6 +82,16 @@ public sealed class ConsentWithdrawalRequestService(
                 .Where(item => processed == null || item.Processed == processed);
             if (search is not null)
                 query = AppDatabaseOperations.For(database).ApplyWithdrawalSearch(query, search);
+            if (fromDate.HasValue)
+            {
+                var from = ConsentCalendar.Midnight(fromDate.Value);
+                query = query.Where(item => item.RequestedAt >= from);
+            }
+            if (toDate.HasValue)
+            {
+                var toExclusive = ConsentCalendar.Midnight(toDate.Value.AddDays(1));
+                query = query.Where(item => item.RequestedAt < toExclusive);
+            }
             var total = await query.CountAsync(token);
             var descending = sortOrderKey == "desc";
             var ordered = (sortByKey, descending) switch
@@ -110,9 +134,11 @@ public sealed class ConsentWithdrawalRequestService(
                     },
                     SortOrder = sortOrderKey
                 },
-                Search = search
+                Search = search,
+                RequestedFrom = fromDate,
+                RequestedTo = toDate
             };
-        }, token, new { page, pageSize, sortBy, sortOrder, search, processed });
+        }, token, new { page, pageSize, sortBy, sortOrder, search, processed, requestedFrom, requestedTo });
 
     public Task<CustomerConsentWithdrawalRequestDto> ProcessAsync(
         ProcessConsentWithdrawalRequest request,
