@@ -205,3 +205,5 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Staff order details expose editable `product.storeName` and read-only image, dimensions and characteristics metadata. Limit-check DTOs publish exceededMessage from the same coefficient-derived source as RFC 9457 errors; clients must not duplicate the reserve coefficient or message formula.
 
 - Customer order list, detail and creation DTOs exclude internal order IDs. Resolve `GET /api/v1/orders/{orderNumber}` using the shared public-number parser and caller ownership in the query; invalid, missing and foreign orders return `resource_not_found`. Creation and replay Location headers use the public number; numeric-ID routes are unsupported.
+
+- Phone normalization returns a typed failure reason; keep `invalid_phone` HTTP/type/code stable and select actionable Russian detail from the centralized problem catalogue. Preserve accepted formats and validation precedence: empty, unsupported characters, prefix, digit count, then separators with initial 8. Never include the submitted number in explanations or logs.

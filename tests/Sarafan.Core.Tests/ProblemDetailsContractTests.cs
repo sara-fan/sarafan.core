@@ -69,7 +69,7 @@ public sealed class ProblemDetailsContractTests
             Assert.That(problem.TraceId, Is.Not.Empty);
             Assert.That(response.Content.Headers.ContentLanguage, Does.Contain("ru"));
             Assert.That(problem.Errors?.Keys, Does.Contain("phone"));
-            Assert.That(problem.Errors?["phone"], Does.Contain("Поле обязательно для заполнения."));
+            Assert.That(problem.Errors?["phone"], Does.Contain("Введите номер телефона."));
             Assert.That(problem.Errors?.SelectMany(item => item.Value),
                 Is.All.Matches<string>(value => Regex.IsMatch(value, "[А-Яа-яЁё]")));
         }

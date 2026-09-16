@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Sarafan.Core.Observability;
 using Sarafan.Core.RestModels;
 using Sarafan.Core.Models;
+using Sarafan.Core.Authentication;
 
 namespace Sarafan.Core.Services;
 
@@ -79,7 +80,7 @@ public sealed class SarafanProblemDetailsFactory(
             ["invalid_phone"] = new(
                 StatusCodes.Status400BadRequest,
                 "Некорректный номер телефона",
-                "Укажите корректный номер телефона."),
+                "Введите 11 цифр, начиная с 8 или +7. Например: +7 (921) 123-45-67."),
             ["invalid_auth_request"] = new(
                 StatusCodes.Status400BadRequest,
                 "Некорректный запрос входа",
@@ -246,17 +247,19 @@ public sealed class SarafanProblemDetailsFactory(
         HttpContext context,
         int statusCode,
         string code,
-        IReadOnlyDictionary<string, string[]>? errors = null)
+        IReadOnlyDictionary<string, string[]>? errors = null,
+        PhoneValidationReason? phoneValidationReason = null)
         => OperationLogging.Run(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(Create)}",
             () => ProblemInputs(statusCode, code), () =>
             {
-                var details = CreateCore(context, statusCode, code, errors);
+                var details = CreateCore(context, statusCode, code, errors, phoneValidationReason);
                 LogProblemEmitted(details);
                 return details;
             });
 
     private SarafanProblemDetails CreateCore(
-        HttpContext context, int statusCode, string code, IReadOnlyDictionary<string, string[]>? errors)
+        HttpContext context, int statusCode, string code, IReadOnlyDictionary<string, string[]>? errors,
+        PhoneValidationReason? phoneValidationReason)
     {
         if (!Definitions.TryGetValue(code, out var definition)
             || definition.StatusCode != statusCode)
@@ -287,7 +290,7 @@ public sealed class SarafanProblemDetailsFactory(
             Type = $"{TypeBase}{code.Replace('_', '-')}",
             Title = definition.Title,
             Status = definition.StatusCode,
-            Detail = definition.Detail,
+            Detail = code == "invalid_phone" ? PhoneDetail(phoneValidationReason, definition.Detail) : definition.Detail,
             Instance = $"urn:sarafan:problem:{traceId}",
             Code = code,
             Errors = errors,
@@ -331,10 +334,11 @@ public sealed class SarafanProblemDetailsFactory(
         Guid? requiredDocumentId = null,
         LegalDocumentKind? consentKind = null,
         AuthenticationFlowStep? nextStep = null,
-        IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds = null)
+        IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds = null,
+        PhoneValidationReason? phoneValidationReason = null)
         => new(OperationLogging.RunAsync(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(WriteAsync)}",
             () => ProblemInputs(statusCode, code), () => WriteCoreAsync(context, statusCode, code, cancellationToken,
-                requiredDocumentId, consentKind, nextStep, requiredDocumentKinds), cancellationToken));
+                requiredDocumentId, consentKind, nextStep, requiredDocumentKinds, phoneValidationReason), cancellationToken));
 
     private async Task WriteCoreAsync(
         HttpContext context,
@@ -344,9 +348,10 @@ public sealed class SarafanProblemDetailsFactory(
         Guid? requiredDocumentId,
         LegalDocumentKind? consentKind,
         AuthenticationFlowStep? nextStep,
-        IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds)
+        IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds,
+        PhoneValidationReason? phoneValidationReason)
     {
-        var details = CreateCore(context, statusCode, code, null);
+        var details = CreateCore(context, statusCode, code, null, phoneValidationReason);
         if (requiredDocumentId is not null && consentKind is { } kind && Enum.IsDefined(kind))
         {
             details.Extensions["requiredDocumentId"] = requiredDocumentId;
@@ -367,6 +372,17 @@ public sealed class SarafanProblemDetailsFactory(
             cancellationToken);
         LogProblemEmitted(details);
     }
+
+    private static string PhoneDetail(PhoneValidationReason? reason, string fallback) => reason switch
+    {
+        PhoneValidationReason.Empty => "Введите номер телефона.",
+        PhoneValidationReason.UnsupportedCharacters => "Используйте цифры, обычные пробелы, скобки и дефисы. Знак + допускается только в начале номера.",
+        PhoneValidationReason.WrongPrefix => "Начните номер с +7 или 8. Например: +7 (921) 123-45-67.",
+        PhoneValidationReason.TooShort => "Номер слишком короткий. Введите 11 цифр, начиная с 8 или +7.",
+        PhoneValidationReason.TooLong => "Номер слишком длинный. Введите 11 цифр, начиная с 8 или +7.",
+        PhoneValidationReason.FormattedDomesticNumber => "Для номера с пробелами, скобками или дефисами замените начальную 8 на +7. Например: +7 (921) 123-45-67.",
+        _ => fallback
+    };
 
     private void LogProblemEmitted(SarafanProblemDetails details)
         => SarafanEvents.ProblemEmitted(

@@ -14,7 +14,7 @@ namespace Sarafan.Core.RestModels;
 
 public class RequestCodeRequest
 {
-    [Required(ErrorMessage = "Поле обязательно для заполнения.")]
+    [Required(ErrorMessage = "Введите номер телефона.")]
     [StringLength(64, ErrorMessage = "Длина поля не должна превышать {1} символов.")]
     public string Phone { get; set; } = string.Empty;
 
@@ -25,7 +25,7 @@ public class RequestCodeRequest
 
 public sealed class VerifyCodeRequest
 {
-    [Required(ErrorMessage = "Поле обязательно для заполнения.")]
+    [Required(ErrorMessage = "Введите номер телефона.")]
     [StringLength(64, ErrorMessage = "Длина поля не должна превышать {1} символов.")]
     public string Phone { get; set; } = string.Empty;
 
@@ -43,7 +43,7 @@ public sealed class VerifyCodeRequest
 public sealed record CodeRequestDto(string? OnboardingToken);
 
 public sealed record PhoneResolveRequest(
-    [param: Required(ErrorMessage = "Поле обязательно для заполнения.")]
+    [param: Required(ErrorMessage = "Введите номер телефона.")]
     [param: StringLength(64, ErrorMessage = "Длина поля не должна превышать {1} символов.")]
     string Phone);
 
