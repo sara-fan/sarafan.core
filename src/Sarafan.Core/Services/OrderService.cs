@@ -42,16 +42,16 @@ public sealed partial class OrderService(
 
     public Task<OrderDto> GetAsync(
         int customerId,
-        long orderId,
+        string orderNumber,
         CancellationToken cancellationToken)
         => OperationLogging.RunAsync(
             logger,
             $"{typeof(OrderService).FullName}.{nameof(GetAsync)}",
             () => LogValueSummary.Inputs(
                 (nameof(customerId), customerId),
-                (nameof(orderId), orderId),
+                (nameof(orderNumber), orderNumber),
                 (nameof(cancellationToken), cancellationToken)),
-            () => GetCoreAsync(customerId, orderId, cancellationToken),
+            () => GetCoreAsync(customerId, orderNumber, cancellationToken),
             cancellationToken);
 
     public Task<OrderDto> CreateAsync(
@@ -377,15 +377,16 @@ public sealed partial class OrderService(
 
     private async Task<OrderDto> GetCoreAsync(
         int customerId,
-        long orderId,
+        string orderNumber,
         CancellationToken cancellationToken)
     {
+        var (code, sequence) = ParsePublicOrderNumber(orderNumber);
         var order = await database.Orders
             .AsNoTracking()
             .Include(item => item.Customer)
             .Include(item => item.AppliedExchangeRateHistory)
             .SingleOrDefaultAsync(
-                item => item.CustomerId == customerId && item.Id == orderId,
+                item => item.CustomerId == customerId && item.Customer.OrderCode == code && item.CustomerOrderNumber == sequence,
                 cancellationToken);
 
         if (order is null || order.Customer is null || order.Customer.OrderCode is null)
@@ -406,7 +407,6 @@ public sealed partial class OrderService(
             .OrderByDescending(item => item.CreatedAt)
             .ThenByDescending(item => item.Id)
             .Select(item => new CustomerOrderProjection(
-                item.Id,
                 item.Customer.OrderCode!,
                 item.CustomerOrderNumber,
                 item.Status,
@@ -471,7 +471,6 @@ public sealed partial class OrderService(
     private static OrderDto ToDto(Order order) => ToDto(order, order.Customer.OrderCode!);
 
     private static OrderDto ToDto(Order order, string customerOrderCode) => new(
-        order.Id,
         $"{customerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
         ProductSourceUrl.NormalizeStored(order.SourceUrl),
@@ -515,7 +514,6 @@ public sealed partial class OrderService(
         order.UpdatedAt);
 
     private static CustomerOrderListItemDto ToCustomerDto(CustomerOrderProjection order) => new(
-        order.Id,
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
         ProductSourceUrl.NormalizeStored(order.SourceUrl),
@@ -531,7 +529,6 @@ public sealed partial class OrderService(
     private sealed record Allocation(Order Order, string CustomerOrderCode);
 
     private sealed record CustomerOrderProjection(
-        long Id,
         string CustomerOrderCode,
         long CustomerOrderNumber,
         OrderStatus Status,

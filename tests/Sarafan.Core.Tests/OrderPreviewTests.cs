@@ -181,7 +181,7 @@ public sealed class OrderPreviewTests
             Assert.That(order?.ProductName, Is.EqualTo("Тестовый товар"));
             Assert.That(order?.StoreName, Is.Null);
             Assert.That(order?.SellerPrice, Is.EqualTo(new OrderSellerPriceDto(10m, Currency.Usd)));
-            Assert.That(replay?.Id, Is.EqualTo(order?.Id));
+            Assert.That(replay?.OrderNumber, Is.EqualTo(order?.OrderNumber));
             Assert.That(await CountOrders(), Is.EqualTo(1));
         }
     }
@@ -260,7 +260,7 @@ public sealed class OrderPreviewTests
         request.Headers.Add("Idempotency-Key", idempotencyKey.ToString("D"));
         using var response = await _client.SendAsync(request);
         var replay = await response.Content.ReadFromJsonAsync<OrderDto>();
-        using var getResponse = await _client.GetAsync($"/api/v1/orders/{legacyOrderId}");
+        using var getResponse = await _client.GetAsync($"/api/v1/orders/{replay!.OrderNumber}");
         var read = await getResponse.Content.ReadFromJsonAsync<OrderDto>();
         var list = await _client.GetFromJsonAsync<CustomerOrderListItemDto[]>("/api/v1/orders");
 
@@ -287,7 +287,7 @@ public sealed class OrderPreviewTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
-            Assert.That(replay?.Id, Is.EqualTo(legacyOrderId));
+            Assert.That(replay?.OrderNumber, Is.EqualTo("87654321-1"));
             Assert.That(replay?.SourceUrl, Is.EqualTo(canonicalSourceUrl));
             Assert.That(read?.SourceUrl, Is.EqualTo(canonicalSourceUrl));
             Assert.That(list?.Single().SourceUrl, Is.EqualTo(canonicalSourceUrl));

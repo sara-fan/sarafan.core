@@ -71,7 +71,7 @@ public sealed class OrderProductApiTests
         Assert.That(corrected.Status, Is.EqualTo(OrderStatus.UnderReview));
         Assert.That(corrected.UpdatedAt, Is.GreaterThan(details.UpdatedAt));
         Assert.That(corrected.SourceUrl, Is.EqualTo(original.SourceUrl));
-        var customerRead = await _customer.GetFromJsonAsync<OrderDto>($"/api/v1/orders/{original.Id}");
+        var customerRead = await _customer.GetFromJsonAsync<OrderDto>($"/api/v1/orders/{original.OrderNumber}");
         Assert.That(customerRead!.Product, Is.EqualTo(corrected.Product));
         Assert.That(customerRead.ProductName, Is.EqualTo(corrected.Product.ProductName));
         Assert.That(customerRead.Quantity, Is.EqualTo(4));
@@ -182,7 +182,7 @@ public sealed class OrderProductApiTests
         using var after = JsonDocument.Parse(audit.After);
         Assert.That(before.RootElement.GetProperty("StoreName").GetString(), Is.EqualTo("Магазин"));
         Assert.That(after.RootElement.GetProperty("StoreName").GetString(), Is.EqualTo("Новый магазин"));
-        var customerRead = await _customer.GetFromJsonAsync<OrderDto>($"/api/v1/orders/{order.Id}");
+        var customerRead = await _customer.GetFromJsonAsync<OrderDto>($"/api/v1/orders/{order.OrderNumber}");
         Assert.That(customerRead!.StoreName, Is.EqualTo("Новый магазин"));
         var staffList = await _staff.GetFromJsonAsync<BackofficeOrderPageDto>("/api/v1/backoffice/orders?search=Новый%20магазин&sortBy=storeName");
         Assert.That(staffList!.Items.Single().StoreName, Is.EqualTo("Новый магазин"));
@@ -297,7 +297,7 @@ public sealed class OrderProductApiTests
         using var closed = await Put(order.OrderNumber, request);
         await Problem(closed, HttpStatusCode.Conflict, "order_not_editable");
         Assert.That((await Details(order.OrderNumber)).CanEditProduct, Is.False);
-        Assert.That((await _customer.GetFromJsonAsync<OrderDto>($"/api/v1/orders/{order.Id}"))!.ShowReviewFields, Is.False);
+        Assert.That((await _customer.GetFromJsonAsync<OrderDto>($"/api/v1/orders/{order.OrderNumber}"))!.ShowReviewFields, Is.False);
         foreach (var number in new[] { "bad", "12345678-0", "12345678-01", "abcdefgh-1", "12345678-99999999999999999999", "12345678-100" })
         {
             using var missing = await _staff.GetAsync($"/api/v1/backoffice/orders/{number}");

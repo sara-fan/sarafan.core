@@ -83,15 +83,20 @@ public sealed partial class OrderService
 
     private async Task<Order> FindPublicOrder(string number, CancellationToken cancellationToken)
     {
+        var (code, sequence) = ParsePublicOrderNumber(number);
+        return await database.Orders.Include(order => order.Customer).ThenInclude(customer => customer.Profile)
+            .SingleOrDefaultAsync(order => order.Customer.OrderCode == code && order.CustomerOrderNumber == sequence, cancellationToken)
+            ?? throw new ServiceException(404, "resource_not_found");
+    }
+
+    private static (string Code, long Sequence) ParsePublicOrderNumber(string number)
+    {
         var parts = number.Split('-');
         if (parts.Length != 2 || parts[0].Length != 8 || parts[0].Any(c => c is < '0' or > '9')
             || !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var sequence)
             || sequence <= 0 || parts[1] != sequence.ToString(CultureInfo.InvariantCulture))
             throw new ServiceException(404, "resource_not_found");
-        var code = parts[0];
-        return await database.Orders.Include(order => order.Customer).ThenInclude(customer => customer.Profile)
-            .SingleOrDefaultAsync(order => order.Customer.OrderCode == code && order.CustomerOrderNumber == sequence, cancellationToken)
-            ?? throw new ServiceException(404, "resource_not_found");
+        return (parts[0], sequence);
     }
 
     private static BackofficeOrderDetailsDto StaffDetails(Order order, string[] roles, OrderLimitRatePair? pair)
