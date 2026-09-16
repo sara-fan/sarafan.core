@@ -22,8 +22,10 @@ public sealed class BackofficeConsentsController(ConsentWithdrawalRequestService
         [FromQuery] string sortOrder = "asc",
         [FromQuery] string? search = null,
         [FromQuery] bool? processed = null,
+        [FromQuery] string? requestedFrom = null,
+        [FromQuery] string? requestedTo = null,
         CancellationToken token = default)
-        => Ok(await withdrawalRequests.ListAsync(page, pageSize, sortBy, sortOrder, search, processed, token));
+        => Ok(await withdrawalRequests.ListAsync(page, pageSize, sortBy, sortOrder, search, processed, token, requestedFrom, requestedTo));
 
     [HttpPut("withdrawal-requests/processed")]
     public async Task<ActionResult> Process(ProcessConsentWithdrawalRequest request, CancellationToken token)

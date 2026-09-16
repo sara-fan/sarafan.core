@@ -11,6 +11,8 @@
 
 ## Code Standards and Requirements
 
+- Staff legal-document list DTOs include calculated `status`: `future` before EffectiveAt, `current` for the latest effective document per kind and locale, otherwise `outdated`. Use one server-clock snapshot and check successors across the full database before the list limit; never persist this derived state.
+
 ### Entity Framework model configuration
 
 - Keep `AppDbContext.OnModelCreating` as the single `ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly)` registration point. Do not add inline entity mappings, feature-specific registration helpers, partial context mapping methods, or a growing manual configuration list.
@@ -89,6 +91,8 @@
 - Keep convention tests that reject direct construction of controller error responses outside `SarafanControllerBase.cs` and reject RFC 9457 payload construction outside the centralized problem-details factory/service.
 
 ### Observability and Logging
+
+- Problem-factory entry summaries include the explicit allowlisted `PhoneValidationReason`, with `null` and `other` fallbacks. Never log submitted phone values. Keep all withdrawal-list inputs, including date bounds, in the redacted service-boundary input object.
 
 - Emit application logs only through constructor-injected `ILogger<T>` (or a typed `ILogger<T>` resolved at the composition root) and the source-generated stable event catalogue in `src/Sarafan.Core/Observability/SarafanEvents.cs`; do not add vendor-specific loggers, string-based logger categories, ad-hoc event identifiers, interpolated log strings, or direct console output.
 - Keep each event's numeric `EventId`, dotted `EventName`, severity, and fixed English human-readable message stable. Treat changes as an operational contract change and cover them with tests.
@@ -207,3 +211,5 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Customer order list, detail and creation DTOs exclude internal order IDs. Resolve `GET /api/v1/orders/{orderNumber}` using the shared public-number parser and caller ownership in the query; invalid, missing and foreign orders return `resource_not_found`. Creation and replay Location headers use the public number; numeric-ID routes are unsupported.
 
 - Phone normalization returns a typed failure reason; keep `invalid_phone` HTTP/type/code stable and select actionable Russian detail from the centralized problem catalogue. Preserve accepted formats and validation precedence: empty, unsupported characters, prefix, digit count, then separators with initial 8. Never include the submitted number in explanations or logs.
+
+- Privacy-request lists accept optional requestedFrom/requestedTo (YYYY-MM-DD), filter RequestedAt by inclusive Moscow calendar days before counting/paging, and echo both dates. Persist validated date filters in the staff view; keep date controls editable during read refreshes. No database migration is required.

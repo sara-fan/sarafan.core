@@ -80,6 +80,26 @@ public sealed class ConsentPolicyTests
     private static void Reject(Func<Task> action, string code) => Assert.That(async () => await action(), Throws.TypeOf<ServiceException>().With.Property("Code").EqualTo(code));
 
     [Test]
+    public async Task LegalDocumentListCalculatesStatusAtTheEffectiveBoundaryPerKind()
+    {
+        var today = ConsentCalendar.LocalDate(_clock.Now);
+        var old = await CreateDocument();
+        var replacement = await CreateDocument(effectiveDate: today.AddDays(1));
+        var future = await CreateDocument(effectiveDate: today.AddDays(2));
+        var otherKind = await CreateDocument(LegalDocumentKind.UserAgreement);
+        var before = await _documents.ListAsync(null, default);
+        Assert.That(before.Single(x => x.Id == old.Id).Status, Is.EqualTo("current"));
+        Assert.That(before.Single(x => x.Id == replacement.Id).Status, Is.EqualTo("future"));
+        _clock.Now = replacement.EffectiveAt;
+        var after = await _documents.ListAsync(null, default);
+        Assert.That(after.Single(x => x.Id == old.Id).Status, Is.EqualTo("outdated"));
+        Assert.That(after.Single(x => x.Id == replacement.Id).Status, Is.EqualTo("current"));
+        Assert.That(after.Single(x => x.Id == future.Id).Status, Is.EqualTo("future"));
+        Assert.That(after.Single(x => x.Id == otherKind.Id).Status, Is.EqualTo("current"));
+        Assert.That((await _documents.CurrentAsync(old.Kind, default)).Document!.Id, Is.EqualTo(replacement.Id));
+    }
+
+    [Test]
     public void LegalDocumentKindsHaveStableValuesNamesAndAliases()
     {
         var expected = new[]
@@ -288,6 +308,37 @@ public sealed class ConsentPolicyTests
         Assert.That(typeof(CustomerConsentWithdrawalRequest).GetProperties().Select(property => property.Name),
             Is.EquivalentTo(new[] { "CustomerId", "RequestedAt", "Processed" }));
     }
+
+    [Test]
+    public async Task WithdrawalDateRangeIncludesBothMoscowDaysBeforePagination()
+    {
+        var start = new DateTimeOffset(2026, 9, 15, 21, 0, 0, TimeSpan.Zero);
+        var times = new[] { start.AddSeconds(-1), start, start.AddDays(1).AddSeconds(-1), start.AddDays(1) };
+        _db.CustomerConsentWithdrawalRequests.AddRange(times.Select(at => new CustomerConsentWithdrawalRequest
+        {
+            CustomerId = _customer,
+            RequestedAt = at,
+            Processed = true
+        }));
+        await _db.SaveChangesAsync();
+        var result = await _withdrawalRequests.ListAsync(1, 1, "requestedAt", "asc", _customer.ToString(), true, default, "2026-09-16", "2026-09-16");
+        Assert.That(result.Pagination.TotalCount, Is.EqualTo(2));
+        Assert.That(result.Items.Single().RequestedAt, Is.EqualTo(start));
+        Assert.That(result.RequestedFrom, Is.EqualTo(new DateOnly(2026, 9, 16)));
+        Assert.That(result.RequestedTo, Is.EqualTo(result.RequestedFrom));
+        var fromOnly = await _withdrawalRequests.ListAsync(1, 10, "requestedAt", "asc", null, null, default, "2026-09-16");
+        Assert.That(fromOnly.Items, Has.Length.EqualTo(3));
+        var toOnly = await _withdrawalRequests.ListAsync(1, 10, "requestedAt", "asc", null, null, default, requestedTo: "2026-09-16");
+        Assert.That(toOnly.Items, Has.Length.EqualTo(3));
+    }
+
+    [TestCase("2026-02-30", null)]
+    [TestCase(null, "invalid")]
+    [TestCase("2026-09-17", "2026-09-16")]
+    [TestCase("0001-01-01", null)]
+    [TestCase(null, "9999-12-31")]
+    public void WithdrawalDateRangeRejectsInvalidDates(string? from, string? to)
+        => Reject(() => _withdrawalRequests.ListAsync(1, 10, "processed", "asc", null, null, default, from, to), "invalid_consent_withdrawal_request_filter");
 
     [Test]
     public async Task WithdrawalRequestListFiltersSortsAndPaginatesOnTheServer()

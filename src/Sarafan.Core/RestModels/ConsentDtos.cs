@@ -26,7 +26,11 @@ public sealed class LegalDocumentRequest : LegalDocumentPreviewRequest
 public sealed record LegalDocumentDto(Guid Id, LegalDocumentKind Kind, string Locale, string Title, string DisplayVersion,
     string Html, string SourceHash, string ContentHash, string RendererVersion,
     DateTimeOffset EffectiveAt, DateTimeOffset CreatedAt, int? CreatedBy,
-    DateOnly EffectiveLocalDate, string EffectiveTimeZone, bool? CanDelete);
+    DateOnly EffectiveLocalDate, string EffectiveTimeZone, bool? CanDelete)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Status { get; init; }
+}
 public sealed record CurrentDocumentDto(LegalDocumentDto? Document, DateTimeOffset ServerNow, DateTimeOffset? NextChangeAt);
 public sealed record LegalDocumentPreviewDto(string Html);
 public sealed record LegalDocumentOpsItemDto(int Value, string Name, string RouteAlias);
@@ -59,5 +63,9 @@ public sealed record LegalDocumentAuditDto(long Id, Guid DocumentId, int ActorId
     DateTimeOffset EffectiveAt, DateOnly EffectiveLocalDate, string EffectiveTimeZone,
     string SourceHash, string ContentHash);
 public sealed class LegalDocumentAuditPageDto : PagedResult<LegalDocumentAuditDto>;
-public sealed class CustomerConsentWithdrawalRequestPageDto : PagedResult<CustomerConsentWithdrawalRequestDto>;
+public sealed class CustomerConsentWithdrawalRequestPageDto : PagedResult<CustomerConsentWithdrawalRequestDto>
+{
+    public DateOnly? RequestedFrom { get; init; }
+    public DateOnly? RequestedTo { get; init; }
+}
 public sealed record ConsentRetentionDto(int Onboarding, int Events);
