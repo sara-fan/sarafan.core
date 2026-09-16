@@ -3,12 +3,14 @@
 // This file is a part of the Sarafan application
 
 using Sarafan.Core.Models;
+using Sarafan.Core.Authentication;
 
 namespace Sarafan.Core.Services;
 
 public sealed class ServiceException(int statusCode, string code) : Exception(code)
 {
     public int StatusCode { get; } = statusCode;
+    public PhoneValidationReason? PhoneValidationReason { get; init; }
     public Guid? RequiredDocumentId { get; init; }
     public LegalDocumentKind? ConsentKind { get; init; }
     public AuthenticationFlowStep? NextStep { get; init; }

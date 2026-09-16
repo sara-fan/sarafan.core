@@ -54,7 +54,8 @@ public sealed class SarafanExceptionHandler(
             serviceDetails?.RequiredDocumentId,
             serviceDetails?.ConsentKind,
             serviceDetails?.NextStep,
-            serviceDetails?.RequiredDocumentKinds);
+            serviceDetails?.RequiredDocumentKinds,
+            serviceDetails?.PhoneValidationReason);
         return true;
     }
 }

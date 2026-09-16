@@ -363,8 +363,8 @@ public sealed class AuthenticationService(
 
     private string NormalizePhone(string? phone)
     {
-        if (!phoneNormalizer.TryNormalize(phone, out var normalized))
-            throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_phone");
+        if (!phoneNormalizer.TryNormalize(phone, out var normalized, out var reason))
+            throw new ServiceException(StatusCodes.Status400BadRequest, "invalid_phone") { PhoneValidationReason = reason };
         return normalized;
     }
 
