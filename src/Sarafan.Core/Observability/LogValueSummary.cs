@@ -36,6 +36,13 @@ internal static class LogValueSummary
         BackofficeSelfUpdateRequest => "BackofficeSelfUpdateRequest(identity/password=[redacted])",
         CustomerProfileUpdateRequest => "CustomerProfileUpdateRequest([redacted])",
         ProductPreviewRequest => "ProductPreviewRequest(sourceUrl=[redacted])",
+        StoreWriteRequest => "StoreWriteRequest(fields/logo/version=[redacted])",
+        DeleteStoreRequest => "DeleteStoreRequest(version=[redacted])",
+        StaffStoreDto => "StaffStoreDto(fields/logo/version=[redacted])",
+        StoreLogoDto => "StoreLogoDto(content/metadata=[redacted])",
+        StoreListDto<PublicStoreDto> stores => $"PublicStoreDto collection(count={stores.Items.Length})",
+        StoreListDto<StaffStoreDto> stores => $"StaffStoreDto collection(count={stores.Items.Length})",
+        StoreOpsDto => "StoreOpsDto(catalogue/actions=[redacted])",
         ProductPreviewDto preview when preview.Outcome is ProductPreviewDto.ManualReviewOutcome or ProductPreviewDto.RecognizedOutcome
             => $"ProductPreviewDto(sourceUrl/product=[redacted]; outcome={preview.Outcome})",
         ProductPreviewDto => "ProductPreviewDto(sourceUrl/product=[redacted]; outcome=[redacted])",

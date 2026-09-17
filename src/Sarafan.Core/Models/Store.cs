@@ -9,13 +9,19 @@ public sealed class Store
     private Store() { }
 
     // The application service supplies validated fields and its TimeProvider snapshot.
-    internal Store(string name, string description, string officialUrl, DateTimeOffset now)
+    internal Store(string name, string description, string officialUrl, DateTimeOffset now,
+        StoreStatus status = StoreStatus.Hidden, bool showOnHome = false, int displayOrder = 0,
+        (string ContentType, byte[] Content)? logo = null)
     {
         Name = name;
         Description = description;
         OfficialUrl = officialUrl;
         CreatedAt = NormalizeTimestamp(now);
         UpdatedAt = CreatedAt;
+        Status = status;
+        ShowOnHome = showOnHome;
+        DisplayOrder = displayOrder;
+        if (logo.HasValue) Logo = new StoreLogo(this, logo.Value.ContentType, logo.Value.Content);
     }
 
     public int Id { get; private set; }
