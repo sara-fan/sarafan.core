@@ -21,9 +21,11 @@ internal interface IAppDatabaseOperations
     Task LockConsentsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockCustomerAsync(AppDbContext database, int customerId, CancellationToken cancellationToken);
     Task LockAdministratorMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
+    Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockIanaTldCatalogAsync(AppDbContext database, CancellationToken cancellationToken);
     Task<Customer?> FindCustomerForUpdateAsync(AppDbContext database, int customerId, CancellationToken cancellationToken);
     bool IsCustomerOrderCodeCollision(DbUpdateException exception);
+    bool IsStoreDisplayOrderCollision(DbUpdateException exception);
     Task<bool> InsertExchangeRateAsync(
         AppDbContext database,
         CbrRate rate,
@@ -83,6 +85,8 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
         CancellationToken cancellationToken)
         => Task.CompletedTask;
 
+    public Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task LockIanaTldCatalogAsync(
         AppDbContext database,
         CancellationToken cancellationToken)
@@ -95,6 +99,7 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
         => database.Customers.SingleOrDefaultAsync(customer => customer.Id == customerId, cancellationToken);
 
     public bool IsCustomerOrderCodeCollision(DbUpdateException exception) => false;
+    public bool IsStoreDisplayOrderCollision(DbUpdateException exception) => false;
 
     public async Task<bool> InsertExchangeRateAsync(
         AppDbContext database,

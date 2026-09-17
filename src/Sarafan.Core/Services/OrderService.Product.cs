@@ -19,7 +19,7 @@ public sealed partial class OrderService
         => OperationLogging.RunAsync(logger, $"{typeof(OrderService).FullName}.{nameof(GetForBackofficeAsync)}",
             () => LogValueSummary.Inputs((nameof(orderNumber), orderNumber), (nameof(cancellationToken), cancellationToken)), async () =>
             {
-                RequireStaff(roles, BackofficeAction.ManualQuotes);
+                BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManualQuotes);
                 var order = await FindPublicOrder(orderNumber, cancellationToken);
                 var details = StaffDetails(order, roles, await limits.GetPairAsync(cancellationToken));
                 return details with
@@ -34,7 +34,7 @@ public sealed partial class OrderService
             () => LogValueSummary.Inputs((nameof(orderNumber), orderNumber), (nameof(request), request),
                 (nameof(actorId), actorId), (nameof(cancellationToken), cancellationToken)), async () =>
             {
-                RequireStaff(roles, BackofficeAction.EditOrderProduct);
+                BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.EditOrderProduct);
                 await using var transaction = await AppDatabaseOperations.For(database).BeginTransactionAsync(database, cancellationToken);
                 var order = await FindPublicOrder(orderNumber, cancellationToken);
                 if (order.Status != OrderStatus.UnderReview) throw new ServiceException(409, "order_not_editable");
@@ -75,11 +75,6 @@ public sealed partial class OrderService
                 }
                 return StaffDetails(order, roles, pair) with { SavedLimitSourceEffectiveDate = pair.Usd.SourceEffectiveDate };
             }, cancellationToken);
-
-    private static void RequireStaff(string[] roles, BackofficeAction action)
-    {
-        if (!BackofficeAuthorization.IsAllowed(roles, action)) throw new ServiceException(403, "access_denied");
-    }
 
     private async Task<Order> FindPublicOrder(string number, CancellationToken cancellationToken)
     {

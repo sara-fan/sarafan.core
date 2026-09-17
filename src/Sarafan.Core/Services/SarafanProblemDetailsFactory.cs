@@ -33,6 +33,20 @@ public sealed class SarafanProblemDetailsFactory(
     private static readonly IReadOnlyDictionary<string, ProblemDefinition> Definitions =
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
+            ["invalid_store_sort"] = new(400, "Некорректная сортировка магазинов", "Выберите рекомендуемый порядок или сортировку по названию."),
+            ["invalid_store_name"] = new(400, "Некорректное название магазина", "Укажите название магазина длиной от 1 до 200 символов."),
+            ["invalid_store_description"] = new(400, "Некорректное описание магазина", "Укажите описание длиной от 1 до 160 символов."),
+            ["invalid_store_url"] = new(400, "Некорректная ссылка магазина", "Укажите адрес HTTP(S) с допустимым доменом верхнего уровня, без логина и пароля."),
+            ["invalid_store_status"] = new(400, "Некорректный статус магазина", "Выберите статус магазина из списка."),
+            ["store_display_order_conflict"] = new(409, "Порядок показа уже занят", "Этот номер порядка показа уже используется другим магазином."),
+            ["store_priority_limit_exceeded"] = new(409, "Достигнут лимит магазинов на главной", "На главной странице можно показывать не более шести магазинов."),
+            ["invalid_store_display_order"] = new(400, "Некорректный порядок магазина", "Укажите целое число не меньше нуля."),
+            ["invalid_store_version"] = new(400, "Не указана версия магазина", "Обновите карточку и повторите действие с текущей версией магазина."),
+            ["store_update_conflict"] = new(409, "Магазин изменился", "Обновите карточку и повторите изменения."),
+            ["store_logo_required"] = new(400, "Требуется логотип магазина", "Загрузите логотип перед включением магазина."),
+            ["invalid_store_logo_size"] = new(400, "Некорректный размер логотипа", "Загрузите непустой логотип размером не больше 2048 Кб."),
+            ["invalid_store_logo_type"] = new(400, "Неподдерживаемый формат логотипа", "Загрузите логотип в формате PNG, JPEG или WebP."),
+            ["invalid_store_logo_content"] = new(400, "Некорректное содержимое логотипа", $"Загрузите корректный статичный PNG, JPEG или WebP: не более {StoreImageContent.MaxDimension} пикселей по стороне и {StoreImageContent.MaxPixels} пикселей всего. Для анимации WebP допустимо до {StoreImageContent.MaxFrames} кадров и {StoreImageContent.MaxAnimationPixels} пикселей холста суммарно; для метаданных PNG — до {StoreImageContent.MaxMetadataBytes} распакованных байт."),
             ["order_quantity_limit_exceeded"] = new(400, "Превышено количество товара", "Такое количество товара может быть признано коммерческой партией и запрещено к ввозу"),
             ["order_value_limit_exceeded"] = new(400, "Превышена стоимость заказа", OrderLimitService.ExceededMessage),
             ["order_limit_rates_unavailable"] = new(503, "Курсы временно недоступны", "Не удалось проверить стоимость. Повторите попытку позже."),
@@ -271,6 +285,9 @@ public sealed class SarafanProblemDetailsFactory(
         var traceId = SarafanTraceIdentifiers.GetOrCreate(context);
         var field = code switch
         {
+            "store_display_order_conflict" => "displayOrder",
+            "invalid_store_url" => "officialUrl",
+            "store_priority_limit_exceeded" => "status",
             "order_quantity_limit_exceeded" => "quantity",
             "order_value_limit_exceeded" => "sellerPrice",
             "invalid_order_product_name" => "productName",

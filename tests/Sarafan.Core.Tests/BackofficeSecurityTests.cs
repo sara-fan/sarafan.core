@@ -28,6 +28,26 @@ public sealed class BackofficeSecurityTests
     [SetUp]
     public Task SetUp() => IntegrationTestEnvironment.ResetAsync();
 
+    [TestCase(BackofficeRoles.Operator, BackofficeAction.CreateStore)]
+    [TestCase("unknown", BackofficeAction.ViewStores)]
+    [TestCase(BackofficeRoles.Administrator, (BackofficeAction)int.MaxValue)]
+    public void ServiceAuthorizationGuard_DeniesWithStableAccessError(string role, BackofficeAction action)
+    {
+        var error = Assert.Throws<ServiceException>(() => BackofficeAuthorization.RequireAllowed([role], action));
+        Assert.That(error!.StatusCode, Is.EqualTo(403));
+        Assert.That(error.Code, Is.EqualTo("access_denied"));
+    }
+
+    [Test]
+    public void ServiceAuthorizationGuard_AllowsPermittedStaffAndDeniesMissingRoles()
+    {
+        Assert.DoesNotThrow(() => BackofficeAuthorization.RequireAllowed(
+            [BackofficeRoles.ShiftManager], BackofficeAction.EditStore));
+        var error = Assert.Throws<ServiceException>(() => BackofficeAuthorization.RequireAllowed([], BackofficeAction.ViewStores));
+        Assert.That(error!.StatusCode, Is.EqualTo(403));
+        Assert.That(error.Code, Is.EqualTo("access_denied"));
+    }
+
     [Test]
     public void RoleCatalogAndAuthorizationMatrix_AreFixedAndFailClosed()
     {
