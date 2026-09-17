@@ -121,7 +121,8 @@ internal static partial class ProductSourceUrl
             var idnHost = uri.IdnHost;
             if (string.IsNullOrEmpty(idnHost)
                 || requireValidDomainSuffix
-                    && (topLevelDomains is null || !IanaTopLevelDomainRules.HasValidSuffix(idnHost, topLevelDomains)))
+                    && (uri.HostNameType is UriHostNameType.IPv4 or UriHostNameType.IPv6
+                        || topLevelDomains is null || !IanaTopLevelDomainRules.HasValidSuffix(idnHost, topLevelDomains)))
             {
                 return false;
             }

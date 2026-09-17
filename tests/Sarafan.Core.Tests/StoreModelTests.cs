@@ -29,7 +29,7 @@ public sealed class StoreModelTests
         var store = model.FindEntityType(typeof(Store))!;
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(Enum.GetValues<StoreStatus>(), Is.EqualTo(new[] { StoreStatus.Hidden, StoreStatus.Active }));
+            Assert.That(Enum.GetValues<StoreStatus>(), Is.EqualTo(new[] { StoreStatus.Hidden, StoreStatus.Active, StoreStatus.Priority }));
             Assert.That(store.GetTableName(), Is.EqualTo("stores"));
             Assert.That(store.FindPrimaryKey()!.Properties.Select(item => item.Name), Is.EqualTo(new[] { "Id" }));
             Assert.That(store.FindProperty(nameof(Store.Name))!.GetMaxLength(), Is.EqualTo(200));
@@ -38,7 +38,6 @@ public sealed class StoreModelTests
             Assert.That(store.GetProperties().All(item => !item.IsNullable), Is.True);
             Assert.That(store.FindProperty(nameof(Store.Status))!.GetDefaultValue(), Is.EqualTo(StoreStatus.Hidden));
             Assert.That(store.FindProperty(nameof(Store.Status))!.GetColumnType(), Is.EqualTo("integer"));
-            Assert.That(store.FindProperty(nameof(Store.ShowOnHome))!.GetDefaultValue(), Is.False);
             Assert.That(store.FindProperty(nameof(Store.DisplayOrder))!.GetDefaultValue(), Is.EqualTo(0));
             Assert.That(store.FindProperty(nameof(Store.Version))!.IsConcurrencyToken, Is.True);
             Assert.That(store.FindProperty(nameof(Store.Version))!.ValueGenerated, Is.EqualTo(ValueGenerated.Never));
@@ -47,9 +46,9 @@ public sealed class StoreModelTests
             Assert.That(store.FindProperty(nameof(Store.CreatedAt))!.GetColumnType(), Is.EqualTo("timestamp with time zone"));
             Assert.That(store.FindProperty(nameof(Store.UpdatedAt))!.GetColumnType(), Is.EqualTo("timestamp with time zone"));
             Assert.That(store.GetIndexes().Select(index => string.Join(",", index.Properties.Select(item => item.Name))),
-                Is.EquivalentTo(new[] { "Status,DisplayOrder,Id", "Status,ShowOnHome,DisplayOrder,Id" }));
+                Is.EquivalentTo(new[] { "Status,DisplayOrder,Id", "DisplayOrder" }));
             Assert.That(store.GetCheckConstraints().ToDictionary(item => item.Name!, item => item.Sql),
-                Does.ContainKey("ck_stores_status").WithValue("status IN (0, 1)"));
+                Does.ContainKey("ck_stores_status").WithValue("status IN (0, 1, 2)"));
             Assert.That(store.GetCheckConstraints().ToDictionary(item => item.Name!, item => item.Sql),
                 Does.ContainKey("ck_stores_display_order").WithValue("display_order >= 0"));
             Assert.That(store.GetForeignKeys(), Is.Empty);
@@ -92,7 +91,6 @@ public sealed class StoreModelTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(store.Status, Is.EqualTo(StoreStatus.Hidden));
-            Assert.That(store.ShowOnHome, Is.False);
             Assert.That(store.DisplayOrder, Is.Zero);
             Assert.That(store.Logo, Is.Null);
             Assert.That(store.Version, Is.Not.EqualTo(Guid.Empty));
@@ -107,23 +105,22 @@ public sealed class StoreModelTests
     {
         var store = new Store("Shop", "Description", "https://shop.example", Now);
         var version = store.Version;
-        store.Update("New shop", "New description", "http://new.example", StoreStatus.Active, true, 3, Now.AddSeconds(1));
+        store.Update("New shop", "New description", "http://new.example", StoreStatus.Priority, 3, Now.AddSeconds(1));
         using (Assert.EnterMultipleScope())
         {
             Assert.That(store.Name, Is.EqualTo("New shop"));
             Assert.That(store.Description, Is.EqualTo("New description"));
             Assert.That(store.OfficialUrl, Is.EqualTo("http://new.example"));
-            Assert.That(store.Status, Is.EqualTo(StoreStatus.Active));
+            Assert.That(store.Status, Is.EqualTo(StoreStatus.Priority));
             Assert.That(store.Version, Is.Not.EqualTo(version));
             Assert.That(store.UpdatedAt, Is.EqualTo(Now.AddSeconds(1)));
         }
 
         version = store.Version;
-        store.Update(store.Name, store.Description, store.OfficialUrl, StoreStatus.Hidden, store.ShowOnHome, store.DisplayOrder, Now);
+        store.Update(store.Name, store.Description, store.OfficialUrl, StoreStatus.Hidden, store.DisplayOrder, Now);
         using (Assert.EnterMultipleScope())
         {
             Assert.That(store.Status, Is.EqualTo(StoreStatus.Hidden));
-            Assert.That(store.ShowOnHome, Is.True);
             Assert.That(store.DisplayOrder, Is.EqualTo(3));
             Assert.That(store.Name, Is.EqualTo("New shop"));
             Assert.That(store.Version, Is.Not.EqualTo(version));

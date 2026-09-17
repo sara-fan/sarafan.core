@@ -10,31 +10,35 @@ namespace Sarafan.Core.Services;
 
 internal static class StoreRules
 {
+    internal const int MaxPriorityStores = 6;
     internal const int LogoMaxBytes = 2 * 1024 * 1024;
     internal const int RequestMaxBytes = LogoMaxBytes + 64 * 1024;
 
-    internal static StoreOpsDto Operations(string[] roles) => new(
-        [new(StoreStatus.Hidden, "Скрыт", "hidden"), new(StoreStatus.Active, "Активен", "active")],
+    internal static StoreOpsDto Operations(string[] roles, IanaTldCatalogSnapshot tlds) => new(
+        [new(StoreStatus.Hidden, "Скрыт", "hidden"), new(StoreStatus.Active, "Показывается в общем списке", "active"), new(StoreStatus.Priority, "Показывается в общем списке и на главной странице", "priority")],
         new(200, 160, 140, 2048, LogoMaxBytes, ["image/png", "image/jpeg", "image/webp"],
-            StoreImageContent.MaxDimension, StoreImageContent.MaxPixels, StoreImageContent.MaxFrames, StoreImageContent.MaxAnimationPixels,
+            MaxPriorityStores, StoreImageContent.MaxDimension, StoreImageContent.MaxPixels, StoreImageContent.MaxFrames, StoreImageContent.MaxAnimationPixels,
             StoreImageContent.MaxMetadataBytes),
         new(BackofficeAuthorization.IsAllowed(roles, BackofficeAction.ViewStores),
             BackofficeAuthorization.IsAllowed(roles, BackofficeAction.CreateStore),
             BackofficeAuthorization.IsAllowed(roles, BackofficeAction.EditStore),
-            BackofficeAuthorization.IsAllowed(roles, BackofficeAction.DeleteStore)));
+            BackofficeAuthorization.IsAllowed(roles, BackofficeAction.DeleteStore)),
+        new(ProductSourceUrl.MaximumLength, tlds.Version, tlds.TopLevelDomains));
 
-    internal static (string Name, string Description, string Url) Normalize(StoreWriteRequest request)
+    internal static (string Name, string Description, string Url) Normalize(StoreWriteRequest request, IanaTldCatalogSnapshot tlds)
     {
         var name = request.Name?.Trim() ?? "";
         var description = request.Description?.Trim() ?? "";
         var url = request.OfficialUrl?.Trim() ?? "";
         if (name.Length is < 1 or > 200) throw new ServiceException(400, "invalid_store_name");
         if (description.Length is < 1 or > 160) throw new ServiceException(400, "invalid_store_description");
-        if (url.Length is < 1 or > 2048 || url.Any(char.IsControl) || url.Contains('\\')
-            || !Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            || uri.Scheme is not ("http" or "https") || string.IsNullOrEmpty(uri.Host)
-            || !string.IsNullOrEmpty(uri.UserInfo))
+        if (url.Any(char.IsControl) || url.Contains('\\'))
             throw new ServiceException(400, "invalid_store_url");
+        try { url = ProductSourceUrl.Normalize(url, tlds.Values); }
+        catch (ServiceException exception) when (exception.Code == "invalid_order_url")
+        {
+            throw new ServiceException(400, "invalid_store_url");
+        }
         if (!Enum.IsDefined(request.Status)) throw new ServiceException(400, "invalid_store_status");
         if (request.DisplayOrder < 0) throw new ServiceException(400, "invalid_store_display_order");
         return (name, description, url);

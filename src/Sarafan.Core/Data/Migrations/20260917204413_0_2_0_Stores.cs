@@ -26,7 +26,6 @@ namespace Sarafan.Core.Data.Migrations
                     description = table.Column<string>(type: "character varying(160)", maxLength: 160, nullable: false),
                     official_url = table.Column<string>(type: "character varying(2048)", maxLength: 2048, nullable: false),
                     status = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    show_on_home = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
                     display_order = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
@@ -39,7 +38,7 @@ namespace Sarafan.Core.Data.Migrations
                     table.CheckConstraint("ck_stores_display_order", "display_order >= 0");
                     table.CheckConstraint("ck_stores_name", "btrim(name) <> ''");
                     table.CheckConstraint("ck_stores_official_url", "official_url ~* '^https?://'");
-                    table.CheckConstraint("ck_stores_status", "status IN (0, 1)");
+                    table.CheckConstraint("ck_stores_status", "status IN (0, 1, 2)");
                     table.CheckConstraint("ck_stores_timestamps", "updated_at >= created_at");
                     table.CheckConstraint("ck_stores_version", "version <> '00000000-0000-0000-0000-000000000000'::uuid");
                 });
@@ -73,9 +72,10 @@ namespace Sarafan.Core.Data.Migrations
                 columns: new[] { "status", "display_order", "id" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_stores_status_show_on_home_display_order_id",
+                name: "ux_stores_display_order",
                 table: "stores",
-                columns: new[] { "status", "show_on_home", "display_order", "id" });
+                column: "display_order",
+                unique: true);
         }
 
         /// <inheritdoc />

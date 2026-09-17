@@ -33,6 +33,37 @@ public sealed class StoreApiTests
     [TearDown] public void TearDown() => _client.Dispose();
 
     [Test]
+    public async Task WebsiteOpsAndHttpWritesEnforceCurrentTldRules()
+    {
+        var token = await StaffToken(BackofficeRoles.Administrator);
+        using var opsResponse = await Send(HttpMethod.Get, StaffPath + "/ops", token);
+        var ops = (await opsResponse.Content.ReadFromJsonAsync<StoreOpsDto>())!;
+        Assert.That(ops.OfficialUrlRules.MaximumLength, Is.EqualTo(ops.Limits.OfficialUrlMaxLength));
+        Assert.That(ops.OfficialUrlRules.TopLevelDomains, Does.Contain("COM"));
+        Assert.That(ops.OfficialUrlRules.TopLevelDomainListVersion, Is.Not.Empty);
+        using var invalid = await Send(HttpMethod.Post, StaffPath, token, Form(url: "shop.invalid"));
+        await Problem(invalid, HttpStatusCode.BadRequest, "invalid_store_url");
+        using var invalidBody = JsonDocument.Parse(await invalid.Content.ReadAsStringAsync());
+        Assert.That(invalidBody.RootElement.GetProperty("errors").TryGetProperty("officialUrl", out _), Is.True);
+        using var creation = await Send(HttpMethod.Post, StaffPath, token, Form(url: "shop.example.com"));
+        Assert.That(creation.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        var store = (await creation.Content.ReadFromJsonAsync<StaffStoreDto>())!;
+        Assert.That(store.OfficialUrl, Is.EqualTo("https://shop.example.com/"));
+        using var badUpdate = await Send(HttpMethod.Put, $"{StaffPath}/{store.Id}", token, Form(store.Version, url: "127.0.0.1"));
+        await Problem(badUpdate, HttpStatusCode.BadRequest, "invalid_store_url");
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.IanaTldCatalog.RemoveRange(database.IanaTldCatalog);
+            await database.SaveChangesAsync();
+        }
+        using var unavailable = await Send(HttpMethod.Get, StaffPath + "/ops", token);
+        await Problem(unavailable, HttpStatusCode.ServiceUnavailable, "tld_catalog_unavailable");
+        using var readable = await Send(HttpMethod.Get, $"{StaffPath}/{store.Id}", token);
+        Assert.That(readable.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+    }
+
+    [Test]
     public async Task EveryStaffEndpointUsesTheExactRoleMatrix()
     {
         foreach (var role in BackofficeRoles.Codes)
@@ -59,7 +90,7 @@ public sealed class StoreApiTests
             }
             using var create = await Send(HttpMethod.Post, StaffPath, token, Form());
             Assert.That(create.StatusCode, Is.EqualTo(role == BackofficeRoles.Administrator ? HttpStatusCode.Created : HttpStatusCode.Forbidden));
-            using var update = await Send(HttpMethod.Put, $"{StaffPath}/{store.Id}", token, Form(store.Version));
+            using var update = await Send(HttpMethod.Put, $"{StaffPath}/{store.Id}", token, Form(store.Version, displayOrder: store.DisplayOrder));
             var canEdit = role is BackofficeRoles.Administrator or BackofficeRoles.ShiftManager;
             Assert.That(update.StatusCode, Is.EqualTo(canEdit ? HttpStatusCode.OK : HttpStatusCode.Forbidden));
             var version = canEdit ? (await update.Content.ReadFromJsonAsync<StaffStoreDto>())!.Version : store.Version;
@@ -87,11 +118,44 @@ public sealed class StoreApiTests
                 Assert.That(response.Headers.WwwAuthenticate.Single().Scheme, Is.EqualTo("Bearer"));
             }
             using var create = await Send(HttpMethod.Post, StaffPath, token, Form());
-            using var update = await Send(HttpMethod.Put, $"{StaffPath}/{store.Id}", token, Form(store.Version));
+            using var update = await Send(HttpMethod.Put, $"{StaffPath}/{store.Id}", token, Form(store.Version, displayOrder: store.DisplayOrder));
             using var delete = await Send(HttpMethod.Delete, $"{StaffPath}/{store.Id}", token, JsonContent.Create(new DeleteStoreRequest(store.Version)));
             foreach (var response in new[] { create, update, delete })
                 await Problem(response, HttpStatusCode.Unauthorized, "invalid_backoffice_access_token");
         }
+    }
+
+    [Test]
+    public async Task PriorityWireContractSeparatesCatalogueAndHomepageAndRequiresLogo()
+    {
+        var token = await StaffToken(BackofficeRoles.Administrator);
+        using var opsResponse = await Send(HttpMethod.Get, StaffPath + "/ops", token);
+        var ops = (await opsResponse.Content.ReadFromJsonAsync<StoreOpsDto>())!;
+        Assert.That(ops.Limits.MaxPriorityStores, Is.EqualTo(6));
+        Assert.That(ops.Statuses.Select(item => item.Name), Is.EqualTo(new[]
+        {
+            "Скрыт", "Показывается в общем списке", "Показывается в общем списке и на главной странице"
+        }));
+        Assert.That(ops.Statuses.Select(item => item.RouteAlias), Is.EqualTo(new[] { "hidden", "active", "priority" }));
+        using var missingLogo = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Priority, logo: false));
+        await Problem(missingLogo, HttpStatusCode.BadRequest, "store_logo_required");
+        using var activeResponse = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Active, displayOrder: 0));
+        using var priorityResponse = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Priority, displayOrder: 1));
+        using var hiddenResponse = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Hidden, displayOrder: 2));
+        foreach (var response in new[] { activeResponse, priorityResponse, hiddenResponse })
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        var active = (await activeResponse.Content.ReadFromJsonAsync<StaffStoreDto>())!;
+        var priority = (await priorityResponse.Content.ReadFromJsonAsync<StaffStoreDto>())!;
+        Assert.That(priority.Status, Is.EqualTo(StoreStatus.Priority));
+        Assert.That(await priorityResponse.Content.ReadAsStringAsync(), Does.Not.Contain("showOnHome"));
+        var catalogue = (await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>("/api/v1/stores"))!.Items;
+        Assert.That(catalogue.Select(item => item.Id), Is.EqualTo(new[] { active.Id, priority.Id }));
+        Assert.That((await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>("/api/v1/stores/featured"))!.Items.Select(item => item.Id),
+            Is.EqualTo(new[] { priority.Id }));
+        using var staff = await Send(HttpMethod.Get, StaffPath + "?status=2", token);
+        Assert.That((await staff.Content.ReadFromJsonAsync<StoreListDto<StaffStoreDto>>())!.Items.Select(item => item.Id), Is.EqualTo(new[] { priority.Id }));
+        using var logo = await _client.GetAsync(catalogue.Single(item => item.Id == priority.Id).LogoUrl);
+        Assert.That(logo.StatusCode, Is.EqualTo(HttpStatusCode.OK));
     }
 
     [Test]
@@ -100,7 +164,6 @@ public sealed class StoreApiTests
         await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
         {
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            database.IanaTldCatalog.RemoveRange(database.IanaTldCatalog);
             database.ExchangeRateHistory.RemoveRange(database.ExchangeRateHistory);
             await database.SaveChangesAsync();
         }
@@ -116,6 +179,12 @@ public sealed class StoreApiTests
         Assert.That(creation.StatusCode, Is.EqualTo(HttpStatusCode.Created));
         var store = (await creation.Content.ReadFromJsonAsync<StaffStoreDto>())!;
         Assert.That(creation.Headers.Location!.ToString(), Does.EndWith($"{StaffPath}/{store.Id}"));
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.IanaTldCatalog.RemoveRange(database.IanaTldCatalog);
+            await database.SaveChangesAsync();
+        }
         using var catalogue = await _client.GetAsync("/api/v1/stores?sort=name-desc");
         var publicStore = (await catalogue.Content.ReadFromJsonAsync<StoreListDto<PublicStoreDto>>())!.Items.Single();
         var json = JsonDocument.Parse(await catalogue.Content.ReadAsStringAsync());
@@ -131,6 +200,12 @@ public sealed class StoreApiTests
         using var unchanged = await _client.SendAsync(conditional);
         Assert.That(unchanged.StatusCode, Is.EqualTo(HttpStatusCode.NotModified));
 
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.IanaTldCatalog.Add(IntegrationTestEnvironment.CreateIanaTldCatalog());
+            await database.SaveChangesAsync();
+        }
         using var hiddenResponse = await Send(HttpMethod.Put, $"{StaffPath}/{store.Id}", token, Form(store.Version, logo: false));
         var hidden = (await hiddenResponse.Content.ReadFromJsonAsync<StaffStoreDto>())!;
         using var hiddenLogoRequest = new HttpRequestMessage(HttpMethod.Get, publicStore.LogoUrl);
@@ -206,14 +281,14 @@ public sealed class StoreApiTests
         Assert.That(await refreshed.Content.ReadAsByteArrayAsync(), Is.EqualTo(StoreImageFixtures.Webp));
     }
 
-    internal static MultipartFormDataContent Form(Guid? version = null, StoreStatus status = StoreStatus.Hidden, bool logo = true, string name = "  Shop  ")
+    internal static MultipartFormDataContent Form(Guid? version = null, StoreStatus status = StoreStatus.Hidden, bool logo = true, string name = "  Shop  ", int displayOrder = 3, string url = "https://shop.example.com")
     {
         var form = new MultipartFormDataContent
         {
             { new StringContent(name), "name" }, { new StringContent("Description"), "description" },
-            { new StringContent("https://shop.example.com"), "officialUrl" },
+            { new StringContent(url), "officialUrl" },
             { new StringContent(((int)status).ToString()), "status" },
-            { new StringContent("true"), "showOnHome" }, { new StringContent("3"), "displayOrder" }
+            { new StringContent(displayOrder.ToString()), "displayOrder" }
         };
         if (version.HasValue) form.Add(new StringContent(version.Value.ToString()), "version");
         if (logo)
@@ -235,8 +310,11 @@ public sealed class StoreApiTests
     private static async Task<StaffStoreDto> Seed()
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var request = StoreServiceTests.Request();
+        request.DisplayOrder = (await database.Stores.Select(item => (int?)item.DisplayOrder).MaxAsync() ?? 3) + 1;
         return await scope.ServiceProvider.GetRequiredService<StoreService>()
-            .CreateAsync(StoreServiceTests.Request(), [BackofficeRoles.Administrator], default);
+            .CreateAsync(request, [BackofficeRoles.Administrator], default);
     }
 
     private static async Task<string> StaffToken(string role)

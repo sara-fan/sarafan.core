@@ -36,8 +36,10 @@ public sealed class SarafanProblemDetailsFactory(
             ["invalid_store_sort"] = new(400, "Некорректная сортировка магазинов", "Выберите рекомендуемый порядок или сортировку по названию."),
             ["invalid_store_name"] = new(400, "Некорректное название магазина", "Укажите название магазина длиной от 1 до 200 символов."),
             ["invalid_store_description"] = new(400, "Некорректное описание магазина", "Укажите описание длиной от 1 до 160 символов."),
-            ["invalid_store_url"] = new(400, "Некорректная ссылка магазина", "Укажите полный адрес официального сайта с http:// или https:// без логина и пароля."),
-            ["invalid_store_status"] = new(400, "Некорректный статус магазина", "Выберите статус «Активен» или «Скрыт»."),
+            ["invalid_store_url"] = new(400, "Некорректная ссылка магазина", "Укажите адрес HTTP(S) с допустимым доменом верхнего уровня, без логина и пароля."),
+            ["invalid_store_status"] = new(400, "Некорректный статус магазина", "Выберите статус магазина из списка."),
+            ["store_display_order_conflict"] = new(409, "Порядок показа уже занят", "Этот номер порядка показа уже используется другим магазином."),
+            ["store_priority_limit_exceeded"] = new(409, "Достигнут лимит магазинов на главной", "На главной странице можно показывать не более шести магазинов."),
             ["invalid_store_display_order"] = new(400, "Некорректный порядок магазина", "Укажите целое число не меньше нуля."),
             ["invalid_store_version"] = new(400, "Не указана версия магазина", "Обновите карточку и повторите действие с текущей версией магазина."),
             ["store_update_conflict"] = new(409, "Магазин изменился", "Обновите карточку и повторите изменения."),
@@ -283,6 +285,9 @@ public sealed class SarafanProblemDetailsFactory(
         var traceId = SarafanTraceIdentifiers.GetOrCreate(context);
         var field = code switch
         {
+            "store_display_order_conflict" => "displayOrder",
+            "invalid_store_url" => "officialUrl",
+            "store_priority_limit_exceeded" => "status",
             "order_quantity_limit_exceeded" => "quantity",
             "order_value_limit_exceeded" => "sellerPrice",
             "invalid_order_product_name" => "productName",

@@ -1178,12 +1178,6 @@ namespace Sarafan.Core.Data.Migrations
                         .HasColumnType("character varying(2048)")
                         .HasColumnName("official_url");
 
-                    b.Property<bool>("ShowOnHome")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("show_on_home");
-
                     b.Property<int>("Status")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -1201,11 +1195,12 @@ namespace Sarafan.Core.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DisplayOrder")
+                        .IsUnique()
+                        .HasDatabaseName("ux_stores_display_order");
+
                     b.HasIndex("Status", "DisplayOrder", "Id")
                         .HasDatabaseName("ix_stores_status_display_order_id");
-
-                    b.HasIndex("Status", "ShowOnHome", "DisplayOrder", "Id")
-                        .HasDatabaseName("ix_stores_status_show_on_home_display_order_id");
 
                     b.ToTable("stores", null, t =>
                         {
@@ -1217,7 +1212,7 @@ namespace Sarafan.Core.Data.Migrations
 
                             t.HasCheckConstraint("ck_stores_official_url", "official_url ~* '^https?://'");
 
-                            t.HasCheckConstraint("ck_stores_status", "status IN (0, 1)");
+                            t.HasCheckConstraint("ck_stores_status", "status IN (0, 1, 2)");
 
                             t.HasCheckConstraint("ck_stores_timestamps", "updated_at >= created_at");
 

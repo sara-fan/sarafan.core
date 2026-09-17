@@ -10,7 +10,7 @@ public sealed class Store
 
     // The application service supplies validated fields and its TimeProvider snapshot.
     internal Store(string name, string description, string officialUrl, DateTimeOffset now,
-        StoreStatus status = StoreStatus.Hidden, bool showOnHome = false, int displayOrder = 0,
+        StoreStatus status = StoreStatus.Hidden, int displayOrder = 0,
         (string ContentType, byte[] Content)? logo = null)
     {
         Name = name;
@@ -19,7 +19,6 @@ public sealed class Store
         CreatedAt = NormalizeTimestamp(now);
         UpdatedAt = CreatedAt;
         Status = status;
-        ShowOnHome = showOnHome;
         DisplayOrder = displayOrder;
         if (logo.HasValue) Logo = new StoreLogo(this, logo.Value.ContentType, logo.Value.Content);
     }
@@ -29,7 +28,6 @@ public sealed class Store
     public string Description { get; private set; } = string.Empty;
     public string OfficialUrl { get; private set; } = string.Empty;
     public StoreStatus Status { get; private set; } = StoreStatus.Hidden;
-    public bool ShowOnHome { get; private set; }
     public int DisplayOrder { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -38,14 +36,13 @@ public sealed class Store
 
     internal void Update(
         string name, string description, string officialUrl, StoreStatus status,
-        bool showOnHome, int displayOrder, DateTimeOffset now)
+        int displayOrder, DateTimeOffset now)
     {
         AdvanceVersion(now);
         Name = name;
         Description = description;
         OfficialUrl = officialUrl;
         Status = status;
-        ShowOnHome = showOnHome;
         DisplayOrder = displayOrder;
     }
 
