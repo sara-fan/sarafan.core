@@ -1,0 +1,15 @@
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of the Sarafan application
+
+namespace Sarafan.Core.StoreTests;
+
+// Real 2x2 images encoded with Pillow; no customer or external image data.
+internal static class StoreImageFixtures
+{
+    internal static byte[] Jpeg => Convert.FromBase64String("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwCOiiivmj7A/9k=");
+    internal static byte[] Webp => Convert.FromBase64String("UklGRjoAAABXRUJQVlA4IC4AAADwAQCdASoCAAIAAUAmJaACdLoB+AAEyAAA/q4X/zYEDND6YP/SbPE2eJs+OYAA");
+    internal static byte[] WebpLossless => Convert.FromBase64String("UklGRh4AAABXRUJQVlA4TBEAAAAvAUAAAAdQsiJXpv+BiOh/AAA=");
+    internal static byte[] WebpExtended => Convert.FromBase64String("UklGRloAAABXRUJQVlA4WAoAAAAQAAAAAQAAAQAAQUxQSAUAAAAAgP///wBWUDggLgAAAPABAJ0BKgIAAgABQCYloAJ0ugH4AATIAAD+rhf/NgQM0Ppg/9Js8TZ4mz45gAA=");
+    internal static byte[] WebpAnimated => Convert.FromBase64String("UklGRuAAAABXRUJQVlA4WAoAAAASAAAAAQAAAQAAQU5JTQYAAAAAAAAAAABBTk1GVgAAAAAAAAAAAAEAAAEAAGQAAAJBTFBIBQAAAACA////AFZQOCAwAAAAMAEAnQEqAgACAAFAJiWgAANwAP7E7///Ngf+Qf/IPv9//+k2f/0mz/+k2fHMAAAAQU5NRlYAAAAAAAAAAAABAAABAABkAAACQUxQSAUAAAAAWlpaWgBWUDggMAAAADABAJ0BKgIAAgABQCYloAADcAD++LUX//3jP//uM//+4z/37f//lK/+N3+7LeAAAA==");
+}

@@ -17,7 +17,11 @@ public enum BackofficeAction
     ManualQuotes = 4,
     ManageLegalDocuments = 5,
     ManageConsentWithdrawalRequests = 6,
-    EditOrderProduct = 7
+    EditOrderProduct = 7,
+    ViewStores = 8,
+    CreateStore = 9,
+    EditStore = 10,
+    DeleteStore = 11
 }
 
 public static class BackofficeAuthenticationDefaults
@@ -28,6 +32,10 @@ public static class BackofficeAuthenticationDefaults
 public static class BackofficePolicies
 {
     public const string Access = "backoffice:access";
+    public const string ViewStores = "backoffice:view-stores";
+    public const string CreateStore = "backoffice:create-store";
+    public const string EditStore = "backoffice:edit-store";
+    public const string DeleteStore = "backoffice:delete-store";
     public const string EditOrderProduct = "backoffice:edit-order-product";
     public const string ManageUsers = "backoffice:manage-users";
     public const string ManageRoles = "backoffice:manage-roles";
@@ -47,6 +55,10 @@ public static class BackofficeAuthorization
         new Dictionary<BackofficeAction, IReadOnlySet<string>>
         {
             [BackofficeAction.Access] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
+            [BackofficeAction.ViewStores] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
+            [BackofficeAction.CreateStore] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
+            [BackofficeAction.EditStore] = new HashSet<string>([BackofficeRoles.Administrator, BackofficeRoles.ShiftManager], StringComparer.Ordinal),
+            [BackofficeAction.DeleteStore] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.EditOrderProduct] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
             [BackofficeAction.ManageUsers] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.ManageRoles] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
@@ -64,6 +76,10 @@ public static class BackofficeAuthorization
     public static void Configure(AuthorizationOptions options)
     {
         AddPolicy(options, BackofficePolicies.Access, BackofficeAction.Access);
+        AddPolicy(options, BackofficePolicies.ViewStores, BackofficeAction.ViewStores);
+        AddPolicy(options, BackofficePolicies.CreateStore, BackofficeAction.CreateStore);
+        AddPolicy(options, BackofficePolicies.EditStore, BackofficeAction.EditStore);
+        AddPolicy(options, BackofficePolicies.DeleteStore, BackofficeAction.DeleteStore);
         AddPolicy(options, BackofficePolicies.EditOrderProduct, BackofficeAction.EditOrderProduct);
         AddPolicy(options, BackofficePolicies.ManageUsers, BackofficeAction.ManageUsers);
         AddPolicy(options, BackofficePolicies.ManageRoles, BackofficeAction.ManageRoles);
