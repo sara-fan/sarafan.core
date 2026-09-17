@@ -20,6 +20,11 @@
 - Use explicit table and column names, keys, lengths/types/conversions, indexes, concurrency tokens and seed data in the owning entity's configuration. Declare each relationship once, on its dependent/foreign-key entity. Avoid configuration-order dependencies and passes that silently rewrite another entity's metadata; there is no feature-specific naming convention.
 - `AppDbContextModelTests` enforce one discoverable configuration per mapped entity and configuration-order independence through disconnected Npgsql metadata. They must never open a connection or compare the model with a migration snapshot. Configuration-only refactors must not create schema migrations or edit snapshots; intentional schema changes retain their normal production migration and deployment review.
 
+### Store catalogue persistence
+
+- FR-PUB-006–014 and Core #40 govern the store catalogue foundation. Store status is numeric Hidden (0, the default) or Active (1); there is no archive state. Keep logos in the separate one-to-one `store_logos` table with cascade deletion, and keep catalogue stores independent of order product snapshots.
+- Mutate stores through their model methods with a server `TimeProvider` snapshot; field, status, selection, order and logo changes advance the opaque `Version` concurrency token and UTC microsecond `UpdatedAt`. Load the existing logo before replacement, retain the tracked dependent, and keep logo bytes out of list projections. Service-level activation, URL/upload validation and authorization belong to Core #41.
+
 ### Protected local database configuration
 
 - Treat `docker-compose.override.yml` as user-owned machine configuration. Do not edit, replace, delete, regenerate, or commit it without explicit user authorization for that action; general implementation, testing, cleanup, or deployment requests do not authorize these changes.
