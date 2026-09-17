@@ -14,7 +14,7 @@ namespace Sarafan.Core.Controllers;
 [Authorize(Policy = BackofficePolicies.ViewStores)]
 [Route("api/v1/backoffice/stores")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class BackofficeStoresController(StoreService stores, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
+public sealed class BackofficeStoresController(StoreService stores, SarafanProblemDetailsFactory problems, IanaTldCatalogService tlds) : SarafanControllerBase(problems)
 {
     private string[] Roles => User.FindAll("role").Select(claim => claim.Value).ToArray();
 
@@ -23,7 +23,8 @@ public sealed class BackofficeStoresController(StoreService stores, SarafanProbl
         => Ok(await stores.ListStaffAsync(status, Roles, token));
 
     [HttpGet("ops")]
-    public ActionResult<StoreOpsDto> Operations() => Ok(StoreRules.Operations(Roles));
+    public async Task<ActionResult<StoreOpsDto>> Operations(CancellationToken token)
+        => Ok(StoreRules.Operations(Roles, await tlds.GetRequiredAsync(token)));
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<StaffStoreDto>> Get(int id, CancellationToken token)

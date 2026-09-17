@@ -7,5 +7,6 @@ namespace Sarafan.Core.Models;
 public enum StoreStatus
 {
     Hidden = 0,
-    Active = 1
+    Active = 1,
+    Priority = 2
 }

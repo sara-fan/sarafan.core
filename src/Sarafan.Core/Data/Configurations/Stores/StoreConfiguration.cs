@@ -16,7 +16,7 @@ internal sealed class StoreConfiguration : IEntityTypeConfiguration<Store>
     {
         builder.ToTable("stores", table =>
         {
-            table.HasCheckConstraint("ck_stores_status", "status IN (0, 1)");
+            table.HasCheckConstraint("ck_stores_status", "status IN (0, 1, 2)");
             table.HasCheckConstraint("ck_stores_display_order", "display_order >= 0");
             table.HasCheckConstraint("ck_stores_name", "btrim(name) <> ''");
             table.HasCheckConstraint("ck_stores_description", "btrim(description) <> ''");
@@ -31,7 +31,6 @@ internal sealed class StoreConfiguration : IEntityTypeConfiguration<Store>
         builder.Property(item => item.Description).HasColumnName("description").HasMaxLength(160).IsRequired();
         builder.Property(item => item.OfficialUrl).HasColumnName("official_url").HasMaxLength(2048).IsRequired();
         builder.Property(item => item.Status).HasColumnName("status").HasConversion<int>().HasDefaultValue(StoreStatus.Hidden);
-        builder.Property(item => item.ShowOnHome).HasColumnName("show_on_home").HasDefaultValue(false);
         builder.Property(item => item.DisplayOrder).HasColumnName("display_order").HasDefaultValue(0);
         builder.Property(item => item.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone")
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
@@ -40,7 +39,6 @@ internal sealed class StoreConfiguration : IEntityTypeConfiguration<Store>
 
         builder.HasIndex(item => new { item.Status, item.DisplayOrder, item.Id })
             .HasDatabaseName("ix_stores_status_display_order_id");
-        builder.HasIndex(item => new { item.Status, item.ShowOnHome, item.DisplayOrder, item.Id })
-            .HasDatabaseName("ix_stores_status_show_on_home_display_order_id");
+        builder.HasIndex(item => item.DisplayOrder).IsUnique().HasDatabaseName("ux_stores_display_order");
     }
 }

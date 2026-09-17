@@ -5,6 +5,7 @@
 using System.Security.Claims;
 
 using Microsoft.AspNetCore.Authorization;
+using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Authentication;
 
@@ -72,6 +73,11 @@ public static class BackofficeAuthorization
     public static bool IsAllowed(IEnumerable<string> roles, BackofficeAction action)
         => AllowedRoles.TryGetValue(action, out var allowed)
             && roles.Any(allowed.Contains);
+
+    public static void RequireAllowed(IEnumerable<string> roles, BackofficeAction action)
+    {
+        if (!IsAllowed(roles, action)) throw new ServiceException(403, "access_denied");
+    }
 
     public static void Configure(AuthorizationOptions options)
     {
