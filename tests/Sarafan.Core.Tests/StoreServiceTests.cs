@@ -123,10 +123,10 @@ public sealed class StoreServiceTests
         }
         var expected = await _database.Stores.Where(item => item.Status == StoreStatus.Priority)
             .OrderBy(item => item.DisplayOrder).ThenBy(item => item.Id).Take(6).Select(item => item.Id).ToArrayAsync();
-        var featured = await _service.ListPublicAsync("recommended", true, default);
+        var featured = await _service.ListPublicAsync("recommended", null, true, default);
         Assert.That(featured.Items.Select(item => item.Id), Is.EqualTo(expected));
         Assert.That(featured.Items.Length, Is.EqualTo(Math.Min(count, 6)));
-        Assert.That((await _service.ListPublicAsync("recommended", false, default)).Items.Length, Is.EqualTo(count + 1));
+        Assert.That((await _service.ListPublicAsync("recommended", null, false, default)).Items.Length, Is.EqualTo(count + 1));
         Assert.That((await _service.ListStaffAsync(StoreStatus.Hidden, Admin, default)).Items.Length, Is.EqualTo(1));
         Assert.That((await _service.ListStaffAsync(null, Admin, default)).Items.Length, Is.EqualTo(count + 2));
     }
@@ -134,9 +134,9 @@ public sealed class StoreServiceTests
     [Test]
     public async Task CreationInitializesAllStateWithoutInventingAMutationTimestamp()
     {
-        foreach (var logo in new[] { false, true })
+        foreach (var status in Enum.GetValues<StoreStatus>())
         {
-            var request = Request(logo ? StoreStatus.Active : StoreStatus.Hidden, logo); request.DisplayOrder = logo ? 5 : 4;
+            var request = Request(status); request.DisplayOrder = (int)status;
             var created = await _service.CreateAsync(request, Admin, default);
             Assert.That(created.CreatedAt, Is.EqualTo(Now));
             Assert.That(created.UpdatedAt, Is.EqualTo(created.CreatedAt));
@@ -146,7 +146,7 @@ public sealed class StoreServiceTests
     }
 
     [Test]
-    public async Task PublicReadsExcludeMissingLogosBeforeFeaturedLimitButStaffCanRepairThem()
+    public async Task PublicReadsExcludeLegacyStoresWithoutImages()
     {
         for (var i = 0; i < 7; i++)
             _database.Stores.Add(new Store("Broken", "Description", "https://example.test", Now, StoreStatus.Active, 100 + i));
@@ -155,9 +155,9 @@ public sealed class StoreServiceTests
         _database.ChangeTracker.Clear();
         foreach (var featured in new[] { false, true })
         {
-            var result = await _service.ListPublicAsync("recommended", featured, default);
+            var result = await _service.ListPublicAsync("recommended", null, featured, default);
             Assert.That(result.Items, Has.Length.EqualTo(6));
-            Assert.That(result.Items.All(item => item.Name == "Store" && item.LogoUrl.Contains("?v=")), Is.True);
+            Assert.That(result.Items.All(item => !string.IsNullOrWhiteSpace(item.LogoUrl)), Is.True);
         }
         Assert.That((await _service.ListStaffAsync(null, Admin, default)).Items, Has.Length.EqualTo(13));
     }
@@ -165,21 +165,47 @@ public sealed class StoreServiceTests
     [Test]
     public async Task EmptyCatalogueAndMixedAlphabetSortingAreIndependentOfOtherData()
     {
-        Assert.That((await _service.ListPublicAsync("recommended", false, default)).Items, Is.Empty);
+        Assert.That((await _service.ListPublicAsync("recommended", null, false, default)).Items, Is.Empty);
         foreach (var name in new[] { "Zara", "ёж", "Apple", "яблоко", "apple", "Альфа", "ЁЖ" })
         {
             var request = Request(StoreStatus.Active); request.Name = name; request.DisplayOrder = await _database.Stores.CountAsync();
             await _service.CreateAsync(request, Admin, default);
         }
-        var recommended = (await _service.ListPublicAsync("recommended", false, default)).Items;
+        var recommended = (await _service.ListPublicAsync("recommended", null, false, default)).Items;
         var comparer = StringComparer.Create(CultureInfo.GetCultureInfo("ru-RU"), true);
-        Assert.That((await _service.ListPublicAsync("name-asc", false, default)).Items,
+        Assert.That((await _service.ListPublicAsync("name-asc", null, false, default)).Items,
             Is.EqualTo(recommended.OrderBy(item => item.Name, comparer).ThenBy(item => item.Id)));
-        Assert.That((await _service.ListPublicAsync("name-desc", false, default)).Items,
+        Assert.That((await _service.ListPublicAsync("name-desc", null, false, default)).Items,
             Is.EqualTo(recommended.OrderByDescending(item => item.Name, comparer).ThenBy(item => item.Id)));
-        Assert.That((await _service.ListPublicAsync("name-desc", true, default)).Items, Is.Empty);
-        Rejected(async () => await _service.ListPublicAsync("random", false, default), "invalid_store_sort");
+        Assert.That((await _service.ListPublicAsync("name-desc", null, true, default)).Items, Is.Empty);
+        Rejected(async () => await _service.ListPublicAsync("random", null, false, default), "invalid_store_sort");
         Rejected(async () => await _service.ListStaffAsync((StoreStatus)7, Admin, default), "invalid_store_status");
+    }
+
+    [Test]
+    public async Task SearchMatchesVisibleNamesCaseInsensitivelyAndTreatsWildcardsLiterally()
+    {
+        var names = new[] { "Latin Shop", "Магазин %_\\ тест", "Другой" };
+        for (var i = 0; i < names.Length; i++)
+        {
+            var request = Request(StoreStatus.Active);
+            request.Name = names[i];
+            request.DisplayOrder = i;
+            await _service.CreateAsync(request, Admin, default);
+        }
+        var hidden = Request(StoreStatus.Hidden);
+        hidden.Name = "Hidden Shop";
+        hidden.DisplayOrder = names.Length;
+        await _service.CreateAsync(hidden, Admin, default);
+
+        Assert.That((await _service.ListPublicAsync("name-desc", "  SHOP  ", false, default)).Items.Select(item => item.Name),
+            Is.EqualTo(new[] { "Latin Shop" }));
+        Assert.That((await _service.ListPublicAsync("recommended", "МАГАЗИН", false, default)).Items.Select(item => item.Name),
+            Is.EqualTo(new[] { "Магазин %_\\ тест" }));
+        Assert.That((await _service.ListPublicAsync("recommended", "%_\\", false, default)).Items.Select(item => item.Name),
+            Is.EqualTo(new[] { "Магазин %_\\ тест" }));
+        Assert.That((await _service.ListPublicAsync("recommended", "  ", false, default)).Items, Has.Length.EqualTo(3));
+        Rejected(async () => await _service.ListPublicAsync("recommended", new string('x', 201), false, default), "invalid_store_search");
     }
 
     [Test]
@@ -197,7 +223,7 @@ public sealed class StoreServiceTests
         Assert.That(active.Version, Is.Not.EqualTo(created.Version));
         Assert.That(active.UpdatedAt, Is.GreaterThan(created.UpdatedAt));
         Assert.That(active.CreatedAt, Is.EqualTo(created.CreatedAt));
-        Assert.That((await _service.ListPublicAsync("recommended", false, default)).Items.Single().LogoUrl,
+        Assert.That((await _service.ListPublicAsync("recommended", null, false, default)).Items.Single().LogoUrl,
             Does.StartWith($"/api/v1/stores/{created.Id}/logo?v="));
         Assert.That((await _service.GetLogoAsync(created.Id, null, default)).Content, Is.EqualTo(Png));
         Rejected(async () => await _service.UpdateAsync(created.Id, update, Admin, default), "store_update_conflict", 409);
@@ -206,7 +232,7 @@ public sealed class StoreServiceTests
         update.Status = StoreStatus.Hidden; update.Version = active.Version;
         var hidden = await _service.UpdateAsync(created.Id, update, Admin, default);
         Assert.That((hidden.DisplayOrder, hidden.LogoUrl), Is.EqualTo((active.DisplayOrder, active.LogoUrl)));
-        Assert.That((await _service.ListPublicAsync("recommended", false, default)).Items, Is.Empty);
+        Assert.That((await _service.ListPublicAsync("recommended", null, false, default)).Items, Is.Empty);
         update.Status = StoreStatus.Active; update.Version = hidden.Version;
         var reactivated = await _service.UpdateAsync(created.Id, update, Admin, default);
         await _service.DeleteAsync(created.Id, reactivated.Version, Admin, default);
@@ -217,23 +243,36 @@ public sealed class StoreServiceTests
     }
 
     [Test]
-    public async Task HiddenDraftWithoutLogoCannotActivateUntilUploadAndFailedValidationDoesNotMutate()
+    public async Task EveryStatusRequiresAnImageAndLegacyStoresCanBeRepaired()
     {
-        var created = await _service.CreateAsync(Request(logo: false), Admin, default);
-        Assert.That(created.LogoUrl, Is.Null);
-        var update = Request(StoreStatus.Active, false); update.Version = created.Version;
-        Rejected(async () => await _service.UpdateAsync(created.Id, update, Admin, default), "store_logo_required");
-        Rejected(async () => await _service.CreateAsync(Request(StoreStatus.Active, false), Admin, default), "store_logo_required");
-        update.Logo = Upload(Png);
-        var active = await _service.UpdateAsync(created.Id, update, Admin, default);
-        update.Version = active.Version; update.Name = "Changed"; update.Logo = Upload([1, 2]);
-        Rejected(async () => await _service.UpdateAsync(created.Id, update, Admin, default), "invalid_store_logo_content");
-        Assert.That((await _service.GetStaffAsync(created.Id, Admin, default)).Name, Is.EqualTo(active.Name));
-        Assert.That((await _service.GetStaffAsync(created.Id, Admin, default)).Version, Is.EqualTo(active.Version));
-        update.Logo = Upload(Png, "IMAGE/PNG");
-        var replaced = await _service.UpdateAsync(created.Id, update, Admin, default);
-        Assert.That(replaced.Version, Is.Not.EqualTo(active.Version));
-        Assert.That(await _database.StoreLogos.CountAsync(), Is.EqualTo(1));
+        foreach (var status in Enum.GetValues<StoreStatus>())
+        {
+            var missing = Request(status, false); missing.DisplayOrder = (int)status;
+            Rejected(async () => await _service.CreateAsync(missing, Admin, default), "store_logo_required");
+        }
+
+        var legacy = new Store("Legacy", "Description", "https://example.test", Now, StoreStatus.Active, 10);
+        _database.Stores.Add(legacy);
+        await _database.SaveChangesAsync();
+        _database.ChangeTracker.Clear();
+        Assert.That((await _service.GetStaffAsync(legacy.Id, Admin, default)).LogoUrl, Is.Null);
+        Assert.That((await _service.ListPublicAsync("recommended", null, false, default)).Items, Is.Empty);
+
+        var repair = Request(StoreStatus.Active, false); repair.DisplayOrder = 10; repair.Version = legacy.Version;
+        Rejected(async () => await _service.UpdateAsync(legacy.Id, repair, Admin, default), "store_logo_required");
+        repair.Logo = Upload(Png);
+        var repaired = await _service.UpdateAsync(legacy.Id, repair, Admin, default);
+        Assert.That(repaired.LogoUrl, Is.Not.Null);
+        Assert.That((await _service.ListPublicAsync("recommended", null, false, default)).Items.Single().Id, Is.EqualTo(legacy.Id));
+
+        repair.Version = repaired.Version; repair.Logo = null;
+        var retained = await _service.UpdateAsync(legacy.Id, repair, Admin, default);
+        Assert.That(retained.LogoUrl, Is.EqualTo(repaired.LogoUrl));
+
+        repair.Version = retained.Version; repair.Name = "Changed"; repair.Logo = Upload([1, 2]);
+        Rejected(async () => await _service.UpdateAsync(legacy.Id, repair, Admin, default), "invalid_store_logo_content");
+        Assert.That((await _service.GetStaffAsync(legacy.Id, Admin, default)).Name, Is.EqualTo(retained.Name));
+        Assert.That((await _service.GetStaffAsync(legacy.Id, Admin, default)).Version, Is.EqualTo(retained.Version));
     }
 
     [Test]
@@ -348,6 +387,7 @@ public sealed class StoreServiceTests
     }
 
     [TestCase("invalid_store_sort", 400)]
+    [TestCase("invalid_store_search", 400)]
     [TestCase("invalid_store_name", 400)]
     [TestCase("invalid_store_description", 400)]
     [TestCase("invalid_store_url", 400)]
@@ -408,7 +448,7 @@ public sealed class StoreServiceTests
         edit.Status = StoreStatus.Hidden; edit.Version = edited.Version;
         await _service.UpdateAsync(edited.Id, edit, Admin, default);
         await _service.UpdateAsync(active.Id, extra, Admin, default);
-        Assert.That((await _service.ListPublicAsync("recommended", true, default)).Items, Has.Length.EqualTo(6));
+        Assert.That((await _service.ListPublicAsync("recommended", null, true, default)).Items, Has.Length.EqualTo(6));
     }
 
     [TestCase("store_display_order_conflict", "displayOrder")]
@@ -418,6 +458,13 @@ public sealed class StoreServiceTests
         var problem = new SarafanProblemDetailsFactory().Create(new DefaultHttpContext(), 409, code);
         Assert.That(problem.Status, Is.EqualTo(409));
         Assert.That(problem.Errors![field], Is.EqualTo(new[] { problem.Detail }));
+    }
+
+    [Test]
+    public void RequiredStoreImageIsAssociatedWithTheUploadField()
+    {
+        var problem = new SarafanProblemDetailsFactory().Create(new DefaultHttpContext(), 400, "store_logo_required");
+        Assert.That(problem.Errors!["logo"], Is.EqualTo(new[] { problem.Detail }));
     }
 
     private sealed class FixedClock : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }

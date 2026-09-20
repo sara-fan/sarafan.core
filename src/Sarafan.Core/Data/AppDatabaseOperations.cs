@@ -48,6 +48,7 @@ internal interface IAppDatabaseOperations
         IQueryable<CustomerConsentWithdrawalRequest> query,
         string search);
     IQueryable<Order> ApplyOrderSearch(IQueryable<Order> query, string search);
+    IQueryable<Store> ApplyStoreSearch(IQueryable<Store> query, string search);
 }
 
 internal static class AppDatabaseOperations
@@ -179,6 +180,9 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
             || item.SourceUrl.Contains(search, StringComparison.OrdinalIgnoreCase)
             || item.ProductName != null && item.ProductName.Contains(search, StringComparison.OrdinalIgnoreCase)
             || item.StoreName != null && item.StoreName.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    public IQueryable<Store> ApplyStoreSearch(IQueryable<Store> query, string search)
+        => query.Where(item => item.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
 }
 
 internal sealed class InMemoryAppDatabaseTransaction : IAppDatabaseTransaction

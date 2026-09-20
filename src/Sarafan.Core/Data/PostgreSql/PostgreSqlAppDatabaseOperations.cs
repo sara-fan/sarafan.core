@@ -143,6 +143,15 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
             || item.ProductName != null && EF.Functions.ILike(item.ProductName, pattern, "\\")
             || item.StoreName != null && EF.Functions.ILike(item.StoreName, pattern, "\\"));
     }
+
+    public IQueryable<Store> ApplyStoreSearch(IQueryable<Store> query, string search)
+    {
+        var escaped = search
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
+        return query.Where(item => EF.Functions.ILike(item.Name, $"%{escaped}%", "\\"));
+    }
 }
 
 [ExcludeFromCodeCoverage]

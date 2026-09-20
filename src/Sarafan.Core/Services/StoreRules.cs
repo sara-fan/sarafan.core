@@ -10,13 +10,14 @@ namespace Sarafan.Core.Services;
 
 internal static class StoreRules
 {
+    internal const int NameMaxLength = 200;
     internal const int MaxPriorityStores = 6;
     internal const int LogoMaxBytes = 2 * 1024 * 1024;
     internal const int RequestMaxBytes = LogoMaxBytes + 64 * 1024;
 
     internal static StoreOpsDto Operations(string[] roles, IanaTldCatalogSnapshot tlds) => new(
         [new(StoreStatus.Hidden, "Скрыт", "hidden"), new(StoreStatus.Active, "Показывается в общем списке", "active"), new(StoreStatus.Priority, "Показывается в общем списке и на главной странице", "priority")],
-        new(200, 160, 140, 2048, LogoMaxBytes, ["image/png", "image/jpeg", "image/webp"],
+        new(NameMaxLength, 160, 140, 2048, LogoMaxBytes, ["image/png", "image/jpeg", "image/webp"],
             MaxPriorityStores, StoreImageContent.MaxDimension, StoreImageContent.MaxPixels, StoreImageContent.MaxFrames, StoreImageContent.MaxAnimationPixels,
             StoreImageContent.MaxMetadataBytes),
         new(BackofficeAuthorization.IsAllowed(roles, BackofficeAction.ViewStores),
@@ -30,7 +31,7 @@ internal static class StoreRules
         var name = request.Name?.Trim() ?? "";
         var description = request.Description?.Trim() ?? "";
         var url = request.OfficialUrl?.Trim() ?? "";
-        if (name.Length is < 1 or > 200) throw new ServiceException(400, "invalid_store_name");
+        if (name.Length is < 1 or > NameMaxLength) throw new ServiceException(400, "invalid_store_name");
         if (description.Length is < 1 or > 160) throw new ServiceException(400, "invalid_store_description");
         if (url.Any(char.IsControl) || url.Contains('\\'))
             throw new ServiceException(400, "invalid_store_url");
