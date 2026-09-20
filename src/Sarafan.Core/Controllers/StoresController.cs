@@ -19,17 +19,26 @@ public sealed class StoresController(StoreService stores, SarafanProblemDetailsF
     public async Task<ActionResult<StoreListDto<PublicStoreDto>>> List(CancellationToken token)
     {
         var sort = "recommended";
+        string? search = null;
         if (Request.Query.TryGetValue("sort", out var values))
         {
             if (values.Count != 1) throw new ServiceException(400, "invalid_store_sort");
             sort = values[0] ?? "";
         }
-        return Ok(await stores.ListPublicAsync(sort, false, token));
+        if (Request.Query.TryGetValue("search", out values))
+        {
+            if (values.Count != 1) throw new ServiceException(400, "invalid_store_search");
+            search = values[0];
+        }
+        return Ok(await stores.ListPublicAsync(sort, search, false, token));
     }
 
     [HttpGet("featured")]
     public async Task<ActionResult<StoreListDto<PublicStoreDto>>> Featured(CancellationToken token)
-        => Ok(await stores.ListPublicAsync("recommended", true, token));
+    {
+        if (Request.Query.ContainsKey("search")) throw new ServiceException(400, "invalid_store_search");
+        return Ok(await stores.ListPublicAsync("recommended", null, true, token));
+    }
 
     [HttpGet("{id:int}/logo")]
     public async Task<ActionResult> Logo(int id, CancellationToken token)

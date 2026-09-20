@@ -16,7 +16,12 @@ public sealed class LegalDocumentsController(LegalDocumentService documents, Sar
     [HttpGet("ops")]
     public ActionResult Operations() => Ok(LegalDocumentService.Operations());
     [HttpGet("current/{kind:int}")]
-    public async Task<ActionResult> Current(LegalDocumentKind kind, CancellationToken token) => Ok(await documents.CurrentAsync(kind, token));
+    public async Task<ActionResult> Current(LegalDocumentKind kind, CancellationToken token)
+    {
+        var document = await documents.CurrentAsync(kind, token);
+        return Ok(document);
+    }
+
     [HttpGet("documents/{id:guid}")]
     public async Task<ActionResult> Read(Guid id, CancellationToken token) => Ok(await documents.ReadAsync(id, false, token));
     [HttpGet("documents/{id:guid}/source")]

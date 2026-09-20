@@ -126,7 +126,7 @@ public sealed class StoreApiTests
     }
 
     [Test]
-    public async Task PriorityWireContractSeparatesCatalogueAndHomepageAndRequiresLogo()
+    public async Task PriorityWireContractSeparatesCatalogueAndHomepageAndRequiresImages()
     {
         var token = await StaffToken(BackofficeRoles.Administrator);
         using var opsResponse = await Send(HttpMethod.Get, StaffPath + "/ops", token);
@@ -137,7 +137,7 @@ public sealed class StoreApiTests
             "Скрыт", "Показывается в общем списке", "Показывается в общем списке и на главной странице"
         }));
         Assert.That(ops.Statuses.Select(item => item.RouteAlias), Is.EqualTo(new[] { "hidden", "active", "priority" }));
-        using var missingLogo = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Priority, logo: false));
+        using var missingLogo = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Priority, logo: false, displayOrder: 3));
         await Problem(missingLogo, HttpStatusCode.BadRequest, "store_logo_required");
         using var activeResponse = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Active, displayOrder: 0));
         using var priorityResponse = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Priority, displayOrder: 1));
@@ -150,12 +150,80 @@ public sealed class StoreApiTests
         Assert.That(await priorityResponse.Content.ReadAsStringAsync(), Does.Not.Contain("showOnHome"));
         var catalogue = (await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>("/api/v1/stores"))!.Items;
         Assert.That(catalogue.Select(item => item.Id), Is.EqualTo(new[] { active.Id, priority.Id }));
+        Assert.That(catalogue.All(item => !string.IsNullOrWhiteSpace(item.LogoUrl)), Is.True);
         Assert.That((await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>("/api/v1/stores/featured"))!.Items.Select(item => item.Id),
             Is.EqualTo(new[] { priority.Id }));
         using var staff = await Send(HttpMethod.Get, StaffPath + "?status=2", token);
-        Assert.That((await staff.Content.ReadFromJsonAsync<StoreListDto<StaffStoreDto>>())!.Items.Select(item => item.Id), Is.EqualTo(new[] { priority.Id }));
+        Assert.That((await staff.Content.ReadFromJsonAsync<StoreListDto<StaffStoreDto>>())!.Items.Select(item => item.Id),
+            Is.EqualTo(new[] { priority.Id }));
         using var logo = await _client.GetAsync(catalogue.Single(item => item.Id == priority.Id).LogoUrl);
         Assert.That(logo.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+    }
+
+    [Test]
+    public async Task LegacyStoreWithoutImageRemainsRepairableButIsNeverPublic()
+    {
+        var token = await StaffToken(BackofficeRoles.Administrator);
+        int id;
+        Guid version;
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var legacy = new Store("Legacy", "Description", "https://shop.example.com/", DateTimeOffset.UtcNow,
+                StoreStatus.Active, 0);
+            database.Stores.Add(legacy);
+            await database.SaveChangesAsync();
+            (id, version) = (legacy.Id, legacy.Version);
+        }
+
+        using var details = await Send(HttpMethod.Get, $"{StaffPath}/{id}", token);
+        Assert.That((await details.Content.ReadFromJsonAsync<StaffStoreDto>())!.LogoUrl, Is.Null);
+        Assert.That((await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>("/api/v1/stores"))!.Items, Is.Empty);
+
+        using var incomplete = await Send(HttpMethod.Put, $"{StaffPath}/{id}", token,
+            Form(version, StoreStatus.Active, logo: false, displayOrder: 0));
+        await Problem(incomplete, HttpStatusCode.BadRequest, "store_logo_required");
+
+        using var repair = await Send(HttpMethod.Put, $"{StaffPath}/{id}", token,
+            Form(version, StoreStatus.Active, displayOrder: 0));
+        Assert.That(repair.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var publicStore = (await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>("/api/v1/stores"))!.Items.Single();
+        Assert.That(publicStore.Id, Is.EqualTo(id));
+        Assert.That(publicStore.LogoUrl, Is.Not.Empty);
+    }
+
+    [Test]
+    public async Task PublicSearchIsNameOnlyTrimmedCaseInsensitiveAndLiteral()
+    {
+        var token = await StaffToken(BackofficeRoles.Administrator);
+        using var latin = await Send(HttpMethod.Post, StaffPath, token,
+            Form(status: StoreStatus.Active, name: "Latin Shop", displayOrder: 0));
+        using var cyrillic = await Send(HttpMethod.Post, StaffPath, token,
+            Form(status: StoreStatus.Active, name: "Магазин %_ тест", displayOrder: 1));
+        using var descriptionOnly = await Send(HttpMethod.Post, StaffPath, token,
+            Form(status: StoreStatus.Active, name: "Другой", displayOrder: 2));
+        Assert.That(new[] { latin, cyrillic, descriptionOnly }.All(item => item.StatusCode == HttpStatusCode.Created), Is.True);
+
+        var latinItems = (await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>(
+            "/api/v1/stores?sort=name-desc&search=%20%20SHOP%20%20"))!.Items;
+        Assert.That(latinItems.Select(item => item.Name), Is.EqualTo(new[] { "Latin Shop" }));
+        var literalItems = (await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>(
+            "/api/v1/stores?search=" + Uri.EscapeDataString("%_")))!.Items;
+        Assert.That(literalItems.Select(item => item.Name), Is.EqualTo(new[] { "Магазин %_ тест" }));
+        Assert.That((await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>(
+            "/api/v1/stores?search=" + Uri.EscapeDataString("описание")))!.Items, Is.Empty);
+
+        foreach (var path in new[]
+        {
+            "/api/v1/stores?search=one&search=two",
+            "/api/v1/stores?search=" + new string('x', 201),
+            "/api/v1/stores/featured?search=shop",
+            "/api/v1/stores/featured?search=one&search=two"
+        })
+        {
+            using var response = await _client.GetAsync(path);
+            await Problem(response, HttpStatusCode.BadRequest, "invalid_store_search");
+        }
     }
 
     [Test]
@@ -237,7 +305,7 @@ public sealed class StoreApiTests
         await Problem(delete, HttpStatusCode.Conflict, "store_update_conflict");
         using var noVersion = await Send(HttpMethod.Put, $"{StaffPath}/{store.Id}", token, Form());
         await Problem(noVersion, HttpStatusCode.BadRequest, "invalid_store_version");
-        using var noLogo = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Active, logo: false));
+        using var noLogo = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Active, logo: false, displayOrder: 98));
         await Problem(noLogo, HttpStatusCode.BadRequest, "store_logo_required");
         using var invalidName = Form(name: " ");
         using var invalid = await Send(HttpMethod.Post, StaffPath, token, invalidName);
@@ -264,7 +332,7 @@ public sealed class StoreApiTests
         using var creation = await Send(HttpMethod.Post, StaffPath, token, Form(status: StoreStatus.Active));
         var created = (await creation.Content.ReadFromJsonAsync<StaffStoreDto>())!;
         var before = (await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>("/api/v1/stores"))!.Items.Single();
-        using var previous = await _client.GetAsync(before.LogoUrl);
+        using var previous = await _client.GetAsync(before.LogoUrl!);
         using var replacement = Form(created.Version, StoreStatus.Active, logo: false);
         var webp = new ByteArrayContent(StoreImageFixtures.Webp);
         webp.Headers.ContentType = new MediaTypeHeaderValue("image/webp");
@@ -273,7 +341,7 @@ public sealed class StoreApiTests
         Assert.That(saved.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         var after = (await _client.GetFromJsonAsync<StoreListDto<PublicStoreDto>>("/api/v1/stores"))!.Items.Single();
         Assert.That(after.LogoUrl, Is.Not.EqualTo(before.LogoUrl));
-        using var conditional = new HttpRequestMessage(HttpMethod.Get, before.LogoUrl);
+        using var conditional = new HttpRequestMessage(HttpMethod.Get, before.LogoUrl!);
         conditional.Headers.IfNoneMatch.Add(previous.Headers.ETag!);
         using var refreshed = await _client.SendAsync(conditional);
         Assert.That(refreshed.StatusCode, Is.EqualTo(HttpStatusCode.OK));

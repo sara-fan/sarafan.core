@@ -21,14 +21,20 @@ public sealed class StoreService(AppDbContext database, TimeProvider clock, ILog
         item.CreatedAt, item.UpdatedAt, item.Version,
         item.Logo == null ? null : "/api/v1/backoffice/stores/" + item.Id + "/logo?v=" + item.Logo.ContentSha256);
 
-    public Task<StoreListDto<PublicStoreDto>> ListPublicAsync(string sort, bool featured, CancellationToken token)
+    public Task<StoreListDto<PublicStoreDto>> ListPublicAsync(string sort, string? search, bool featured, CancellationToken token)
         => OperationLogging.RunAsync(logger, $"{typeof(StoreService).FullName}.{nameof(ListPublicAsync)}",
-            () => LogValueSummary.Inputs((nameof(sort), sort), (nameof(featured), featured), (nameof(token), token)), async () =>
+            () => LogValueSummary.Inputs((nameof(sort), sort), (nameof(search), search), (nameof(featured), featured), (nameof(token), token)), async () =>
             {
                 if (sort is not ("recommended" or "name-asc" or "name-desc"))
                     throw new ServiceException(400, "invalid_store_sort");
-                var query = database.Stores.AsNoTracking().Where(item => (item.Status == StoreStatus.Active || item.Status == StoreStatus.Priority) && item.Logo != null);
+                search = search?.Trim();
+                if (search?.Length > StoreRules.NameMaxLength)
+                    throw new ServiceException(400, "invalid_store_search");
+                var query = database.Stores.AsNoTracking()
+                    .Where(item => (item.Status == StoreStatus.Active || item.Status == StoreStatus.Priority) && item.Logo != null);
                 if (featured) query = query.Where(item => item.Status == StoreStatus.Priority);
+                else if (!string.IsNullOrEmpty(search))
+                    query = AppDatabaseOperations.For(database).ApplyStoreSearch(query, search);
                 query = query.OrderBy(item => item.DisplayOrder).ThenBy(item => item.Id);
                 if (featured) query = query.Take(StoreRules.MaxPriorityStores);
                 var items = await query.Select(item => new PublicStoreDto(item.Id, item.Name, item.Description,
@@ -77,7 +83,7 @@ public sealed class StoreService(AppDbContext database, TimeProvider clock, ILog
                 BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.CreateStore);
                 var fields = StoreRules.Normalize(request, await tlds.GetRequiredAsync(token));
                 var logo = await StoreRules.ReadLogoAsync(request.Logo, token);
-                RequireLogo(request.Status, logo.HasValue);
+                RequireLogo(logo.HasValue);
                 await using var transaction = await AppDatabaseOperations.For(database).BeginTransactionAsync(database, token);
                 await AppDatabaseOperations.For(database).LockStoreMutationsAsync(database, token);
                 await ValidatePlacementAsync(request, null, token);
@@ -102,7 +108,7 @@ public sealed class StoreService(AppDbContext database, TimeProvider clock, ILog
                 var store = await FindForMutationAsync(id, version, token);
                 var fields = StoreRules.Normalize(request, await tlds.GetRequiredAsync(token));
                 var logo = await StoreRules.ReadLogoAsync(request.Logo, token);
-                RequireLogo(request.Status, logo.HasValue || store.Logo is not null);
+                RequireLogo(logo.HasValue || store.Logo is not null);
                 await ValidatePlacementAsync(request, id, token);
                 var now = clock.GetUtcNow();
                 store.Update(fields.Name, fields.Description, fields.Url, request.Status, request.DisplayOrder, now);
@@ -148,6 +154,11 @@ public sealed class StoreService(AppDbContext database, TimeProvider clock, ILog
             throw new ServiceException(409, "store_priority_limit_exceeded");
     }
 
+    private static void RequireLogo(bool hasLogo)
+    {
+        if (!hasLogo) throw new ServiceException(400, "store_logo_required");
+    }
+
     private async Task SaveMutationAsync(CancellationToken token)
     {
         // EF's SaveChanges transaction commits the parent and dependent together, including on concurrency failure.
@@ -162,11 +173,6 @@ public sealed class StoreService(AppDbContext database, TimeProvider clock, ILog
             database.ChangeTracker.Clear();
             throw new ServiceException(409, "store_display_order_conflict");
         }
-    }
-
-    private static void RequireLogo(StoreStatus status, bool hasLogo)
-    {
-        if (status != StoreStatus.Hidden && !hasLogo) throw new ServiceException(400, "store_logo_required");
     }
 
 }
