@@ -29,6 +29,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ConsentOnboarding> ConsentOnboarding => Set<ConsentOnboarding>();
     public DbSet<CustomerConsentWithdrawalRequest> CustomerConsentWithdrawalRequests => Set<CustomerConsentWithdrawalRequest>();
     public DbSet<LegalDocumentAuditEvent> LegalDocumentAuditEvents => Set<LegalDocumentAuditEvent>();
+    public DbSet<ServiceCatalogueEntry> ServiceCatalogueEntries => Set<ServiceCatalogueEntry>();
+    public DbSet<ServiceCatalogueAuditEvent> ServiceCatalogueAuditEvents => Set<ServiceCatalogueAuditEvent>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
