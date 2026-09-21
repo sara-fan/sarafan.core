@@ -32,6 +32,13 @@
 - Initialize the complete store aggregate, including its image, with equal CreatedAt/UpdatedAt and one initial Version. Reserve mutation methods for later changes. Public store DTOs always return a non-null digest-addressed image URL.
 - Publish image resource limits through store Ops: 4096 pixels per side, 4194304 pixels per image/canvas, 100 WebP animation frames, 16777216 canvas-pixels across frames, and 1048576 decoded PNG metadata bytes. Validate PNG headers/palettes, CRCs and exact bounded scanlines (including Adam7); PNG logos are static. Validate WebP animation structure, frame/canvas agreement and budgets. JPEG/WebP validation is bounded container/header validation, not full entropy decoding; never allocate a full raster for upload verification.
 
+### Service pricing catalogue
+
+- Core #43 and pricing specification v1.57 govern service-catalogue metadata. Keep `PriceMethod` and `ServiceKind` stable numeric enums whose Russian labels and aliases are exposed only by authorized catalogue Ops. Catalogue Ops and validation allow only RUB and USD; do not remove EUR from the global `Currency` enum or unrelated exchange-rate/order contracts.
+- Percent tariffs contain a required `(0, 100]` percentage and optional nonnegative USD store-price minimum/maximum; fixed tariffs contain a nonnegative RUB/USD amount; manual tariffs contain only a required RUB/USD currency. Amounts are `decimal(10,2)` and percentages are `decimal(7,4)`. Keep the three persistence shapes mutually exclusive in both service validation and database checks.
+- Treat `AvailableFrom` and nullable `AvailableBy` as inclusive Moscow calendar dates. Same-service periods never overlap, including shared endpoints; retain both friendly application validation and the PostgreSQL GiST exclusion constraint. Serialize writes with the catalogue advisory transaction lock and require the opaque UUID version for update/delete.
+- All staff may view catalogue entries and retained typed audit history; only Administrators may create, update or delete, including effective or historical entries. Enforce centralized actions at controller and service boundaries. Write each mutation and its actor-name snapshot audit event atomically from one `TimeProvider` value. See `docs/service-catalogue-api.md` for the client contract.
+
 ### Protected local database configuration
 
 - Treat `docker-compose.override.yml` as user-owned machine configuration. Do not edit, replace, delete, regenerate, or commit it without explicit user authorization for that action; general implementation, testing, cleanup, or deployment requests do not authorize these changes.

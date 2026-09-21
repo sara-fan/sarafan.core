@@ -22,7 +22,9 @@ public enum BackofficeAction
     ViewStores = 8,
     CreateStore = 9,
     EditStore = 10,
-    DeleteStore = 11
+    DeleteStore = 11,
+    ViewServiceCatalogue = 12,
+    ManageServiceCatalogue = 13
 }
 
 public static class BackofficeAuthenticationDefaults
@@ -37,6 +39,8 @@ public static class BackofficePolicies
     public const string CreateStore = "backoffice:create-store";
     public const string EditStore = "backoffice:edit-store";
     public const string DeleteStore = "backoffice:delete-store";
+    public const string ViewServiceCatalogue = "backoffice:view-service-catalogue";
+    public const string ManageServiceCatalogue = "backoffice:manage-service-catalogue";
     public const string EditOrderProduct = "backoffice:edit-order-product";
     public const string ManageUsers = "backoffice:manage-users";
     public const string ManageRoles = "backoffice:manage-roles";
@@ -60,6 +64,8 @@ public static class BackofficeAuthorization
             [BackofficeAction.CreateStore] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.EditStore] = new HashSet<string>([BackofficeRoles.Administrator, BackofficeRoles.ShiftManager], StringComparer.Ordinal),
             [BackofficeAction.DeleteStore] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
+            [BackofficeAction.ViewServiceCatalogue] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
+            [BackofficeAction.ManageServiceCatalogue] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.EditOrderProduct] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
             [BackofficeAction.ManageUsers] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.ManageRoles] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
@@ -86,6 +92,8 @@ public static class BackofficeAuthorization
         AddPolicy(options, BackofficePolicies.CreateStore, BackofficeAction.CreateStore);
         AddPolicy(options, BackofficePolicies.EditStore, BackofficeAction.EditStore);
         AddPolicy(options, BackofficePolicies.DeleteStore, BackofficeAction.DeleteStore);
+        AddPolicy(options, BackofficePolicies.ViewServiceCatalogue, BackofficeAction.ViewServiceCatalogue);
+        AddPolicy(options, BackofficePolicies.ManageServiceCatalogue, BackofficeAction.ManageServiceCatalogue);
         AddPolicy(options, BackofficePolicies.EditOrderProduct, BackofficeAction.EditOrderProduct);
         AddPolicy(options, BackofficePolicies.ManageUsers, BackofficeAction.ManageUsers);
         AddPolicy(options, BackofficePolicies.ManageRoles, BackofficeAction.ManageRoles);

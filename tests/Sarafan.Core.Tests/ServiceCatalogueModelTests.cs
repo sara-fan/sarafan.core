@@ -24,11 +24,11 @@ public sealed class ServiceCatalogueModelTests
     {
         var services = new[]
         {
-            (ServiceKind.Product, 0, "Товар", "product"),
-            (ServiceKind.UsWarehouseExpenses, 100, "Расходы до склада в США", "us-warehouse-expenses"),
+            (ServiceKind.Product, 0, "Стоимость товара", "product"),
+            (ServiceKind.UsWarehouseExpenses, 100, "Доставка до склада в США", "us-warehouse-delivery"),
             (ServiceKind.InternationalDelivery, 200, "Доставка из США в Россию", "international-delivery"),
             (ServiceKind.DomesticDelivery, 300, "Доставка по России", "domestic-delivery"),
-            (ServiceKind.ServiceCommission, 400, "Комиссия/маржа «Сарафана»", "service-commission"),
+            (ServiceKind.ServiceCommission, 400, "Комиссия сервиса", "service-commission"),
             (ServiceKind.WarehousePhoto, 500, "Фото товара на складе в США", "warehouse-photo"),
             (ServiceKind.ProductInspection, 600, "Проверка товара", "product-inspection"),
             (ServiceKind.ShipmentInsurance, 700, "Страхование отправления", "shipment-insurance")
@@ -37,7 +37,8 @@ public sealed class ServiceCatalogueModelTests
         {
             (PriceMethod.Percent, 0, "Процент от цены товара", "percent"),
             (PriceMethod.Fixed, 100, "Фиксированная стоимость", "fixed"),
-            (PriceMethod.Manual, 200, "Ввод вручную", "manual")
+            (PriceMethod.Manual, 200, "Ввод вручную", "manual"),
+            (PriceMethod.Auto, 300, "Автоматическое определение", "auto")
         };
         var actions = new[]
         {

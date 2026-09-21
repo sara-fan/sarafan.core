@@ -22,10 +22,12 @@ internal interface IAppDatabaseOperations
     Task LockCustomerAsync(AppDbContext database, int customerId, CancellationToken cancellationToken);
     Task LockAdministratorMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
+    Task LockServiceCatalogueMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockIanaTldCatalogAsync(AppDbContext database, CancellationToken cancellationToken);
     Task<Customer?> FindCustomerForUpdateAsync(AppDbContext database, int customerId, CancellationToken cancellationToken);
     bool IsCustomerOrderCodeCollision(DbUpdateException exception);
     bool IsStoreDisplayOrderCollision(DbUpdateException exception);
+    bool IsServiceCataloguePeriodCollision(DbUpdateException exception);
     Task<bool> InsertExchangeRateAsync(
         AppDbContext database,
         CbrRate rate,
@@ -49,6 +51,10 @@ internal interface IAppDatabaseOperations
         string search);
     IQueryable<Order> ApplyOrderSearch(IQueryable<Order> query, string search);
     IQueryable<Store> ApplyStoreSearch(IQueryable<Store> query, string search);
+    IQueryable<ServiceCatalogueAuditEvent> ApplyServiceCatalogueAuditSearch(
+        IQueryable<ServiceCatalogueAuditEvent> query,
+        string search,
+        long? entryId);
 }
 
 internal static class AppDatabaseOperations
@@ -88,6 +94,8 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
 
     public Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken) => Task.CompletedTask;
 
+    public Task LockServiceCatalogueMutationsAsync(AppDbContext database, CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task LockIanaTldCatalogAsync(
         AppDbContext database,
         CancellationToken cancellationToken)
@@ -101,6 +109,7 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
 
     public bool IsCustomerOrderCodeCollision(DbUpdateException exception) => false;
     public bool IsStoreDisplayOrderCollision(DbUpdateException exception) => false;
+    public bool IsServiceCataloguePeriodCollision(DbUpdateException exception) => false;
 
     public async Task<bool> InsertExchangeRateAsync(
         AppDbContext database,
@@ -183,6 +192,13 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
 
     public IQueryable<Store> ApplyStoreSearch(IQueryable<Store> query, string search)
         => query.Where(item => item.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    public IQueryable<ServiceCatalogueAuditEvent> ApplyServiceCatalogueAuditSearch(
+        IQueryable<ServiceCatalogueAuditEvent> query,
+        string search,
+        long? entryId)
+        => query.Where(item => item.ActorName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || entryId != null && item.EntryId == entryId);
 }
 
 internal sealed class InMemoryAppDatabaseTransaction : IAppDatabaseTransaction

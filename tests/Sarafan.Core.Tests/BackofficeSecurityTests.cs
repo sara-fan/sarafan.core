@@ -101,6 +101,12 @@ public sealed class BackofficeSecurityTests
                     [BackofficeRoles.Administrator],
                     BackofficeAction.ManageLegalDocuments),
                 Is.True);
+            Assert.That(BackofficeRoles.Codes.All(role =>
+                BackofficeAuthorization.IsAllowed([role], BackofficeAction.ViewServiceCatalogue)), Is.True);
+            Assert.That(BackofficeAuthorization.IsAllowed(
+                [BackofficeRoles.Administrator], BackofficeAction.ManageServiceCatalogue), Is.True);
+            Assert.That(BackofficeAuthorization.IsAllowed(
+                [BackofficeRoles.ShiftManager], BackofficeAction.ManageServiceCatalogue), Is.False);
             Assert.That(
                 BackofficeAuthorization.IsAllowed(
                     [BackofficeRoles.Administrator],
@@ -144,6 +150,8 @@ public sealed class BackofficeSecurityTests
             BackofficePolicies.OperationalQueue,
             BackofficePolicies.ManualQuotes,
             BackofficePolicies.ManageLegalDocuments,
+            BackofficePolicies.ViewServiceCatalogue,
+            BackofficePolicies.ManageServiceCatalogue,
             BackofficePolicies.ManageConsentWithdrawalRequests,
             BackofficePolicies.Administrator,
             BackofficePolicies.ShiftManager,

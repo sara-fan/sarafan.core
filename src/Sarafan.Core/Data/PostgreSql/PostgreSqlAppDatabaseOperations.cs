@@ -57,6 +57,9 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
     public Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken)
         => database.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1397315805)", cancellationToken);
 
+    public Task LockServiceCatalogueMutationsAsync(AppDbContext database, CancellationToken cancellationToken)
+        => database.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1397315806)", cancellationToken);
+
     public Task LockIanaTldCatalogAsync(
         AppDbContext database,
         CancellationToken cancellationToken)
@@ -84,6 +87,13 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
         {
             SqlState: PostgresErrorCodes.UniqueViolation,
             ConstraintName: "ux_stores_display_order"
+        };
+
+    public bool IsServiceCataloguePeriodCollision(DbUpdateException exception)
+        => exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.ExclusionViolation,
+            ConstraintName: "ex_service_catalogue_entries_service_period"
         };
 
     public async Task<bool> InsertExchangeRateAsync(
@@ -151,6 +161,19 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
             .Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal);
         return query.Where(item => EF.Functions.ILike(item.Name, $"%{escaped}%", "\\"));
+    }
+
+    public IQueryable<ServiceCatalogueAuditEvent> ApplyServiceCatalogueAuditSearch(
+        IQueryable<ServiceCatalogueAuditEvent> query,
+        string search,
+        long? entryId)
+    {
+        var escaped = search
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
+        return query.Where(item => EF.Functions.ILike(item.ActorName, $"%{escaped}%", "\\")
+            || entryId != null && item.EntryId == entryId);
     }
 }
 
