@@ -33,6 +33,19 @@ public sealed class SarafanProblemDetailsFactory(
     private static readonly IReadOnlyDictionary<string, ProblemDefinition> Definitions =
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
+            ["invalid_service_catalogue_service"] = new(400, "Некорректная услуга", "Выберите услугу из каталога."),
+            ["invalid_service_catalogue_method"] = new(400, "Некорректный способ расчёта", "Выберите способ расчёта из каталога."),
+            ["invalid_service_catalogue_currency"] = new(400, "Некорректная валюта тарифа", "Для тарифа доступны только российский рубль и доллар США."),
+            ["invalid_service_catalogue_percentage"] = new(400, "Некорректный процент", "Укажите процент больше нуля и не больше 100, максимум с четырьмя дробными знаками."),
+            ["invalid_service_catalogue_amount"] = new(400, "Некорректная сумма", "Проверьте сумму и параметры выбранного способа расчёта."),
+            ["invalid_service_catalogue_minimum_amount"] = new(400, "Некорректная минимальная сумма", "Укажите неотрицательную сумму в долларах США, максимум с двумя дробными знаками."),
+            ["invalid_service_catalogue_maximum_amount"] = new(400, "Некорректная максимальная сумма", "Укажите сумму не меньше минимума, максимум с двумя дробными знаками."),
+            ["invalid_service_catalogue_dates"] = new(400, "Некорректный период действия", "Проверьте даты начала и окончания действия тарифа."),
+            ["invalid_service_catalogue_version"] = new(400, "Не указана версия тарифа", "Обновите карточку и повторите действие с текущей версией тарифа."),
+            ["invalid_service_catalogue_audit_filter"] = new(400, "Некорректные параметры журнала тарифов", "Проверьте страницу, размер страницы, поиск, услугу, действие и сортировку."),
+            ["service_catalogue_entry_not_found"] = new(404, "Тариф не найден", "Запрошенная запись каталога услуг не найдена."),
+            ["service_catalogue_period_overlap"] = new(409, "Периоды тарифов пересекаются", "Для одной услуги периоды действия тарифов не должны пересекаться, включая граничные даты."),
+            ["service_catalogue_update_conflict"] = new(409, "Тариф изменился", "Обновите карточку и повторите изменения с текущей версией тарифа."),
             ["invalid_store_sort"] = new(400, "Некорректная сортировка магазинов", "Выберите рекомендуемый порядок или сортировку по названию."),
             ["invalid_store_search"] = new(400, "Некорректный поиск магазинов", "Сократите строку поиска до 200 символов."),
             ["invalid_store_name"] = new(400, "Некорректное название магазина", "Укажите название магазина длиной от 1 до 200 символов."),
@@ -286,6 +299,14 @@ public sealed class SarafanProblemDetailsFactory(
         var traceId = SarafanTraceIdentifiers.GetOrCreate(context);
         var field = code switch
         {
+            "invalid_service_catalogue_service" => "service",
+            "invalid_service_catalogue_method" => "priceMethod",
+            "invalid_service_catalogue_currency" => "currency",
+            "invalid_service_catalogue_percentage" => "percentage",
+            "invalid_service_catalogue_amount" => "amount",
+            "invalid_service_catalogue_minimum_amount" => "minimumAmount",
+            "invalid_service_catalogue_maximum_amount" => "maximumAmount",
+            "invalid_service_catalogue_version" or "service_catalogue_update_conflict" => "version",
             "store_display_order_conflict" => "displayOrder",
             "invalid_store_url" => "officialUrl",
             "store_priority_limit_exceeded" => "status",
@@ -354,10 +375,11 @@ public sealed class SarafanProblemDetailsFactory(
         LegalDocumentKind? consentKind = null,
         AuthenticationFlowStep? nextStep = null,
         IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds = null,
-        PhoneValidationReason? phoneValidationReason = null)
+        PhoneValidationReason? phoneValidationReason = null,
+        IReadOnlyDictionary<string, string[]>? errors = null)
         => new(OperationLogging.RunAsync(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(WriteAsync)}",
             () => ProblemInputs(statusCode, code, phoneValidationReason), () => WriteCoreAsync(context, statusCode, code, cancellationToken,
-                requiredDocumentId, consentKind, nextStep, requiredDocumentKinds, phoneValidationReason), cancellationToken));
+                requiredDocumentId, consentKind, nextStep, requiredDocumentKinds, phoneValidationReason, errors), cancellationToken));
 
     private async Task WriteCoreAsync(
         HttpContext context,
@@ -368,9 +390,10 @@ public sealed class SarafanProblemDetailsFactory(
         LegalDocumentKind? consentKind,
         AuthenticationFlowStep? nextStep,
         IReadOnlyList<LegalDocumentKind>? requiredDocumentKinds,
-        PhoneValidationReason? phoneValidationReason)
+        PhoneValidationReason? phoneValidationReason,
+        IReadOnlyDictionary<string, string[]>? errors)
     {
-        var details = CreateCore(context, statusCode, code, null, phoneValidationReason);
+        var details = CreateCore(context, statusCode, code, errors, phoneValidationReason);
         if (requiredDocumentId is not null && consentKind is { } kind && Enum.IsDefined(kind))
         {
             details.Extensions["requiredDocumentId"] = requiredDocumentId;

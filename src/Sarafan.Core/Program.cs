@@ -82,6 +82,7 @@ builder.Services.AddSingleton<ICustomerOrderCodeGenerator, CustomerOrderCodeGene
 builder.Services.AddScoped<ICustomerOrderCodeCollisionDetector, CustomerOrderCodeCollisionDetector>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<StoreService>();
+builder.Services.AddScoped<ServiceCatalogueService>();
 builder.Services.AddScoped<OrderLimitService>();
 builder.Services.AddScoped<ProductPreviewService>();
 builder.Services.AddOptions<ConsentOptions>().Bind(builder.Configuration.GetSection(ConsentOptions.SectionName))

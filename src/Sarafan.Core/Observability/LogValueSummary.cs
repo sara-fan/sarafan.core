@@ -15,7 +15,7 @@ internal static class LogValueSummary
 {
     private static readonly HashSet<string> PrivateListStateNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        "page", "pageSize", "sortBy", "sortOrder", "search", "processed", "kind", "action", "customerId", "documentId"
+        "page", "pageSize", "sortBy", "sortOrder", "search", "processed", "kind", "action", "service", "entryId", "customerId", "documentId"
     };
 
     // Only these explicit projections may read values. Never serialize or call ToString on arbitrary input.
@@ -43,6 +43,12 @@ internal static class LogValueSummary
         StoreListDto<PublicStoreDto> stores => $"PublicStoreDto collection(count={stores.Items.Length})",
         StoreListDto<StaffStoreDto> stores => $"StaffStoreDto collection(count={stores.Items.Length})",
         StoreOpsDto => "StoreOpsDto(catalogue/actions=[redacted])",
+        ServiceCatalogueWriteRequest => "ServiceCatalogueWriteRequest(parameters/dates/version=[redacted])",
+        DeleteServiceCatalogueEntryRequest => "DeleteServiceCatalogueEntryRequest(version=[redacted])",
+        ServiceCatalogueEntryDto => "ServiceCatalogueEntryDto(parameters/dates/version=[redacted])",
+        ServiceCatalogueListDto catalogue => $"ServiceCatalogueEntryDto collection(count={catalogue.Items.Length})",
+        ServiceCatalogueOpsDto => "ServiceCatalogueOpsDto(catalogue/limits/actions=[redacted])",
+        ServiceCatalogueAuditPageDto audit => $"ServiceCatalogueAuditDto page(count={audit.Items.Length}; filters=[redacted])",
         ProductPreviewDto preview when preview.Outcome is ProductPreviewDto.ManualReviewOutcome or ProductPreviewDto.RecognizedOutcome
             => $"ProductPreviewDto(sourceUrl/product=[redacted]; outcome={preview.Outcome})",
         ProductPreviewDto => "ProductPreviewDto(sourceUrl/product=[redacted]; outcome=[redacted])",

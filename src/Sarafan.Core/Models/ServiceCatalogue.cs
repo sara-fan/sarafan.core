@@ -8,7 +8,8 @@ public enum PriceMethod
 {
     Percent = 0,
     Fixed = 100,
-    Manual = 200
+    Manual = 200,
+    Auto = 300
 }
 
 public static class PriceMethodExtensions
@@ -18,6 +19,8 @@ public static class PriceMethodExtensions
         PriceMethod.Percent => "Процент от цены товара",
         PriceMethod.Fixed => "Фиксированная стоимость",
         PriceMethod.Manual => "Ввод вручную",
+        PriceMethod.Auto => "Автоматическое определение",
+
         _ => throw new ArgumentOutOfRangeException(nameof(method), method, null)
     };
 
@@ -26,6 +29,7 @@ public static class PriceMethodExtensions
         PriceMethod.Percent => "percent",
         PriceMethod.Fixed => "fixed",
         PriceMethod.Manual => "manual",
+        PriceMethod.Auto => "auto",
         _ => throw new ArgumentOutOfRangeException(nameof(method), method, null)
     };
 }
@@ -46,11 +50,11 @@ public static class ServiceKindExtensions
 {
     public static string GetDisplayName(this ServiceKind service) => service switch
     {
-        ServiceKind.Product => "Товар",
-        ServiceKind.UsWarehouseExpenses => "Расходы до склада в США",
+        ServiceKind.Product => "Стоимость товара",
+        ServiceKind.UsWarehouseExpenses => "Доставка до склада в США",
         ServiceKind.InternationalDelivery => "Доставка из США в Россию",
         ServiceKind.DomesticDelivery => "Доставка по России",
-        ServiceKind.ServiceCommission => "Комиссия/маржа «Сарафана»",
+        ServiceKind.ServiceCommission => "Комиссия сервиса",
         ServiceKind.WarehousePhoto => "Фото товара на складе в США",
         ServiceKind.ProductInspection => "Проверка товара",
         ServiceKind.ShipmentInsurance => "Страхование отправления",
@@ -60,7 +64,7 @@ public static class ServiceKindExtensions
     public static string GetRouteAlias(this ServiceKind service) => service switch
     {
         ServiceKind.Product => "product",
-        ServiceKind.UsWarehouseExpenses => "us-warehouse-expenses",
+        ServiceKind.UsWarehouseExpenses => "us-warehouse-delivery",
         ServiceKind.InternationalDelivery => "international-delivery",
         ServiceKind.DomesticDelivery => "domestic-delivery",
         ServiceKind.ServiceCommission => "service-commission",
