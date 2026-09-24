@@ -70,7 +70,7 @@ dotnet restore Sarafan.sln
 dotnet run --project src/Sarafan.Core/Sarafan.Core.csproj --launch-profile http
 ```
 
-The `http` launch profile selects `Development`, serves the API at `http://localhost:5080`, and enables startup migrations through `appsettings.Development.json`. Swagger is at `/swagger`; health is at `/api/v1/status/status`. Keep the explicit connection override: the tracked fallback connection uses host port `5433`, which may belong to the user's existing database. Other configuration uses normal ASP.NET Core environment variables, with `__` separating configuration sections.
+The `http` launch profile selects `Development`, serves the API at `http://localhost:5080`, and enables startup migrations through `appsettings.Development.json`. Swagger is at `/swagger`; health is at `/api/v1/status/status`. Keep the explicit connection override: the tracked fallback connection uses host port `5432`, which may belong to the user's existing database. Other configuration uses normal ASP.NET Core environment variables, with `__` separating configuration sections.
 
 To run Back Office with Vite, open a second PowerShell terminal in the sibling repository:
 

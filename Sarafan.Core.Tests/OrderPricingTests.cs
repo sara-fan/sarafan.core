@@ -1,0 +1,278 @@
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of the Sarafan application
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Sarafan.Core.Authentication;
+using Sarafan.Core.Data;
+using Sarafan.Core.Models;
+using Sarafan.Core.RestModels;
+using Sarafan.Core.Services;
+
+namespace Sarafan.Core.Tests;
+
+public sealed class OrderPricingTests
+{
+    [TestCase("{}")]
+    [TestCase("{\"from\":0,\"by\":null}")]
+    [TestCase("{\"from\":0,\"amount\":0}")]
+    [TestCase("{\"by\":null,\"amount\":0}")]
+    public void BandJsonRequiresExplicitBoundsAndAmount(string json)
+        => Assert.Throws<System.Text.Json.JsonException>(() =>
+            System.Text.Json.JsonSerializer.Deserialize<PriceBand>(json, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+
+    [Test]
+    public void BandJsonAcceptsExplicitUnboundedFirstLowerValue()
+    {
+        var band = System.Text.Json.JsonSerializer.Deserialize<PriceBand>("{\"from\":null,\"by\":100,\"amount\":2}",
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.That(band, Is.EqualTo(new PriceBand(null, 100, 2)));
+    }
+
+    [Test]
+    public void EveryServiceAllowsBothCurrenciesAndAllMethods()
+    {
+        foreach (var kind in Enum.GetValues<ServiceKind>())
+        {
+            var metadata = ServiceCatalogueRules.Operations(Admin).Services.Single(item => item.Value == (int)kind);
+            Assert.That(metadata.AllowedCurrencies, Is.EqualTo(new[] { Currency.Rub, Currency.Usd }));
+            Assert.That(metadata.AllowedPriceMethods, Is.EqualTo(Enum.GetValues<PriceMethod>()));
+            foreach (var currency in new[] { Currency.Rub, Currency.Usd })
+                foreach (var method in Enum.GetValues<PriceMethod>())
+                {
+                    var request = new ServiceCatalogueWriteRequest
+                    {
+                        Service = kind,
+                        PriceMethod = method,
+                        Currency = currency,
+                        AvailableFrom = new(2026, 1, 1),
+                        Percentage = method == PriceMethod.Percent ? 10 : null,
+                        Amount = method == PriceMethod.Fixed ? 2 : null,
+                        IntervalCurrency = method == PriceMethod.Stepped ? Currency.Usd : null,
+                        Bands = method == PriceMethod.Stepped ? [new(null, null, 2)] : []
+                    };
+                    Assert.DoesNotThrow(() => ServiceCatalogueRules.Prepare(request, false), $"{kind}/{method}/{currency}");
+                    request.Currency = Currency.Eur;
+                    Assert.That(Assert.Throws<ServiceException>(() => ServiceCatalogueRules.Prepare(request, false))!.Code,
+                        Is.EqualTo("invalid_service_catalogue_currency"));
+                }
+        }
+    }
+
+    private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-09-24T10:00:00Z");
+    private static readonly string[] Admin = [BackofficeRoles.Administrator];
+    private static readonly string[] Shift = [BackofficeRoles.ShiftManager];
+    private AppDbContext db = null!;
+    private Order order = null!;
+    private int actorId;
+    private OrderService service = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        db = new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var customer = new Customer { Phone = "+79990001234", CreatedAt = Now, UpdatedAt = Now };
+        customer.AllocateOrderNumber("12345678");
+        var actor = new BackofficeUser { Email = "pricing@test.invalid", NormalizedEmail = "pricing@test.invalid", FirstName = "Иван", LastName = "Иванов", PasswordHash = "unused", CreatedAt = Now, UpdatedAt = Now };
+        db.AddRange(customer, actor);
+        await db.SaveChangesAsync();
+        actorId = actor.Id;
+        order = new(customer.Id, 1, "https://example.com/product", 2, null, Guid.NewGuid(), Now);
+        order.SetProduct(new("Товар", new(50, Currency.Usd), 2, null, null, null));
+        db.Add(order);
+        db.ExchangeRateHistory.Add(OrderProductTestData.Rate(Currency.Usd, 80));
+        db.ServiceCatalogueEntries.AddRange(Tariff(ServiceKind.UsWarehouseExpenses, PriceMethod.Fixed, Currency.Usd, amount: 0),
+            Tariff(ServiceKind.InternationalDelivery, PriceMethod.Fixed, Currency.Usd, amount: 1.23m),
+            Tariff(ServiceKind.ServiceCommission, PriceMethod.Percent, Currency.Rub, percentage: 10, minimum: 900));
+        await db.SaveChangesAsync();
+        service = new(db, null!, null!, null!, null!, null!, new Clock(), NullLogger<OrderService>.Instance);
+    }
+
+    [TearDown] public void TearDown() => db.Dispose();
+
+    private static ServiceCatalogueEntry Tariff(ServiceKind kind, PriceMethod method, Currency currency,
+        decimal? amount = null, decimal? percentage = null, decimal? minimum = null)
+        => new(kind, method, percentage, minimum, null, amount, currency, new(2026, 1, 1), null, Now);
+
+    [Test]
+    public async Task ComponentsUseQuantityMinimumAndSeparateExtras()
+    {
+        var inputs = OrderPricingInputs.Empty with { DomesticDeliveryRub = 500, CustomsRub = 600 };
+        var result = await OrderPriceCalculator.CalculateAsync(db, order, Now, inputs, null, default);
+        Assert.That(result.Components.Single(row => row.Service == ServiceKind.Product).Amount, Is.EqualTo(100));
+        Assert.That(result.Components.Single(row => row.Service == ServiceKind.ServiceCommission).AmountRub, Is.EqualTo(900));
+        Assert.That(result.Components.Single(row => row.Service == ServiceKind.UsWarehouseExpenses).State, Is.EqualTo(PriceComponentState.Calculated));
+        Assert.That(result.Components.Single(row => row.Service == ServiceKind.WarehousePhoto).State, Is.EqualTo(PriceComponentState.NotApplicable));
+        Assert.That(result.TotalRub, Is.EqualTo(8998.40m));
+    }
+
+    [TestCase(PriceMethod.Percent)]
+    [TestCase(PriceMethod.Fixed)]
+    [TestCase(PriceMethod.Manual)]
+    [TestCase(PriceMethod.Auto)]
+    [TestCase(PriceMethod.Stepped)]
+    public async Task TariffDrivenComponentsCalculateEveryMethodInEitherCurrency(PriceMethod method)
+    {
+        foreach (var kind in new[] { ServiceKind.UsWarehouseExpenses, ServiceKind.InternationalDelivery,
+            ServiceKind.ServiceCommission, ServiceKind.WarehousePhoto, ServiceKind.ProductInspection, ServiceKind.ShipmentInsurance })
+            foreach (var currency in new[] { Currency.Rub, Currency.Usd })
+            {
+                db.ServiceCatalogueEntries.RemoveRange(db.ServiceCatalogueEntries.Where(item => item.Service == kind));
+                var tariff = new ServiceCatalogueEntry(kind, method, method == PriceMethod.Percent ? 10 : null,
+                    method == PriceMethod.Percent ? 12 : null, null, method == PriceMethod.Fixed ? 3.25m : null,
+                    currency, new(2026, 1, 1), null, Now,
+                    method == PriceMethod.Stepped ? Currency.Usd : null,
+                    method == PriceMethod.Stepped ? [new(null, 100, 1), new(100, null, 3.25m)] : []);
+                db.Add(tariff);
+                await db.SaveChangesAsync();
+                var inputs = OrderPricingInputs.Empty with
+                {
+                    ManualAmounts = method == PriceMethod.Manual ? new() { [kind] = 3.25m } : new(),
+                    SelectedServices = [ServiceKind.WarehousePhoto, ServiceKind.ProductInspection, ServiceKind.ShipmentInsurance]
+                };
+                OrderPriceCalculator.ValidateInputs(inputs, await OrderPriceCalculator.TariffsAsync(db, Now, default));
+                var imports = new ImportedAmount();
+                var calculation = await OrderPriceCalculator.CalculateAsync(db, order, Now, inputs, imports, default);
+                var component = calculation.Components.Single(item => item.Service == kind);
+                var expected = method == PriceMethod.Percent ? (currency == Currency.Usd ? 12m : 800m)
+                    : method == PriceMethod.Stepped ? 1m : 3.25m;
+                Assert.That(component.State, Is.EqualTo(PriceComponentState.Calculated), $"{kind}/{method}/{currency}");
+                Assert.That(component.Currency, Is.EqualTo(currency));
+                Assert.That(component.Amount, Is.EqualTo(expected));
+                Assert.That(component.AmountRub, Is.EqualTo(currency == Currency.Usd ? expected * 80 : expected));
+                Assert.That(component.Tariff!.Currency, Is.EqualTo(currency));
+                if (method == PriceMethod.Auto) Assert.That(imports.Requests, Does.Contain((kind, currency)));
+            }
+    }
+
+    private sealed class ImportedAmount : IAutomaticPriceSource
+    {
+        public List<(ServiceKind, Currency)> Requests { get; } = [];
+        public Task<decimal?> GetAmountAsync(Order order, ServiceKind service, Currency currency, CancellationToken token)
+        {
+            Requests.Add((service, currency));
+            return Task.FromResult<decimal?>(3.25m);
+        }
+    }
+
+    [TestCase("1.235", "1.24")]
+    [TestCase("1.225", "1.23")]
+    [TestCase("1.234", "1.23")]
+    public void RoundsHalfUp(string input, string expected)
+        => Assert.That(OrderPriceCalculator.Round(decimal.Parse(input, System.Globalization.CultureInfo.InvariantCulture)),
+            Is.EqualTo(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture)));
+
+    [TestCase(0, 2)]
+    [TestCase(99.99, 2)]
+    [TestCase(100, 2)]
+    [TestCase(100.001, 3)]
+    [TestCase(999.99, 3)]
+    [TestCase(1000, 3)]
+    [TestCase(1000.001, 4)]
+    public void StepUsesOpenLowerAndInclusiveUpperBoundary(decimal basis, decimal expected)
+        => Assert.That(OrderPriceCalculator.Step(basis, [new(null, 100, 2), new(100, 1000, 3), new(1000, null, 4)]), Is.EqualTo(expected));
+
+    [Test]
+    public async Task UndatedTariffAppliesBeforeAnyConfiguredStartDate()
+    {
+        var dated = db.ServiceCatalogueEntries.Single(item => item.Service == ServiceKind.InternationalDelivery);
+        db.ServiceCatalogueEntries.Remove(dated);
+        db.ServiceCatalogueEntries.Add(new ServiceCatalogueEntry(ServiceKind.InternationalDelivery, PriceMethod.Fixed,
+            null, null, null, 2m, Currency.Usd, null, new DateOnly(2026, 12, 31), Now));
+        await db.SaveChangesAsync();
+        var result = await OrderPriceCalculator.CalculateAsync(db, order, Now, OrderPricingInputs.Empty, null, default);
+        Assert.That(result.Components.Single(item => item.Service == ServiceKind.InternationalDelivery).Amount, Is.EqualTo(2m));
+    }
+
+    [Test]
+    public async Task MissingRateIsUnknownNotZeroAndNoEurRequired()
+    {
+        db.ExchangeRateHistory.RemoveRange(db.ExchangeRateHistory);
+        await db.SaveChangesAsync();
+        var result = await OrderPriceCalculator.CalculateAsync(db, order, Now, OrderPricingInputs.Empty, null, default);
+        Assert.That(result.TotalRub, Is.Null);
+        Assert.That(result.ExchangeRate, Is.Null);
+        Assert.That(result.Components.Single(row => row.Service == ServiceKind.Product).State, Is.EqualTo(PriceComponentState.NotCalculated));
+    }
+
+    [Test]
+    public async Task CrossCurrencyStepUsesTotalMerchandiseAndAuditKeepsBands()
+    {
+        var catalogue = new ServiceCatalogueService(db, new Clock(), NullLogger<ServiceCatalogueService>.Instance);
+        var request = new ServiceCatalogueWriteRequest
+        {
+            Service = ServiceKind.WarehousePhoto,
+            PriceMethod = PriceMethod.Stepped,
+            Currency = Currency.Usd,
+            IntervalCurrency = Currency.Rub,
+            Bands = [new(null, 7999, 2), new(7999, null, 3)],
+            AvailableFrom = new(2026, 1, 1)
+        };
+        var created = await catalogue.CreateAsync(request, actorId, Admin, default);
+        var result = await OrderPriceCalculator.CalculateAsync(db, order, Now, OrderPricingInputs.Empty with { SelectedServices = [ServiceKind.WarehousePhoto] }, null, default);
+        Assert.That(result.Components.Single(row => row.Service == ServiceKind.WarehousePhoto).AmountRub, Is.EqualTo(240));
+        await catalogue.DeleteAsync(created.Id, created.Version, actorId, Admin, default);
+        var audit = await catalogue.AuditAsync(null, null, created.Id, null, 1, 10, "timestamp", "asc", Shift, default);
+        Assert.That(audit.Items[0].After!.Bands, Is.EqualTo(request.Bands));
+        Assert.That(audit.Items[1].Before!.IntervalCurrency, Is.EqualTo(Currency.Rub));
+    }
+
+    [Test]
+    public void BandsRejectGapsOverlapsScalesAndEur()
+    {
+        var request = new ServiceCatalogueWriteRequest
+        {
+            Service = ServiceKind.Product,
+            PriceMethod = PriceMethod.Stepped,
+            Currency = Currency.Usd,
+            IntervalCurrency = Currency.Rub,
+            AvailableFrom = new(2026, 1, 1)
+        };
+        foreach (var bands in new PriceBand[][] { [], [new(1, null, 2)], [new(0, 100, 2)], [new(null, null, -1)],
+            [new(null, 100, 2), new(99, null, 3)], [new(null, 100, 2), new(101, null, 3)], [new(null, null, 1.001m)] })
+        {
+            request.Bands = bands;
+            Assert.That(Assert.Throws<ServiceException>(() => ServiceCatalogueRules.Prepare(request, false))!.Code, Is.EqualTo("invalid_service_catalogue_bands"));
+        }
+        request.Bands = [new(null, null, 0)]; request.IntervalCurrency = Currency.Eur;
+        Assert.That(Assert.Throws<ServiceException>(() => ServiceCatalogueRules.Prepare(request, false))!.Code, Is.EqualTo("invalid_service_catalogue_currency"));
+    }
+
+    [Test]
+    public async Task ConfirmationFreezesSavedValuesAndRejectsFurtherWrites()
+    {
+        var saved = await service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, OrderPricingInputs.Empty), actorId, Shift, default);
+        db.ExchangeRateHistory.Add(OrderProductTestData.Rate(Currency.Usd, 90, date: new(2026, 9, 24)));
+        await db.SaveChangesAsync();
+        var confirmed = await service.ConfirmPricingAsync("12345678-1", new(saved.UpdatedAt), actorId, Shift, default);
+        Assert.That(confirmed.Calculation.TotalRub, Is.EqualTo(saved.Calculation.TotalRub));
+        Assert.That(confirmed.ValidUntil, Is.EqualTo(Now.AddHours(24)));
+        Assert.That(confirmed.History[0].ActorName, Is.EqualTo("Иванов Иван"));
+        Assert.That(order.Status, Is.EqualTo(OrderStatus.QuoteReady));
+        var ex = Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(confirmed.UpdatedAt, OrderPricingInputs.Empty), actorId, Admin, default));
+        Assert.That(ex!.Code, Is.EqualTo("order_not_editable"));
+    }
+
+    [Test]
+    public async Task VersionAndRoleGuardsAreIndependentFromCatalogue()
+    {
+        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(Now.AddSeconds(-1), OrderPricingInputs.Empty), actorId, Shift, default))!.Code, Is.EqualTo("order_update_conflict"));
+        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, OrderPricingInputs.Empty), actorId, [BackofficeRoles.Operator], default))!.Code, Is.EqualTo("access_denied"));
+        Assert.That((await service.GetPricingAsync("12345678-1", [BackofficeRoles.Operator], default)).CanEdit, Is.False);
+        Assert.That(BackofficeAuthorization.IsAllowed(Shift, BackofficeAction.ManageServiceCatalogue), Is.False);
+    }
+
+    [Test]
+    public async Task AutoCannotBeOverriddenAndMissingImportRemainsUnknown()
+    {
+        var tariff = Tariff(ServiceKind.WarehousePhoto, PriceMethod.Auto, Currency.Usd);
+        db.Add(tariff); await db.SaveChangesAsync();
+        var inputs = OrderPricingInputs.Empty with { SelectedServices = [ServiceKind.WarehousePhoto] };
+        var result = await OrderPriceCalculator.CalculateAsync(db, order, Now, inputs, null, default);
+        Assert.That(result.TotalRub, Is.Null);
+        Assert.Throws<ServiceException>(() => OrderPriceCalculator.ValidateInputs(inputs with { ManualAmounts = new() { [ServiceKind.WarehousePhoto] = 1 } }, [tariff]));
+    }
+
+    private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }
+}
