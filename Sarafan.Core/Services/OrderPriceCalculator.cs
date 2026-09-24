@@ -82,14 +82,13 @@ internal static class OrderPriceCalculator
             else if (tariff is null) amount = null;
             else
             {
-                var basis = currency == Currency.Usd ? merchandise : merchandise * usdRub;
                 amount = tariff.PriceMethod switch
                 {
                     PriceMethod.Fixed => tariff.Amount,
                     PriceMethod.Manual => inputs.ManualAmounts.TryGetValue(service, out var manual) ? manual : null,
                     PriceMethod.Auto => automatic is null ? null : await automatic.GetAmountAsync(order, service, currency, token),
-                    PriceMethod.Percent => Percentage(basis, tariff),
-                    PriceMethod.Stepped => Step(tariff.IntervalCurrency == Currency.Usd ? merchandise : merchandise * usdRub, tariff.Bands),
+                    PriceMethod.Percent => Percentage(merchandise, tariff),
+                    PriceMethod.Stepped => Step(merchandise, tariff.Bands),
                     _ => null
                 };
             }

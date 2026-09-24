@@ -39,7 +39,7 @@ public sealed class ServiceCatalogueModelTests
             (PriceMethod.Fixed, 100, "Фиксированная стоимость", "fixed"),
             (PriceMethod.Manual, 200, "Ввод вручную", "manual"),
             (PriceMethod.Auto, 300, "Автоматическое определение", "auto"),
-            (PriceMethod.Stepped, 400, "Ступенчатая стоимость", "stepped")
+            (PriceMethod.Stepped, 400, "Стоимость по диапазонам", "stepped")
         };
         var actions = new[]
         {
@@ -82,6 +82,10 @@ public sealed class ServiceCatalogueModelTests
             Assert.That(entry.FindProperty(nameof(ServiceCatalogueEntry.Bands))!.GetColumnType(), Is.EqualTo("jsonb"));
             Assert.That(entry.FindProperty(nameof(ServiceCatalogueEntry.AvailableFrom))!.IsNullable, Is.True);
             Assert.That(entry.FindProperty(nameof(ServiceCatalogueEntry.IntervalCurrency)), Is.Not.Null);
+            Assert.That(entry.GetCheckConstraints().Single(item => item.Name == "ck_service_catalogue_bands").Sql,
+                Does.Contain("interval_currency IS NOT NULL AND interval_currency = 840"));
+            Assert.That(entry.GetCheckConstraints().Single(item => item.Name == "ck_service_catalogue_parameters").Sql,
+                Does.Contain("price_method = 0 AND percentage IS NOT NULL AND percentage > 0 AND percentage <= 100"));
             Assert.That(model.FindEntityType(typeof(OrderPricingSnapshot))!.GetTableName(), Is.EqualTo("order_pricing_snapshots"));
             Assert.That(entry.GetCheckConstraints().Select(item => item.Name), Does.Contain("ck_service_catalogue_parameters"));
             Assert.That(entry.GetCheckConstraints().Single(item => item.Name == "ck_service_catalogue_product_identity").Sql,
@@ -114,6 +118,8 @@ public sealed class ServiceCatalogueModelTests
             Assert.That(script, Does.Not.Contain("CREATE EXTENSION"));
             Assert.That(script, Does.Contain("price_method IN (0, 100, 200, 300, 400)"));
             Assert.That(script, Does.Contain("currency IS NOT NULL AND currency IN (643, 840)"));
+            Assert.That(script, Does.Contain("interval_currency IS NOT NULL AND interval_currency = 840"));
+            Assert.That(script, Does.Contain("AND amount IS NULL AND currency = 840"));
             Assert.That(script, Does.Contain("CREATE FUNCTION valid_service_price_bands"));
             Assert.That(script, Does.Contain("lower_value IS NULL OR lower_value <> previous_end"));
             Assert.That(script, Does.Contain("jsonb_typeof(band->'From') NOT IN ('number','null')"));
@@ -124,7 +130,7 @@ public sealed class ServiceCatalogueModelTests
             Assert.That(script, Does.Contain("SELECT 1, 0, 200, NULL, NULL, NULL, NULL, 840"));
             Assert.That(script, Does.Contain("pg_get_serial_sequence('service_catalogue_entries', 'id')"));
             Assert.That(script, Does.Contain("tr_service_catalogue_product_immutable"));
-            Assert.That(script, Does.Contain("IF TG_OP = 'UPDATE' THEN\n        RETURN NEW;"));
+            Assert.That(script.Replace("\r\n", "\n"), Does.Contain("IF TG_OP = 'UPDATE' THEN\n        RETURN NEW;"));
         }
     }
 
