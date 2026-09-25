@@ -39,8 +39,6 @@ internal static class ServiceCatalogueRules
         }
 
         ValidateCurrency(request.Currency);
-        if (request.IntervalCurrency is { } intervalCurrency && intervalCurrency is not (Currency.Rub or Currency.Usd))
-            throw Invalid("invalid_service_catalogue_currency", "intervalCurrency", "Выберите российский рубль или доллар США.");
         if (method != PriceMethod.Stepped && (request.IntervalCurrency is not null || request.Bands is { Length: > 0 }))
             throw Invalid("invalid_service_catalogue_bands", "bands", "Интервалы допустимы только для ступенчатого тарифа.");
         return method switch
@@ -90,6 +88,8 @@ internal static class ServiceCatalogueRules
         ServiceKind service,
         DateOnly? availableFrom)
     {
+        if (request.Currency != Currency.Usd)
+            throw Invalid("invalid_service_catalogue_currency", "currency", "Процент от стоимости товара задаётся в долларах США.");
         if (request.Amount is not null)
             throw Invalid("invalid_service_catalogue_amount", "amount", "Для процентного тарифа фиксированная сумма не указывается.");
         if (!ValidPercentage(request.Percentage))
@@ -144,8 +144,8 @@ internal static class ServiceCatalogueRules
     private static PreparedServiceCatalogueEntry PrepareStepped(ServiceCatalogueWriteRequest request, ServiceKind service, DateOnly? availableFrom)
     {
         var prepared = PrepareManual(request, service, availableFrom);
-        if (request.IntervalCurrency is not (Currency.Rub or Currency.Usd))
-            throw Invalid("invalid_service_catalogue_currency", "intervalCurrency", "Выберите валюту интервалов: российский рубль или доллар США.");
+        if (request.IntervalCurrency != Currency.Usd)
+            throw Invalid("invalid_service_catalogue_currency", "intervalCurrency", "Диапазоны задаются в долларах США, как стоимость товара.");
         if (request.Bands is not { Length: > 0 and <= MaximumBands } bands)
             throw Invalid("invalid_service_catalogue_bands", "bands", "Укажите от 1 до 100 интервалов.");
         decimal? expectedFrom = null;

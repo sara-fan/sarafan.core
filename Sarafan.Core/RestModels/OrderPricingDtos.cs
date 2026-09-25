@@ -9,6 +9,7 @@ namespace Sarafan.Core.RestModels;
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record OrderPricingInputs(
+    [property: JsonConverter(typeof(ManualPricingAmountsJsonConverter))]
     Dictionary<ServiceKind, decimal> ManualAmounts,
     ServiceKind[] SelectedServices,
     decimal? DomesticDeliveryRub,

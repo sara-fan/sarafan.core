@@ -4,6 +4,7 @@
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using Sarafan.Core.Authentication;
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
@@ -14,6 +15,81 @@ namespace Sarafan.Core.Tests;
 
 public sealed class OrderPricingTests
 {
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
+    [Test]
+    public void ManualAmountsUseNumericKeysWithoutChangingOtherEnums()
+    {
+        var inputs = OrderPricingInputs.Empty with
+        {
+            ManualAmounts = Enum.GetValues<ServiceKind>().ToDictionary(kind => kind, _ => 3.25m),
+            SelectedServices = [ServiceKind.WarehousePhoto]
+        };
+        var json = JsonSerializer.Serialize(inputs, WebJson);
+        using var document = JsonDocument.Parse(json);
+        Assert.That(document.RootElement.GetProperty("manualAmounts").EnumerateObject().Select(item => item.Name),
+            Is.EqualTo(new[] { "0", "100", "200", "300", "400", "500", "600", "700" }));
+        Assert.That(document.RootElement.GetProperty("selectedServices")[0].GetInt32(), Is.EqualTo(500));
+        Assert.That(JsonSerializer.Deserialize<OrderPricingInputs>(json, WebJson)!.ManualAmounts,
+            Is.EquivalentTo(inputs.ManualAmounts));
+        Assert.That(JsonSerializer.Serialize(OrderPricingInputs.Empty, WebJson), Does.Contain("\"manualAmounts\":{}"));
+    }
+
+    [TestCase("{\"unknown\":1}")]
+    [TestCase("{\"100\":\"invalid\"}")]
+    [TestCase("[]")]
+    public void ManualAmountsRejectMalformedJson(string amounts)
+        => Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<OrderPricingInputs>(
+            "{\"manualAmounts\":" + amounts + ",\"selectedServices\":[],\"domesticDeliveryRub\":null,\"customsRub\":null}", WebJson));
+
+    [Test]
+    public async Task ManualPricingRoundTripsRequestsSnapshotsAndRetainedHistory()
+    {
+        db.ServiceCatalogueEntries.RemoveRange(db.ServiceCatalogueEntries.Where(item => item.Service == ServiceKind.UsWarehouseExpenses));
+        db.Add(Tariff(ServiceKind.UsWarehouseExpenses, PriceMethod.Manual, Currency.Usd));
+        await db.SaveChangesAsync();
+        var request = JsonSerializer.Deserialize<OrderPricingWriteRequest>(
+            "{\"expectedUpdatedAt\":\"2026-09-24T10:00:00Z\",\"inputs\":{\"manualAmounts\":{\"100\":3.25},\"selectedServices\":[],\"domesticDeliveryRub\":null,\"customsRub\":null}}", WebJson)!;
+        var saved = await service.UpdatePricingAsync("12345678-1", request, actorId, Shift, default);
+        AssertNumericManualAmounts(saved);
+        var snapshot = await db.OrderPricingSnapshots.SingleAsync();
+        using (var stored = JsonDocument.Parse(snapshot.Payload))
+            Assert.That(stored.RootElement.GetProperty("inputs").GetProperty("manualAmounts").GetProperty("100").GetDecimal(), Is.EqualTo(3.25m));
+
+        // Simulate the previous serializer's immutable persisted representation in disposable test storage.
+        var historical = new OrderPricingSnapshot
+        {
+            Order = order,
+            At = Now,
+            ActorId = actorId,
+            ActorName = "Иванов Иван",
+            Payload = snapshot.Payload.Replace("\"100\":", "\"UsWarehouseExpenses\":", StringComparison.Ordinal)
+        };
+        db.Add(historical);
+        await db.SaveChangesAsync();
+        var historicalPayload = historical.Payload;
+        var read = await service.GetPricingAsync("12345678-1", Shift, default);
+        AssertNumericManualAmounts(read);
+        var confirmed = await service.ConfirmPricingAsync("12345678-1", new(read.UpdatedAt), actorId, Shift, default);
+        AssertNumericManualAmounts(confirmed);
+        Assert.That(confirmed.Calculation.TotalRub, Is.EqualTo(saved.Calculation.TotalRub));
+        Assert.That(confirmed.History, Has.Length.EqualTo(3));
+        Assert.That((await db.OrderPricingSnapshots.SingleAsync(item => item.Id == historical.Id)).Payload, Is.EqualTo(historicalPayload));
+    }
+
+    private static void AssertNumericManualAmounts(OrderPricingDto value)
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value, WebJson));
+        var root = document.RootElement;
+        foreach (var calculation in root.GetProperty("history").EnumerateArray().Select(item => item.GetProperty("calculation"))
+            .Prepend(root.GetProperty("calculation")))
+        {
+            var amounts = calculation.GetProperty("inputs").GetProperty("manualAmounts");
+            Assert.That(amounts.EnumerateObject().Select(item => item.Name), Is.EqualTo(new[] { "100" }));
+            Assert.That(amounts.GetProperty("100").GetDecimal(), Is.EqualTo(3.25m));
+        }
+    }
+
     [TestCase("{}")]
     [TestCase("{\"from\":0,\"by\":null}")]
     [TestCase("{\"from\":0,\"amount\":0}")]
@@ -31,7 +107,7 @@ public sealed class OrderPricingTests
     }
 
     [Test]
-    public void EveryServiceAllowsBothCurrenciesAndAllMethods()
+    public void EveryServiceAllowsAllMethodsWithUsdPercentCharges()
     {
         foreach (var kind in Enum.GetValues<ServiceKind>())
         {
@@ -52,7 +128,11 @@ public sealed class OrderPricingTests
                         IntervalCurrency = method == PriceMethod.Stepped ? Currency.Usd : null,
                         Bands = method == PriceMethod.Stepped ? [new(null, null, 2)] : []
                     };
-                    Assert.DoesNotThrow(() => ServiceCatalogueRules.Prepare(request, false), $"{kind}/{method}/{currency}");
+                    if (method == PriceMethod.Percent && currency == Currency.Rub)
+                        Assert.That(Assert.Throws<ServiceException>(() => ServiceCatalogueRules.Prepare(request, false))!.Code,
+                            Is.EqualTo("invalid_service_catalogue_currency"));
+                    else
+                        Assert.DoesNotThrow(() => ServiceCatalogueRules.Prepare(request, false), $"{kind}/{method}/{currency}");
                     request.Currency = Currency.Eur;
                     Assert.That(Assert.Throws<ServiceException>(() => ServiceCatalogueRules.Prepare(request, false))!.Code,
                         Is.EqualTo("invalid_service_catalogue_currency"));
@@ -84,7 +164,7 @@ public sealed class OrderPricingTests
         db.ExchangeRateHistory.Add(OrderProductTestData.Rate(Currency.Usd, 80));
         db.ServiceCatalogueEntries.AddRange(Tariff(ServiceKind.UsWarehouseExpenses, PriceMethod.Fixed, Currency.Usd, amount: 0),
             Tariff(ServiceKind.InternationalDelivery, PriceMethod.Fixed, Currency.Usd, amount: 1.23m),
-            Tariff(ServiceKind.ServiceCommission, PriceMethod.Percent, Currency.Rub, percentage: 10, minimum: 900));
+            Tariff(ServiceKind.ServiceCommission, PriceMethod.Percent, Currency.Usd, percentage: 10, minimum: 12));
         await db.SaveChangesAsync();
         service = new(db, null!, null!, null!, null!, null!, new Clock(), NullLogger<OrderService>.Instance);
     }
@@ -101,10 +181,10 @@ public sealed class OrderPricingTests
         var inputs = OrderPricingInputs.Empty with { DomesticDeliveryRub = 500, CustomsRub = 600 };
         var result = await OrderPriceCalculator.CalculateAsync(db, order, Now, inputs, null, default);
         Assert.That(result.Components.Single(row => row.Service == ServiceKind.Product).Amount, Is.EqualTo(100));
-        Assert.That(result.Components.Single(row => row.Service == ServiceKind.ServiceCommission).AmountRub, Is.EqualTo(900));
+        Assert.That(result.Components.Single(row => row.Service == ServiceKind.ServiceCommission).AmountRub, Is.EqualTo(960));
         Assert.That(result.Components.Single(row => row.Service == ServiceKind.UsWarehouseExpenses).State, Is.EqualTo(PriceComponentState.Calculated));
         Assert.That(result.Components.Single(row => row.Service == ServiceKind.WarehousePhoto).State, Is.EqualTo(PriceComponentState.NotApplicable));
-        Assert.That(result.TotalRub, Is.EqualTo(8998.40m));
+        Assert.That(result.TotalRub, Is.EqualTo(9058.40m));
     }
 
     [TestCase(PriceMethod.Percent)]
@@ -118,6 +198,7 @@ public sealed class OrderPricingTests
             ServiceKind.ServiceCommission, ServiceKind.WarehousePhoto, ServiceKind.ProductInspection, ServiceKind.ShipmentInsurance })
             foreach (var currency in new[] { Currency.Rub, Currency.Usd })
             {
+                if (method == PriceMethod.Percent && currency == Currency.Rub) continue;
                 db.ServiceCatalogueEntries.RemoveRange(db.ServiceCatalogueEntries.Where(item => item.Service == kind));
                 var tariff = new ServiceCatalogueEntry(kind, method, method == PriceMethod.Percent ? 10 : null,
                     method == PriceMethod.Percent ? 12 : null, null, method == PriceMethod.Fixed ? 3.25m : null,
@@ -135,7 +216,7 @@ public sealed class OrderPricingTests
                 var imports = new ImportedAmount();
                 var calculation = await OrderPriceCalculator.CalculateAsync(db, order, Now, inputs, imports, default);
                 var component = calculation.Components.Single(item => item.Service == kind);
-                var expected = method == PriceMethod.Percent ? (currency == Currency.Usd ? 12m : 800m)
+                var expected = method == PriceMethod.Percent ? 12m
                     : method == PriceMethod.Stepped ? 1m : 3.25m;
                 Assert.That(component.State, Is.EqualTo(PriceComponentState.Calculated), $"{kind}/{method}/{currency}");
                 Assert.That(component.Currency, Is.EqualTo(currency));
@@ -197,7 +278,7 @@ public sealed class OrderPricingTests
     }
 
     [Test]
-    public async Task CrossCurrencyStepUsesTotalMerchandiseAndAuditKeepsBands()
+    public async Task StepUsesUsdMerchandiseAndAuditKeepsBands()
     {
         var catalogue = new ServiceCatalogueService(db, new Clock(), NullLogger<ServiceCatalogueService>.Instance);
         var request = new ServiceCatalogueWriteRequest
@@ -205,8 +286,8 @@ public sealed class OrderPricingTests
             Service = ServiceKind.WarehousePhoto,
             PriceMethod = PriceMethod.Stepped,
             Currency = Currency.Usd,
-            IntervalCurrency = Currency.Rub,
-            Bands = [new(null, 7999, 2), new(7999, null, 3)],
+            IntervalCurrency = Currency.Usd,
+            Bands = [new(null, 99, 2), new(99, null, 3)],
             AvailableFrom = new(2026, 1, 1)
         };
         var created = await catalogue.CreateAsync(request, actorId, Admin, default);
@@ -215,18 +296,18 @@ public sealed class OrderPricingTests
         await catalogue.DeleteAsync(created.Id, created.Version, actorId, Admin, default);
         var audit = await catalogue.AuditAsync(null, null, created.Id, null, 1, 10, "timestamp", "asc", Shift, default);
         Assert.That(audit.Items[0].After!.Bands, Is.EqualTo(request.Bands));
-        Assert.That(audit.Items[1].Before!.IntervalCurrency, Is.EqualTo(Currency.Rub));
+        Assert.That(audit.Items[1].Before!.IntervalCurrency, Is.EqualTo(Currency.Usd));
     }
 
     [Test]
-    public void BandsRejectGapsOverlapsScalesAndEur()
+    public void BandsRejectGapsOverlapsScalesAndNonMerchandiseCurrencies()
     {
         var request = new ServiceCatalogueWriteRequest
         {
             Service = ServiceKind.Product,
             PriceMethod = PriceMethod.Stepped,
             Currency = Currency.Usd,
-            IntervalCurrency = Currency.Rub,
+            IntervalCurrency = Currency.Usd,
             AvailableFrom = new(2026, 1, 1)
         };
         foreach (var bands in new PriceBand[][] { [], [new(1, null, 2)], [new(0, 100, 2)], [new(null, null, -1)],
@@ -235,8 +316,12 @@ public sealed class OrderPricingTests
             request.Bands = bands;
             Assert.That(Assert.Throws<ServiceException>(() => ServiceCatalogueRules.Prepare(request, false))!.Code, Is.EqualTo("invalid_service_catalogue_bands"));
         }
-        request.Bands = [new(null, null, 0)]; request.IntervalCurrency = Currency.Eur;
-        Assert.That(Assert.Throws<ServiceException>(() => ServiceCatalogueRules.Prepare(request, false))!.Code, Is.EqualTo("invalid_service_catalogue_currency"));
+        request.Bands = [new(null, null, 0)];
+        foreach (var currency in new[] { Currency.Rub, Currency.Eur })
+        {
+            request.IntervalCurrency = currency;
+            Assert.That(Assert.Throws<ServiceException>(() => ServiceCatalogueRules.Prepare(request, false))!.Code, Is.EqualTo("invalid_service_catalogue_currency"));
+        }
     }
 
     [Test]

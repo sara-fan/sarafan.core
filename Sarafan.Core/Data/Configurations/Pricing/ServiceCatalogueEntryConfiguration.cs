@@ -21,13 +21,13 @@ internal sealed class ServiceCatalogueEntryConfiguration : IEntityTypeConfigurat
             table.HasCheckConstraint("ck_service_catalogue_product_identity", "(service = 0 AND id = 1) OR (service <> 0 AND id <> 1)");
             table.HasCheckConstraint("ck_service_catalogue_method", "price_method IN (0, 100, 200, 300, 400)");
             table.HasCheckConstraint("ck_service_catalogue_currency", "currency IS NOT NULL AND currency IN (643, 840)");
-            table.HasCheckConstraint("ck_service_catalogue_bands", "(price_method = 400 AND interval_currency IS NOT NULL AND interval_currency IN (643, 840) AND valid_service_price_bands(bands)) OR (price_method <> 400 AND interval_currency IS NULL AND bands = '[]'::jsonb)");
+            table.HasCheckConstraint("ck_service_catalogue_bands", "(price_method = 400 AND interval_currency IS NOT NULL AND interval_currency = 840 AND valid_service_price_bands(bands)) OR (price_method <> 400 AND interval_currency IS NULL AND bands = '[]'::jsonb)");
             table.HasCheckConstraint("ck_service_catalogue_period", "available_from IS NULL OR available_by IS NULL OR available_by >= available_from");
             table.HasCheckConstraint("ck_service_catalogue_version", "version <> '00000000-0000-0000-0000-000000000000'::uuid");
             table.HasCheckConstraint("ck_service_catalogue_timestamps", "updated_at >= created_at");
             table.HasCheckConstraint("ck_service_catalogue_parameters", """
                 (price_method = 0 AND percentage IS NOT NULL AND percentage > 0 AND percentage <= 100
-                    AND amount IS NULL AND currency IN (643, 840)
+                    AND amount IS NULL AND currency = 840
                     AND (minimum_amount IS NULL OR minimum_amount >= 0)
                     AND (maximum_amount IS NULL OR maximum_amount >= 0)
                     AND (minimum_amount IS NULL OR maximum_amount IS NULL OR maximum_amount >= minimum_amount))

@@ -202,7 +202,7 @@ public sealed class ServiceCatalogueTests
         Service = ServiceKind.WarehousePhoto,
         PriceMethod = PriceMethod.Percent,
         Percentage = 12.3456m,
-        Currency = Currency.Rub,
+        Currency = Currency.Usd,
         MinimumAmount = 1.25m,
         MaximumAmount = 90.50m,
         AvailableFrom = new DateOnly(2026, 1, 1)

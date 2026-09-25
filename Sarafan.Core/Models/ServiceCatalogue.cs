@@ -21,7 +21,7 @@ public static class PriceMethodExtensions
         PriceMethod.Fixed => "Фиксированная стоимость",
         PriceMethod.Manual => "Ввод вручную",
         PriceMethod.Auto => "Автоматическое определение",
-        PriceMethod.Stepped => "Ступенчатая стоимость",
+        PriceMethod.Stepped => "Стоимость по диапазонам",
 
         _ => throw new ArgumentOutOfRangeException(nameof(method), method, null)
     };
