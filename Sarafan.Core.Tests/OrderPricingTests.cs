@@ -59,7 +59,10 @@ public sealed class OrderPricingTests
         // Simulate the previous serializer's immutable persisted representation in disposable test storage.
         var historical = new OrderPricingSnapshot
         {
-            Order = order, At = Now, ActorId = actorId, ActorName = "Иванов Иван",
+            Order = order,
+            At = Now,
+            ActorId = actorId,
+            ActorName = "Иванов Иван",
             Payload = snapshot.Payload.Replace("\"100\":", "\"UsWarehouseExpenses\":", StringComparison.Ordinal)
         };
         db.Add(historical);

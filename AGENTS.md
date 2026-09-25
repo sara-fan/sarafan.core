@@ -110,6 +110,7 @@
 
 ### Test Coverage
 
+- Before running the full test suite, run `dotnet format Sarafan.sln --no-restore --verify-no-changes` and fix every reported formatting issue. The formatting check must pass before full-suite execution.
 - Maintain at least 95% patch coverage for all new or modified code.
 - Add or expand tests until the changed-code coverage target is met before handing off a change.
 - Automated tests must require no PostgreSQL instance, Docker service, environment variable or manual Visual Studio setup. Use EF Core InMemory for application-owned stateful behavior; disconnected `UseNpgsql` is allowed only for model metadata or generated-SQL inspection and must never open a connection.
