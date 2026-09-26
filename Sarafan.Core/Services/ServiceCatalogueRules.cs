@@ -69,12 +69,7 @@ internal static class ServiceCatalogueRules
             Enum.GetValues<PriceMethod>().OrderBy(value => (int)value)
                 .Select(value => new EnumOpsItemDto((int)value, value.GetDisplayName(), value.GetRouteAlias())).ToArray(),
             PricingCurrencies.Select(value => new ServiceCatalogueCurrencyOpsDto((int)value,
-                value.GetDisplayName(), value.GetRouteAlias(), value switch
-                {
-                    Currency.Rub => "₽",
-                    Currency.Usd => "$",
-                    _ => throw new ArgumentOutOfRangeException(nameof(value), value, null)
-                })).ToArray(),
+                value.GetDisplayName(), value.GetRouteAlias(), value.GetSymbol())).ToArray(),
             Enum.GetValues<ServiceCatalogueAuditAction>().OrderBy(value => (int)value)
                 .Select(value => new EnumOpsItemDto((int)value, value.GetDisplayName(), value.GetRouteAlias())).ToArray(),
             new ServiceCatalogueLimitsDto(MaximumAmount, AmountDecimalPlaces, MaximumPercentage,
@@ -89,7 +84,7 @@ internal static class ServiceCatalogueRules
         DateOnly? availableFrom)
     {
         if (request.Currency != Currency.Usd)
-            throw Invalid("invalid_service_catalogue_currency", "currency", "Процент от стоимости товара задаётся в долларах США.");
+            throw Invalid("invalid_service_catalogue_currency", "currency", "Процент от стоимости товара задаётся в $.");
         if (request.Amount is not null)
             throw Invalid("invalid_service_catalogue_amount", "amount", "Для процентного тарифа фиксированная сумма не указывается.");
         if (!ValidPercentage(request.Percentage))
@@ -145,7 +140,7 @@ internal static class ServiceCatalogueRules
     {
         var prepared = PrepareManual(request, service, availableFrom);
         if (request.IntervalCurrency != Currency.Usd)
-            throw Invalid("invalid_service_catalogue_currency", "intervalCurrency", "Диапазоны задаются в долларах США, как стоимость товара.");
+            throw Invalid("invalid_service_catalogue_currency", "intervalCurrency", "Диапазоны задаются в $, как стоимость товара.");
         if (request.Bands is not { Length: > 0 and <= MaximumBands } bands)
             throw Invalid("invalid_service_catalogue_bands", "bands", "Укажите от 1 до 100 интервалов.");
         decimal? expectedFrom = null;
@@ -163,7 +158,7 @@ internal static class ServiceCatalogueRules
     private static void ValidateCurrency(Currency? currency)
     {
         if (currency is not (Currency.Rub or Currency.Usd))
-            throw Invalid("invalid_service_catalogue_currency", "currency", "Выберите российский рубль или доллар США.");
+            throw Invalid("invalid_service_catalogue_currency", "currency", "Выберите ₽ или $.");
     }
 
     private static void ValidateOptionalAmount(decimal? amount, string field)

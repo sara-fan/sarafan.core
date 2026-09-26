@@ -34,6 +34,8 @@
 
 ### Service pricing catalogue
 
+- Test missing-cost confirmation across all applicable service kinds using `IsIncludedInTotal()` for expected eligibility; keep current service-to-flag mappings in separate catalogue tests. Confirmed excluded unknown costs must remain unknown in persisted snapshots.
+
 - Validate supported ServiceKind values in Core, not with a database enum-membership check constraint. Adding a service kind must not require a schema migration; retain independent Product identity/immutability constraints.
 
 - Serialize `OrderPricingInputs.manualAmounts` with invariant numeric ServiceKind JSON keys (for example `"100"`) in responses, history and new snapshots. Keep the converter scoped to that property; retain reads of existing enum-name snapshot keys without rewriting historical records. Do not change other enum serialization or move service-name mappings into clients.
@@ -78,6 +80,8 @@
 - Disable every scheduled job in deterministic integration tests by setting its cron to blank and `RunOnStartup=false`. Use direct Quartz triggers when exercising scheduling behavior; never let tests call external providers or use protected local database storage.
 
 ### Official exchange rates
+
+- `Currency.GetSymbol()` owns the display symbols `₽`, `$` and `€`. Public/staff order Ops and back-office status publish each currency's read-only `symbol` alongside its stable numeric value, Russian name and route alias; pricing catalogue Ops uses the same symbols. Keep currency names for descriptive metadata, but render user-facing amounts and currency choices with the symbols.
 
 - Keep `Currency` append-only with ISO 4217 numeric values and publish its Core-owned Russian names and aliases through order operations and the authorized back-office status catalogue. Persist exchange-rate currency pairs as numeric enum values; clients must not infer enum labels.
 - Synchronize official CBR USD/RUB and EUR/RUB from one response at startup and daily at 00:10 Europe/Moscow. Preserve each independently valid currency and keep source-effective date separate from UTC retrieval time; the provider/pair/date unique constraint preserves the first observation, including across concurrent instances. Provider failures must not block startup or erase history.
@@ -244,3 +248,9 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Privacy-request lists accept optional requestedFrom/requestedTo (YYYY-MM-DD), filter RequestedAt by inclusive Moscow calendar days before counting/paging, and echo both dates. Persist validated date filters in the staff view; keep date controls editable during read refreshes. No database migration is required.
 
 - Optional pricing services are customer-owned. Staff pricing updates must preserve the persisted selected-service set (empty before the first snapshot); reject additions/removals before any order or snapshot write.
+
+## Unified order history
+
+- Record each successful order action atomically as one immutable `OrderHistoryEvent`, linking its product audit and pricing snapshot. Use the resulting order version timestamp for event ordering. Preserve actor-name snapshots and typed versioned status/source evidence; failed writes and idempotent creation retries add no events. Future order mutation workflows must extend this recorder.
+- Staff history reads combine unified events with unlinked legacy evidence through a server-paged query. Pair legacy product/pricing records only on unique order/time/actor matches; never fabricate missing product values or historical actor names. Event-detail lookup is scoped to the public order number. Keep pricing responses limited to current pricing; history has its own list/detail API.
+- The history schema belongs in `20260926084356_0_3_0_ServiceCatalogue_2`, including its target model and current model snapshot; preserve the migration identity and existing constraint changes. Do not create a replacement migration or rewrite applied database migration history.

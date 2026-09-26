@@ -15,4 +15,4 @@ public sealed record BackofficeStatus(
     string Status,
     string AppVersion,
     IReadOnlyList<ExchangeRateDto> ExchangeRates,
-    IReadOnlyList<EnumOpsItemDto> Currencies);
+    IReadOnlyList<CurrencyOpsItemDto> Currencies);
