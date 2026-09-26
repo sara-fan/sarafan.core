@@ -79,7 +79,7 @@ public sealed partial class OrderService
             calculation = await OrderPriceCalculator.CalculateAsync(database, order, now, inputs, automaticPrices, token);
         }
         order.UpdatePricing(now, confirm);
-        database.OrderPricingSnapshots.Add(new()
+        var snapshot = new OrderPricingSnapshot
         {
             Order = order,
             At = now,
@@ -87,7 +87,11 @@ public sealed partial class OrderService
             ActorId = actorId,
             ActorName = name,
             Payload = JsonSerializer.Serialize(calculation, PricingJson)
-        });
+        };
+        database.OrderPricingSnapshots.Add(snapshot);
+        AddHistory(order, order.UpdatedAt, confirm ? OrderHistoryKind.QuoteConfirmed : OrderHistoryKind.PriceCalculated,
+            OrderHistoryArea.Pricing | (confirm ? OrderHistoryArea.Status : 0), OrderHistoryActor.Staff, actorId, name, null, snapshot,
+            new(1, confirm ? OrderStatus.UnderReview : null, confirm ? OrderStatus.QuoteReady : null, null));
         try
         {
             await database.SaveChangesAsync(token);
@@ -108,9 +112,7 @@ public sealed partial class OrderService
 
     private async Task<OrderPricingDto> PricingDetailsAsync(Order order, string[] roles, DateTimeOffset now, CancellationToken token)
     {
-        var rows = await database.OrderPricingSnapshots.AsNoTracking().Where(row => row.OrderId == order.Id)
-            .OrderByDescending(row => row.Id).Take(100).ToArrayAsync(token);
-        var latest = rows.FirstOrDefault();
+        var latest = await LatestPricingAsync(order.Id, token);
         var calculation = latest is null
             ? await OrderPriceCalculator.CalculateAsync(database, order, now, OrderPricingInputs.Empty, automaticPrices, token)
             : ReadCalculation(latest);
@@ -118,22 +120,24 @@ public sealed partial class OrderService
         return new($"{order.Customer.OrderCode}-{order.CustomerOrderNumber}", order.UpdatedAt, editable,
             editable && latest is not null && calculation.TotalRub is not null,
             latest?.ValidUntil is not null, latest?.ValidUntil is { } until && now >= until, latest?.ValidUntil,
-            calculation, rows.Select(row => new OrderPricingHistoryDto(row.Id, row.At, row.ValidUntil, row.ActorId, row.ActorName, ReadCalculation(row))).ToArray(),
+            calculation,
             (await OrderPriceCalculator.TariffsAsync(database, now, token)).Select(ServiceCatalogueService.ToDto).ToArray());
     }
 
-    private async Task AddPricingSnapshotAsync(Order order, DateTimeOffset now, OrderPricingInputs inputs,
+    private async Task<OrderPricingSnapshot> AddPricingSnapshotAsync(Order order, DateTimeOffset now, OrderPricingInputs inputs,
         int? actorId, string? actorName, CancellationToken token)
     {
         var calculation = await OrderPriceCalculator.CalculateAsync(database, order, now, inputs, automaticPrices, token);
-        database.OrderPricingSnapshots.Add(new()
+        var snapshot = new OrderPricingSnapshot
         {
             Order = order,
             At = now,
             ActorId = actorId,
             ActorName = actorName,
             Payload = JsonSerializer.Serialize(calculation, PricingJson)
-        });
+        };
+        database.OrderPricingSnapshots.Add(snapshot);
+        return snapshot;
     }
 
     private static OrderPriceCalculationDto ReadCalculation(OrderPricingSnapshot snapshot)

@@ -13,7 +13,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Tests;
 
-public sealed class OrderPricingTests
+public sealed partial class OrderPricingTests
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -73,7 +73,7 @@ public sealed class OrderPricingTests
         var confirmed = await service.ConfirmPricingAsync("12345678-1", new(read.UpdatedAt), actorId, Shift, default);
         AssertNumericManualAmounts(confirmed);
         Assert.That(confirmed.Calculation.TotalRub, Is.EqualTo(saved.Calculation.TotalRub));
-        Assert.That(confirmed.History, Has.Length.EqualTo(3));
+        Assert.That(await db.OrderPricingSnapshots.CountAsync(), Is.EqualTo(3));
         Assert.That((await db.OrderPricingSnapshots.SingleAsync(item => item.Id == historical.Id)).Payload, Is.EqualTo(historicalPayload));
     }
 
@@ -81,8 +81,7 @@ public sealed class OrderPricingTests
     {
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(value, WebJson));
         var root = document.RootElement;
-        foreach (var calculation in root.GetProperty("history").EnumerateArray().Select(item => item.GetProperty("calculation"))
-            .Prepend(root.GetProperty("calculation")))
+        foreach (var calculation in new[] { root.GetProperty("calculation") })
         {
             var amounts = calculation.GetProperty("inputs").GetProperty("manualAmounts");
             Assert.That(amounts.EnumerateObject().Select(item => item.Name), Is.EqualTo(new[] { "100" }));
@@ -351,7 +350,7 @@ public sealed class OrderPricingTests
         var confirmed = await service.ConfirmPricingAsync("12345678-1", new(saved.UpdatedAt), actorId, Shift, default);
         Assert.That(confirmed.Calculation.TotalRub, Is.EqualTo(saved.Calculation.TotalRub));
         Assert.That(confirmed.ValidUntil, Is.EqualTo(Now.AddHours(24)));
-        Assert.That(confirmed.History[0].ActorName, Is.EqualTo("Иванов Иван"));
+        Assert.That((await db.OrderPricingSnapshots.OrderByDescending(item => item.Id).FirstAsync()).ActorName, Is.EqualTo("Иванов Иван"));
         Assert.That(order.Status, Is.EqualTo(OrderStatus.QuoteReady));
         var ex = Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(confirmed.UpdatedAt, OrderPricingInputs.Empty), actorId, Admin, default));
         Assert.That(ex!.Code, Is.EqualTo("order_not_editable"));

@@ -52,15 +52,16 @@ public sealed partial class OrderService
                 var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
                 var before = CurrentProduct(order);
                 order.CorrectProduct(product.StoreName, product, timeProvider.GetUtcNow());
+                var actor = await database.BackofficeUsers.AsNoTracking().SingleAsync(row => row.Id == actorId, cancellationToken);
+                var actorName = string.Join(' ', new[] { actor.LastName, actor.FirstName, actor.Patronymic }.Where(value => !string.IsNullOrWhiteSpace(value)));
+                OrderPricingSnapshot? pricingSnapshot = null;
                 if (before.SellerPrice != product.SellerPrice || before.Quantity != product.Quantity)
                 {
                     var latest = await LatestPricingAsync(order.Id, cancellationToken);
                     var inputs = latest is null ? OrderPricingInputs.Empty : ReadCalculation(latest).Inputs;
-                    var actor = await database.BackofficeUsers.AsNoTracking().SingleAsync(row => row.Id == actorId, cancellationToken);
-                    var actorName = string.Join(' ', new[] { actor.LastName, actor.FirstName, actor.Patronymic }.Where(value => !string.IsNullOrWhiteSpace(value)));
-                    await AddPricingSnapshotAsync(order, order.UpdatedAt, inputs, actorId, actorName, cancellationToken);
+                    pricingSnapshot = await AddPricingSnapshotAsync(order, order.UpdatedAt, inputs, actorId, actorName, cancellationToken);
                 }
-                database.Set<OrderProductAuditEvent>().Add(new()
+                var productAudit = new OrderProductAuditEvent
                 {
                     OrderId = order.Id,
                     Kind = OrderProductAuditKind.StaffCorrected,
@@ -70,7 +71,11 @@ public sealed partial class OrderService
                     After = JsonSerializer.Serialize(product),
                     UsdRateId = pair.Usd.Id,
                     EurRateId = pair.Eur.Id
-                });
+                };
+                database.Set<OrderProductAuditEvent>().Add(productAudit);
+                AddHistory(order, order.UpdatedAt, OrderHistoryKind.ProductChanged,
+                    OrderHistoryArea.Product | (pricingSnapshot is null ? 0 : OrderHistoryArea.Pricing),
+                    OrderHistoryActor.Staff, actorId, actorName, productAudit, pricingSnapshot, new(1, null, null, null));
                 try
                 {
                     await database.SaveChangesAsync(cancellationToken);

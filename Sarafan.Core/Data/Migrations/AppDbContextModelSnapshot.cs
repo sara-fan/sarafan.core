@@ -22,6 +22,63 @@ namespace Sarafan.Core.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Sarafan.Core.Models.OrderHistoryEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    b.Property<long>("OrderId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("order_id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer")
+                        .HasColumnName("kind");
+
+                    b.Property<int>("Areas")
+                        .HasColumnType("integer")
+                        .HasColumnName("areas");
+
+                    b.Property<int>("ActorType")
+                        .HasColumnType("integer")
+                        .HasColumnName("actor_type");
+
+                    b.Property<int?>("ActorId")
+                        .HasColumnType("integer")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(605)
+                        .HasColumnType("character varying(605)")
+                        .HasColumnName("actor_name");
+
+                    b.Property<long?>("ProductAuditId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("product_audit_id");
+
+                    b.Property<long?>("PricingSnapshotId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("pricing_snapshot_id");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+                    b.HasKey("Id");
+                    b.HasIndex("OrderId", "At", "Id");
+                    b.HasIndex("ProductAuditId").IsUnique();
+                    b.HasIndex("PricingSnapshotId").IsUnique();
+                    b.ToTable("order_history_events", (string)null);
+                });
+
             modelBuilder.Entity("Sarafan.Core.Models.BackofficeRefreshSession", b =>
                 {
                     b.Property<long>("Id")
@@ -1708,6 +1765,16 @@ namespace Sarafan.Core.Data.Migrations
                 {
                     b.Navigation("Logo");
                 });
+            modelBuilder.Entity("Sarafan.Core.Models.OrderHistoryEvent", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.Order", "Order").WithMany().HasForeignKey("OrderId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.HasOne("Sarafan.Core.Models.OrderProductAuditEvent", "ProductAudit").WithMany().HasForeignKey("ProductAuditId").OnDelete(DeleteBehavior.Restrict);
+                    b.HasOne("Sarafan.Core.Models.OrderPricingSnapshot", "PricingSnapshot").WithMany().HasForeignKey("PricingSnapshotId").OnDelete(DeleteBehavior.Restrict);
+                    b.Navigation("Order");
+                    b.Navigation("ProductAudit");
+                    b.Navigation("PricingSnapshot");
+                });
+
 #pragma warning restore 612, 618
         }
     }
