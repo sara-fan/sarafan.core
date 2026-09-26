@@ -142,7 +142,7 @@ public sealed class OrderProductRulesTests
         Assert.That(quantity.Detail, Is.EqualTo("Такое количество товара может быть признано коммерческой партией и запрещено к ввозу"));
         Assert.That(quantity.Errors!["quantity"], Is.EqualTo(new[] { quantity.Detail }));
         var price = factory.Create(new DefaultHttpContext(), 400, "order_value_limit_exceeded");
-        Assert.That(price.Detail, Is.EqualTo("Максимальная стоимость заказа при экспресс-перевозке 900 евро с учётом резерва 10% на изменение курса"));
+        Assert.That(price.Detail, Is.EqualTo("Максимальная стоимость заказа при экспресс-перевозке 900€ с учётом резерва 10% на изменение курса"));
         Assert.That(price.Errors!["sellerPrice"], Is.EqualTo(new[] { price.Detail }));
         foreach (var code in new[] { "invalid_order_product_name", "invalid_order_store_name", "invalid_order_seller_price", "invalid_order_color", "invalid_order_size" })
             Assert.That(factory.Create(new DefaultHttpContext(), 400, code).Errors, Has.Count.EqualTo(1));

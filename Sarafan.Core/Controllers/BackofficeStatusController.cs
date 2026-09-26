@@ -27,10 +27,11 @@ public sealed class BackofficeStatusController(
         var eur = await exchangeRates.GetLatestAsync(cancellationToken, Currency.Eur);
         var currencies = Enum.GetValues<Currency>()
             .OrderBy(currency => (int)currency)
-            .Select(currency => new EnumOpsItemDto(
+            .Select(currency => new CurrencyOpsItemDto(
                 (int)currency,
                 currency.GetDisplayName(),
-                currency.GetRouteAlias()))
+                currency.GetRouteAlias(),
+                currency.GetSymbol()))
             .ToArray();
         return Ok(new BackofficeStatus(
             "Sarafan.Core",

@@ -13,6 +13,14 @@ public enum Currency
 
 public static class CurrencyExtensions
 {
+    public static string GetSymbol(this Currency currency) => currency switch
+    {
+        Currency.Rub => "₽",
+        Currency.Usd => "$",
+        Currency.Eur => "€",
+        _ => throw new ArgumentOutOfRangeException(nameof(currency), currency, null)
+    };
+
     public static string GetDisplayName(this Currency currency) => currency switch
     {
         Currency.Rub => "Российский рубль",

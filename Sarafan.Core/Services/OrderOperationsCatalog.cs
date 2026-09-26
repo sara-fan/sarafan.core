@@ -41,12 +41,13 @@ internal static class OrderOperationsCatalog
                 status.GetProgressPercent()))
             .ToArray();
 
-    private static EnumOpsItemDto[] Currencies()
+    private static CurrencyOpsItemDto[] Currencies()
         => Enum.GetValues<Currency>()
             .OrderBy(currency => (int)currency)
-            .Select(currency => new EnumOpsItemDto(
+            .Select(currency => new CurrencyOpsItemDto(
                 (int)currency,
                 currency.GetDisplayName(),
-                currency.GetRouteAlias()))
+                currency.GetRouteAlias(),
+                currency.GetSymbol()))
             .ToArray();
 }

@@ -22,13 +22,17 @@ public sealed class OrderProductContractTests
             Assert.That((int)Currency.Rub, Is.EqualTo(643));
             Assert.That(Currency.Rub.GetDisplayName(), Is.EqualTo("Российский рубль"));
             Assert.That(Currency.Rub.GetRouteAlias(), Is.EqualTo("rub"));
+            Assert.That(Currency.Rub.GetSymbol(), Is.EqualTo("₽"));
             Assert.That((int)Currency.Usd, Is.EqualTo(840));
             Assert.That(Currency.Usd.GetDisplayName(), Is.EqualTo("Доллар США"));
             Assert.That(Currency.Usd.GetRouteAlias(), Is.EqualTo("usd"));
+            Assert.That(Currency.Usd.GetSymbol(), Is.EqualTo("$"));
+            Assert.That(Currency.Eur.GetSymbol(), Is.EqualTo("€"));
         }
 
         Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)999).GetDisplayName());
         Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)999).GetRouteAlias());
+        Assert.Throws<ArgumentOutOfRangeException>(() => ((Currency)999).GetSymbol());
     }
 
     [Test]

@@ -164,8 +164,8 @@ public sealed class ExchangeRateTests
             "CBR", Currency.Usd, Currency.Rub, Rate.Nominal, Rate.OfficialRate, Rate.SourceEffectiveDate, Now)));
         Assert.That(status.Currencies, Is.EqualTo(new[]
         {
-            new EnumOpsItemDto(643, "Российский рубль", "rub"),
-            new EnumOpsItemDto(840, "Доллар США", "usd"), new EnumOpsItemDto(978, "Евро", "eur")
+            new CurrencyOpsItemDto(643, "Российский рубль", "rub", "₽"),
+            new CurrencyOpsItemDto(840, "Доллар США", "usd", "$"), new CurrencyOpsItemDto(978, "Евро", "eur", "€")
         }));
         using var health = await client.GetAsync("/api/v1/status/status");
         Assert.That(await health.Content.ReadAsStringAsync(), Does.Not.Contain("exchangeRates"));

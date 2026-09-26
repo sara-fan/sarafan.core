@@ -52,6 +52,24 @@ public sealed class BackofficeOrdersController(
     public async Task<ActionResult<OrderPricingDto>> ConfirmPricing(string orderNumber, ConfirmOrderPricingRequest request, CancellationToken token)
         => Ok(await orders.ConfirmPricingAsync(orderNumber, request, CurrentBackofficeUserId(), User.FindAll("role").Select(claim => claim.Value).ToArray(), token));
 
+    [HttpGet("{orderNumber}/history/ops")]
+    public async Task<ActionResult<OrderHistoryOpsDto>> HistoryOperations(string orderNumber, CancellationToken token)
+        => Ok(await orders.HistoryOperationsAsync(orderNumber, User.FindAll("role").Select(claim => claim.Value).ToArray(), token));
+
+    [HttpGet("{orderNumber}/history")]
+    public async Task<ActionResult<OrderHistoryPageDto>> History(string orderNumber,
+        [FromQuery] string[]? page = null, [FromQuery] string[]? pageSize = null,
+        [FromQuery] string[]? sortBy = null, [FromQuery] string[]? sortOrder = null,
+        [FromQuery] string? search = null, [FromQuery] int? area = null, [FromQuery] int? actorType = null,
+        [FromQuery] string? from = null, [FromQuery] string? to = null, CancellationToken token = default)
+        => Ok(await orders.HistoryAsync(orderNumber, User.FindAll("role").Select(claim => claim.Value).ToArray(),
+            ParseListInteger(page, 1), ParseListInteger(pageSize, 25), ParseListString(sortBy, "timestamp"),
+            ParseListString(sortOrder, "desc"), search, area, actorType, from, to, token));
+
+    [HttpGet("{orderNumber}/history/{eventKey}")]
+    public async Task<ActionResult<OrderHistoryDetailDto>> HistoryDetail(string orderNumber, string eventKey, CancellationToken token)
+        => Ok(await orders.HistoryDetailAsync(orderNumber, eventKey, User.FindAll("role").Select(claim => claim.Value).ToArray(), token));
+
     [HttpPut("{orderNumber}/product")]
     [Authorize(Policy = BackofficePolicies.EditOrderProduct)]
     public async Task<ActionResult<BackofficeOrderDetailsDto>> UpdateProduct(string orderNumber,

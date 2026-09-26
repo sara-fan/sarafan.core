@@ -86,6 +86,8 @@ public sealed record OrderStatusOpsItemDto(
     bool IsTerminal,
     int ProgressPercent);
 
+public sealed record CurrencyOpsItemDto(int Value, string Name, string RouteAlias, string Symbol);
+
 public sealed record ProductSourceUrlOpsDto(
     int MaximumLength,
     string TopLevelDomainListVersion,
@@ -93,7 +95,7 @@ public sealed record ProductSourceUrlOpsDto(
 
 public sealed record OrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,
-    IReadOnlyList<EnumOpsItemDto> Currencies,
+    IReadOnlyList<CurrencyOpsItemDto> Currencies,
     ProductSourceUrlOpsDto ProductSourceUrl)
 {
     public OrderProductLimitsDto? ProductLimits { get; init; }
@@ -106,7 +108,7 @@ public sealed record BackofficeOrderStatusFilterGroupDto(
 
 public sealed record BackofficeOrderOpsDto(
     IReadOnlyList<OrderStatusOpsItemDto> Statuses,
-    IReadOnlyList<EnumOpsItemDto> Currencies,
+    IReadOnlyList<CurrencyOpsItemDto> Currencies,
     IReadOnlyList<BackofficeOrderStatusFilterGroupDto> StatusGroups)
 {
     public OrderProductLimitsDto? ProductLimits { get; init; }
