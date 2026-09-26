@@ -20,7 +20,7 @@ public sealed partial class OrderService
     public Task<OrderPricingOpsDto> PricingOperationsAsync(string[] roles, CancellationToken token)
         => PricingRun(nameof(PricingOperationsAsync), () => Task.FromResult(new OrderPricingOpsDto(
             ServiceCatalogueRules.Operations(roles),
-            [new(0, "Рассчитан", "calculated"), new(100, "Не рассчитан", "not-calculated"), new(200, "Не применяется", "not-applicable")],
+            [new(0, "Рассчитана", "calculated"), new(100, "Не рассчитана", "not-calculated"), new(200, "Не применяется", "not-applicable")],
             QuoteValidityHours, BackofficeAuthorization.IsAllowed(roles, BackofficeAction.ManageOrderPricing))), token);
 
     public Task<OrderPricingDto> GetPricingAsync(string orderNumber, string[] roles, CancellationToken token)
@@ -73,6 +73,9 @@ public sealed partial class OrderService
         {
             if (inputs is null) throw new ServiceException(400, "invalid_order_pricing");
             OrderPriceCalculator.ValidateInputs(inputs, await OrderPriceCalculator.TariffsAsync(database, now, token));
+            var selectedServices = latest is null ? OrderPricingInputs.Empty.SelectedServices : ReadCalculation(latest).Inputs.SelectedServices;
+            if (!inputs.SelectedServices.ToHashSet().SetEquals(selectedServices))
+                throw new ServiceException(400, "invalid_order_pricing");
             calculation = await OrderPriceCalculator.CalculateAsync(database, order, now, inputs, automaticPrices, token);
         }
         order.UpdatePricing(now, confirm);
