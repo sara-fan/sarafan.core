@@ -17,7 +17,6 @@ internal sealed class ServiceCatalogueEntryConfiguration : IEntityTypeConfigurat
     {
         builder.ToTable("service_catalogue_entries", table =>
         {
-            table.HasCheckConstraint("ck_service_catalogue_service", "service IN (0, 100, 200, 300, 400, 500, 600, 700)");
             table.HasCheckConstraint("ck_service_catalogue_product_identity", "(service = 0 AND id = 1) OR (service <> 0 AND id <> 1)");
             table.HasCheckConstraint("ck_service_catalogue_method", "price_method IN (0, 100, 200, 300, 400)");
             table.HasCheckConstraint("ck_service_catalogue_currency", "currency IS NOT NULL AND currency IN (643, 840)");

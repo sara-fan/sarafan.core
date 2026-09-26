@@ -194,8 +194,8 @@ public sealed partial class OrderService(
                     database.Orders.Add(order);
                     order.SetProduct(product);
                     await AppDatabaseOperations.For(database).LockServiceCatalogueMutationsAsync(database, cancellationToken);
-                    await AddPricingSnapshotAsync(order, order.CreatedAt, OrderPricingInputs.Empty, null, null, cancellationToken);
-                    database.Set<OrderProductAuditEvent>().Add(new()
+                    var pricingSnapshot = await AddPricingSnapshotAsync(order, order.CreatedAt, OrderPricingInputs.Empty, null, null, cancellationToken);
+                    var productAudit = new OrderProductAuditEvent
                     {
                         Order = order,
                         Kind = OrderProductAuditKind.Created,
@@ -203,7 +203,16 @@ public sealed partial class OrderService(
                         After = JsonSerializer.Serialize(product),
                         UsdRateId = pair.Usd.Id,
                         EurRateId = pair.Eur.Id
-                    });
+                    };
+                    database.Set<OrderProductAuditEvent>().Add(productAudit);
+                    var profile = await database.CustomerProfiles.AsNoTracking()
+                        .SingleOrDefaultAsync(item => item.CustomerId == customerId, cancellationToken);
+                    var customerName = string.Join(" ", new[] { profile?.LastName, profile?.FirstName, profile?.Patronymic }
+                        .Where(part => !string.IsNullOrWhiteSpace(part)));
+                    AddHistory(order, order.CreatedAt, OrderHistoryKind.Created,
+                        OrderHistoryArea.Creation | OrderHistoryArea.Product | OrderHistoryArea.Pricing | OrderHistoryArea.Status,
+                        OrderHistoryActor.Customer, customerId, customerName.Length == 0 ? "Покупатель" : customerName, productAudit, pricingSnapshot,
+                        new(1, null, order.Status, order.SourceUrl));
                     return new Allocation(order, customer.OrderCode!);
                 }, cancellationToken);
 

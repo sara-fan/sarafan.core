@@ -46,11 +46,15 @@ public enum ServiceKind
     ServiceCommission = 400,
     WarehousePhoto = 500,
     ProductInspection = 600,
-    ShipmentInsurance = 700
+    ShipmentInsurance = 700,
+    CustomsPayments = 800
 }
 
 public static class ServiceKindExtensions
 {
+    public static bool IsIncludedInTotal(this ServiceKind service)
+        => service is not (ServiceKind.DomesticDelivery or ServiceKind.CustomsPayments);
+
     public static string GetDisplayName(this ServiceKind service) => service switch
     {
         ServiceKind.Product => "Выкуп товара",
@@ -61,6 +65,7 @@ public static class ServiceKindExtensions
         ServiceKind.WarehousePhoto => "Фото товара на складе в США",
         ServiceKind.ProductInspection => "Проверка товара",
         ServiceKind.ShipmentInsurance => "Страхование отправления",
+        ServiceKind.CustomsPayments => "Таможенные платежи",
         _ => throw new ArgumentOutOfRangeException(nameof(service), service, null)
     };
 
@@ -74,6 +79,7 @@ public static class ServiceKindExtensions
         ServiceKind.WarehousePhoto => "warehouse-photo",
         ServiceKind.ProductInspection => "product-inspection",
         ServiceKind.ShipmentInsurance => "shipment-insurance",
+        ServiceKind.CustomsPayments => "customs-payments",
         _ => throw new ArgumentOutOfRangeException(nameof(service), service, null)
     };
 }

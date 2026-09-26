@@ -806,6 +806,10 @@ public sealed class OperationLoggingTests
         using var read = await client.GetAsync("/api/v1/backoffice/orders/00000000-999999/pricing");
         using var write = await client.PutAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/pricing", new OrderPricingWriteRequest(null, OrderPricingInputs.Empty));
         using var confirm = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/pricing/confirm", new ConfirmOrderPricingRequest(null));
+        using var historyOps = await client.GetAsync("/api/v1/backoffice/orders/00000000-999999/history/ops");
+        using var history = await client.GetAsync("/api/v1/backoffice/orders/00000000-999999/history");
+        using var historyDetail = await client.GetAsync("/api/v1/backoffice/orders/00000000-999999/history/0-1");
+        Assert.That(new[] { historyOps.StatusCode, history.StatusCode, historyDetail.StatusCode }, Is.All.EqualTo(HttpStatusCode.NotFound));
         Assert.That(new[] { read.StatusCode, write.StatusCode, confirm.StatusCode }, Is.All.EqualTo(HttpStatusCode.NotFound));
     }
 

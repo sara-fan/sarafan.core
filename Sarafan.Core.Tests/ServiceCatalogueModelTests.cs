@@ -31,7 +31,8 @@ public sealed class ServiceCatalogueModelTests
             (ServiceKind.ServiceCommission, 400, "Комиссия сервиса", "service-commission"),
             (ServiceKind.WarehousePhoto, 500, "Фото товара на складе в США", "warehouse-photo"),
             (ServiceKind.ProductInspection, 600, "Проверка товара", "product-inspection"),
-            (ServiceKind.ShipmentInsurance, 700, "Страхование отправления", "shipment-insurance")
+            (ServiceKind.ShipmentInsurance, 700, "Страхование отправления", "shipment-insurance"),
+            (ServiceKind.CustomsPayments, 800, "Таможенные платежи", "customs-payments")
         };
         var methods = new[]
         {
@@ -57,6 +58,10 @@ public sealed class ServiceCatalogueModelTests
                 Is.EqualTo(methods.Select(item => (item.Item2, item.Item3, item.Item4))));
             Assert.That(actions.Select(item => ((int)item.Item1, item.Item1.GetDisplayName(), item.Item1.GetRouteAlias())),
                 Is.EqualTo(actions.Select(item => (item.Item2, item.Item3, item.Item4))));
+            Assert.That(services.Where(item => !item.Item1.IsIncludedInTotal()).Select(item => item.Item1),
+                Is.EqualTo(new[] { ServiceKind.DomesticDelivery, ServiceKind.CustomsPayments }));
+            Assert.That(Sarafan.Core.Services.ServiceCatalogueRules.Operations([Sarafan.Core.Authentication.BackofficeRoles.Administrator])
+                .Services.Where(item => !item.IncludedInTotal).Select(item => item.Value), Is.EqualTo(new[] { 300, 800 }));
             Assert.Throws<ArgumentOutOfRangeException>(() => ((ServiceKind)999).GetDisplayName());
             Assert.Throws<ArgumentOutOfRangeException>(() => ((PriceMethod)999).GetRouteAlias());
             Assert.Throws<ArgumentOutOfRangeException>(() => ((ServiceCatalogueAuditAction)999).GetDisplayName());
@@ -74,6 +79,7 @@ public sealed class ServiceCatalogueModelTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(entry.GetTableName(), Is.EqualTo("service_catalogue_entries"));
+            Assert.That(entry.GetCheckConstraints().Select(item => item.Name), Does.Not.Contain("ck_service_catalogue_service"));
             Assert.That(entry.FindProperty(nameof(ServiceCatalogueEntry.Percentage))!.GetPrecision(), Is.EqualTo(7));
             Assert.That(entry.FindProperty(nameof(ServiceCatalogueEntry.Percentage))!.GetScale(), Is.EqualTo(4));
             Assert.That(entry.FindProperty(nameof(ServiceCatalogueEntry.Amount))!.GetPrecision(), Is.EqualTo(10));

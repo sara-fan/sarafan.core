@@ -13,7 +13,7 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Tests;
 
-public sealed class OrderPricingTests
+public sealed partial class OrderPricingTests
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
@@ -28,7 +28,7 @@ public sealed class OrderPricingTests
         var json = JsonSerializer.Serialize(inputs, WebJson);
         using var document = JsonDocument.Parse(json);
         Assert.That(document.RootElement.GetProperty("manualAmounts").EnumerateObject().Select(item => item.Name),
-            Is.EqualTo(new[] { "0", "100", "200", "300", "400", "500", "600", "700" }));
+            Is.EqualTo(new[] { "0", "100", "200", "300", "400", "500", "600", "700", "800" }));
         Assert.That(document.RootElement.GetProperty("selectedServices")[0].GetInt32(), Is.EqualTo(500));
         Assert.That(JsonSerializer.Deserialize<OrderPricingInputs>(json, WebJson)!.ManualAmounts,
             Is.EquivalentTo(inputs.ManualAmounts));
@@ -40,7 +40,7 @@ public sealed class OrderPricingTests
     [TestCase("[]")]
     public void ManualAmountsRejectMalformedJson(string amounts)
         => Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<OrderPricingInputs>(
-            "{\"manualAmounts\":" + amounts + ",\"selectedServices\":[],\"domesticDeliveryRub\":null,\"customsRub\":null}", WebJson));
+            "{\"manualAmounts\":" + amounts + ",\"selectedServices\":[]}", WebJson));
 
     [Test]
     public async Task ManualPricingRoundTripsRequestsSnapshotsAndRetainedHistory()
@@ -49,7 +49,7 @@ public sealed class OrderPricingTests
         db.Add(Tariff(ServiceKind.UsWarehouseExpenses, PriceMethod.Manual, Currency.Usd));
         await db.SaveChangesAsync();
         var request = JsonSerializer.Deserialize<OrderPricingWriteRequest>(
-            "{\"expectedUpdatedAt\":\"2026-09-24T10:00:00Z\",\"inputs\":{\"manualAmounts\":{\"100\":3.25},\"selectedServices\":[],\"domesticDeliveryRub\":null,\"customsRub\":null}}", WebJson)!;
+            "{\"expectedUpdatedAt\":\"2026-09-24T10:00:00Z\",\"inputs\":{\"manualAmounts\":{\"100\":3.25},\"selectedServices\":[]}}", WebJson)!;
         var saved = await service.UpdatePricingAsync("12345678-1", request, actorId, Shift, default);
         AssertNumericManualAmounts(saved);
         var snapshot = await db.OrderPricingSnapshots.SingleAsync();
@@ -73,7 +73,7 @@ public sealed class OrderPricingTests
         var confirmed = await service.ConfirmPricingAsync("12345678-1", new(read.UpdatedAt), actorId, Shift, default);
         AssertNumericManualAmounts(confirmed);
         Assert.That(confirmed.Calculation.TotalRub, Is.EqualTo(saved.Calculation.TotalRub));
-        Assert.That(confirmed.History, Has.Length.EqualTo(3));
+        Assert.That(await db.OrderPricingSnapshots.CountAsync(), Is.EqualTo(3));
         Assert.That((await db.OrderPricingSnapshots.SingleAsync(item => item.Id == historical.Id)).Payload, Is.EqualTo(historicalPayload));
     }
 
@@ -81,8 +81,7 @@ public sealed class OrderPricingTests
     {
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(value, WebJson));
         var root = document.RootElement;
-        foreach (var calculation in root.GetProperty("history").EnumerateArray().Select(item => item.GetProperty("calculation"))
-            .Prepend(root.GetProperty("calculation")))
+        foreach (var calculation in new[] { root.GetProperty("calculation") })
         {
             var amounts = calculation.GetProperty("inputs").GetProperty("manualAmounts");
             Assert.That(amounts.EnumerateObject().Select(item => item.Name), Is.EqualTo(new[] { "100" }));
@@ -175,16 +174,34 @@ public sealed class OrderPricingTests
         decimal? amount = null, decimal? percentage = null, decimal? minimum = null)
         => new(kind, method, percentage, minimum, null, amount, currency, new(2026, 1, 1), null, Now);
 
-    [Test]
-    public async Task ComponentsUseQuantityMinimumAndSeparateExtras()
+    [TestCase(null)]
+    [TestCase(0)]
+    [TestCase(500)]
+    public async Task ComponentsUseQuantityMinimumAndSeparateExtras(int? extra)
     {
-        var inputs = OrderPricingInputs.Empty with { DomesticDeliveryRub = 500, CustomsRub = 600 };
+        db.AddRange(Tariff(ServiceKind.DomesticDelivery, PriceMethod.Manual, Currency.Rub),
+            Tariff(ServiceKind.CustomsPayments, PriceMethod.Manual, Currency.Rub));
+        await db.SaveChangesAsync();
+        var inputs = OrderPricingInputs.Empty with
+        {
+            ManualAmounts = extra is { } amount
+                ? new() { [ServiceKind.DomesticDelivery] = amount, [ServiceKind.CustomsPayments] = amount }
+                : new()
+        };
+        OrderPriceCalculator.ValidateInputs(inputs, await OrderPriceCalculator.TariffsAsync(db, Now, default));
         var result = await OrderPriceCalculator.CalculateAsync(db, order, Now, inputs, null, default);
         Assert.That(result.Components.Single(row => row.Service == ServiceKind.Product).Amount, Is.EqualTo(100));
         Assert.That(result.Components.Single(row => row.Service == ServiceKind.ServiceCommission).AmountRub, Is.EqualTo(960));
         Assert.That(result.Components.Single(row => row.Service == ServiceKind.UsWarehouseExpenses).State, Is.EqualTo(PriceComponentState.Calculated));
         Assert.That(result.Components.Single(row => row.Service == ServiceKind.WarehousePhoto).State, Is.EqualTo(PriceComponentState.NotApplicable));
         Assert.That(result.TotalRub, Is.EqualTo(9058.40m));
+        foreach (var kind in new[] { ServiceKind.DomesticDelivery, ServiceKind.CustomsPayments })
+        {
+            var component = result.Components.Single(item => item.Service == kind);
+            Assert.That(component.AmountRub, Is.EqualTo(extra));
+            Assert.That(component.State, Is.EqualTo(extra is null ? PriceComponentState.NotCalculated : PriceComponentState.Calculated));
+            Assert.That(component.Tariff, Is.Not.Null);
+        }
     }
 
     [TestCase(PriceMethod.Percent)]
@@ -333,7 +350,7 @@ public sealed class OrderPricingTests
         var confirmed = await service.ConfirmPricingAsync("12345678-1", new(saved.UpdatedAt), actorId, Shift, default);
         Assert.That(confirmed.Calculation.TotalRub, Is.EqualTo(saved.Calculation.TotalRub));
         Assert.That(confirmed.ValidUntil, Is.EqualTo(Now.AddHours(24)));
-        Assert.That(confirmed.History[0].ActorName, Is.EqualTo("Иванов Иван"));
+        Assert.That((await db.OrderPricingSnapshots.OrderByDescending(item => item.Id).FirstAsync()).ActorName, Is.EqualTo("Иванов Иван"));
         Assert.That(order.Status, Is.EqualTo(OrderStatus.QuoteReady));
         var ex = Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(confirmed.UpdatedAt, OrderPricingInputs.Empty), actorId, Admin, default));
         Assert.That(ex!.Code, Is.EqualTo("order_not_editable"));
@@ -357,6 +374,34 @@ public sealed class OrderPricingTests
         var result = await OrderPriceCalculator.CalculateAsync(db, order, Now, inputs, null, default);
         Assert.That(result.TotalRub, Is.Null);
         Assert.Throws<ServiceException>(() => OrderPriceCalculator.ValidateInputs(inputs with { ManualAmounts = new() { [ServiceKind.WarehousePhoto] = 1 } }, [tariff]));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task StaffCannotChangeCustomerOptionalServices(bool existingSelection)
+    {
+        var selected = existingSelection ? new[] { ServiceKind.WarehousePhoto, ServiceKind.ProductInspection } : [];
+        if (existingSelection)
+        {
+            var calculation = await OrderPriceCalculator.CalculateAsync(db, order, Now,
+                OrderPricingInputs.Empty with { SelectedServices = selected }, null, default);
+            db.OrderPricingSnapshots.Add(new() { Order = order, At = Now, Payload = JsonSerializer.Serialize(calculation, WebJson) });
+            await db.SaveChangesAsync();
+        }
+        var originalVersion = order.UpdatedAt;
+        var count = await db.OrderPricingSnapshots.CountAsync();
+        foreach (var roles in new[] { Admin, Shift })
+        {
+            var changed = OrderPricingInputs.Empty with { SelectedServices = existingSelection ? [] : [ServiceKind.WarehousePhoto] };
+            var error = Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1",
+                new(originalVersion, changed), actorId, roles, default));
+            Assert.That(error!.Code, Is.EqualTo("invalid_order_pricing"));
+            Assert.That(order.UpdatedAt, Is.EqualTo(originalVersion));
+            Assert.That(await db.OrderPricingSnapshots.CountAsync(), Is.EqualTo(count));
+        }
+        var saved = await service.UpdatePricingAsync("12345678-1", new(originalVersion,
+            OrderPricingInputs.Empty with { SelectedServices = selected.Reverse().ToArray() }), actorId, Shift, default);
+        Assert.That(saved.Calculation.Inputs.SelectedServices, Is.EquivalentTo(selected));
     }
 
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }

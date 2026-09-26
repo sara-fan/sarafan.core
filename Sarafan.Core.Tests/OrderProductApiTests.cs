@@ -49,6 +49,62 @@ public sealed class OrderProductApiTests
     public void Cleanup() { _customer.Dispose(); _staff.Dispose(); }
 
     [Test]
+    public async Task HistoryEndpointsGroupActionsAndProtectEvidence()
+    {
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var profile = await db.CustomerProfiles.SingleAsync();
+        profile.LastName = "Исторический"; profile.FirstName = "Покупатель";
+        await db.SaveChangesAsync();
+        var key = Guid.NewGuid();
+        using var created = await Create(key);
+        created.EnsureSuccessStatusCode();
+        var original = (await created.Content.ReadFromJsonAsync<OrderDto>())!;
+        var path = $"/api/v1/backoffice/orders/{original.OrderNumber}/history";
+        var ops = await _staff.GetFromJsonAsync<OrderHistoryOpsDto>(path + "/ops");
+        Assert.That(ops!.Areas, Has.Length.EqualTo(4));
+        var page = await _staff.GetFromJsonAsync<OrderHistoryPageDto>(path);
+        Assert.That(page!.Items, Has.Length.EqualTo(1));
+        Assert.That(page.Items[0].Kind, Is.EqualTo(OrderHistoryKind.Created));
+        Assert.That(page.Items[0].ActorName, Is.EqualTo("Исторический Покупатель"));
+        profile.LastName = "Новое имя"; await db.SaveChangesAsync();
+        var creation = await _staff.GetFromJsonAsync<OrderHistoryDetailDto>(path + "/" + page.Items[0].EventKey);
+        Assert.That(creation!.Event.ActorName, Is.EqualTo("Исторический Покупатель"));
+        Assert.That(creation.ProductAfter, Is.EqualTo(original.Product));
+        Assert.That(creation.SourceUrl, Is.EqualTo(original.SourceUrl));
+        using var replay = await Create(key);
+        replay.EnsureSuccessStatusCode();
+        var current = await Details(original.OrderNumber);
+        var request = Update(current, "Исправлено", 20, 2);
+        using var changed = await _staff.PutAsJsonAsync($"/api/v1/backoffice/orders/{original.OrderNumber}/product", request);
+        changed.EnsureSuccessStatusCode();
+        page = await _staff.GetFromJsonAsync<OrderHistoryPageDto>(path + "?area=4&actorType=100&sortBy=actor&sortOrder=asc");
+        Assert.That(page!.Items, Has.Length.EqualTo(1));
+        Assert.That(page.Items[0].Areas, Is.EqualTo(OrderHistoryArea.Product | OrderHistoryArea.Pricing));
+        using var eventResponse = await _staff.GetAsync(path + "/" + page.Items[0].EventKey);
+        eventResponse.EnsureSuccessStatusCode();
+        Assert.That(eventResponse.Headers.CacheControl!.NoStore, Is.True);
+        var change = (await eventResponse.Content.ReadFromJsonAsync<OrderHistoryDetailDto>())!;
+        Assert.That(change.ProductBefore, Is.EqualTo(original.Product));
+        Assert.That(change.ProductAfter!.ProductName, Is.EqualTo("Исправлено"));
+        Assert.That(change.PricingBefore, Is.Not.Null);
+        Assert.That(change.PricingAfter, Is.Not.Null);
+        using var conflict = await _staff.PutAsJsonAsync($"/api/v1/backoffice/orders/{original.OrderNumber}/product", request);
+        await Problem(conflict, HttpStatusCode.Conflict, "order_update_conflict");
+        Assert.That((await _staff.GetFromJsonAsync<OrderHistoryPageDto>(path))!.Pagination.TotalCount, Is.EqualTo(2));
+        using var customerDenied = await _customer.GetAsync(path);
+        Assert.That(customerDenied.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        using var invalid = await _staff.GetAsync(path + "?page=1&page=2");
+        await Problem(invalid, HttpStatusCode.BadRequest, "invalid_order_list_filter");
+        using var malformed = await _staff.GetAsync(path + "?from=bad");
+        await Problem(malformed, HttpStatusCode.BadRequest, "invalid_order_list_filter");
+        using var otherCreated = await Create(Guid.NewGuid());
+        var other = (await otherCreated.Content.ReadFromJsonAsync<OrderDto>())!;
+        using var foreign = await _staff.GetAsync($"/api/v1/backoffice/orders/{other.OrderNumber}/history/{page.Items[0].EventKey}");
+        await Problem(foreign, HttpStatusCode.NotFound, "resource_not_found");
+    }
+
+    [Test]
     public async Task CreationCorrectionAndReplayUseCurrentProductAndPreserveAuditHistory()
     {
         var key = Guid.NewGuid();

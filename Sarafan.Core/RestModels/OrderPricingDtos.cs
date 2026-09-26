@@ -11,11 +11,9 @@ namespace Sarafan.Core.RestModels;
 public sealed record OrderPricingInputs(
     [property: JsonConverter(typeof(ManualPricingAmountsJsonConverter))]
     Dictionary<ServiceKind, decimal> ManualAmounts,
-    ServiceKind[] SelectedServices,
-    decimal? DomesticDeliveryRub,
-    decimal? CustomsRub)
+    ServiceKind[] SelectedServices)
 {
-    public static OrderPricingInputs Empty => new([], [], null, null);
+    public static OrderPricingInputs Empty => new([], []);
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -27,10 +25,8 @@ public sealed record PriceComponentDto(ServiceKind Service, PriceComponentState 
     decimal? Amount, decimal? AmountRub, ServiceCatalogueEntryDto? Tariff);
 public sealed record OrderPriceCalculationDto(DateTimeOffset CalculatedAt, OrderAppliedExchangeRateDto? ExchangeRate,
     PriceComponentDto[] Components, decimal? TotalRub, OrderPricingInputs Inputs);
-public sealed record OrderPricingHistoryDto(long Id, DateTimeOffset At, DateTimeOffset? ValidUntil,
-    int? ActorId, string? ActorName, OrderPriceCalculationDto Calculation);
 public sealed record OrderPricingDto(string OrderNumber, DateTimeOffset UpdatedAt, bool CanEdit, bool CanConfirm,
     bool Confirmed, bool Expired, DateTimeOffset? ValidUntil, OrderPriceCalculationDto Calculation,
-    OrderPricingHistoryDto[] History, ServiceCatalogueEntryDto[] ActiveTariffs);
+    ServiceCatalogueEntryDto[] ActiveTariffs);
 public sealed record OrderPricingOpsDto(ServiceCatalogueOpsDto Catalogue, EnumOpsItemDto[] ComponentStates,
     int ValidityHours, bool CanManage);
