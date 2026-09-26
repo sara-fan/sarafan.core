@@ -54,7 +54,7 @@ public sealed record ServiceCatalogueLimitsDto(
     int AuditPageSizeMaximum,
     int MaximumBands = 100);
 
-public sealed record ServiceCatalogueServiceOpsDto(int Value, string Name, string RouteAlias, Currency[] AllowedCurrencies, PriceMethod[] AllowedPriceMethods);
+public sealed record ServiceCatalogueServiceOpsDto(int Value, string Name, string RouteAlias, Currency[] AllowedCurrencies, PriceMethod[] AllowedPriceMethods, bool IncludedInTotal);
 
 public sealed record ServiceCatalogueCurrencyOpsDto(int Value, string Name, string RouteAlias, string Symbol);
 

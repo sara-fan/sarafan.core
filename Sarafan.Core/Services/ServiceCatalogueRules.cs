@@ -65,7 +65,7 @@ internal static class ServiceCatalogueRules
         var manage = BackofficeAuthorization.IsAllowed(roles, BackofficeAction.ManageServiceCatalogue);
         return new ServiceCatalogueOpsDto(
             Enum.GetValues<ServiceKind>().OrderBy(value => (int)value)
-                .Select(value => new ServiceCatalogueServiceOpsDto((int)value, value.GetDisplayName(), value.GetRouteAlias(), PricingCurrencies.ToArray(), Enum.GetValues<PriceMethod>())).ToArray(),
+                .Select(value => new ServiceCatalogueServiceOpsDto((int)value, value.GetDisplayName(), value.GetRouteAlias(), PricingCurrencies.ToArray(), Enum.GetValues<PriceMethod>(), value.IsIncludedInTotal())).ToArray(),
             Enum.GetValues<PriceMethod>().OrderBy(value => (int)value)
                 .Select(value => new EnumOpsItemDto((int)value, value.GetDisplayName(), value.GetRouteAlias())).ToArray(),
             PricingCurrencies.Select(value => new ServiceCatalogueCurrencyOpsDto((int)value,

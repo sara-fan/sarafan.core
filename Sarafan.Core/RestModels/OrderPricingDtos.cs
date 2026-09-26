@@ -11,11 +11,9 @@ namespace Sarafan.Core.RestModels;
 public sealed record OrderPricingInputs(
     [property: JsonConverter(typeof(ManualPricingAmountsJsonConverter))]
     Dictionary<ServiceKind, decimal> ManualAmounts,
-    ServiceKind[] SelectedServices,
-    decimal? DomesticDeliveryRub,
-    decimal? CustomsRub)
+    ServiceKind[] SelectedServices)
 {
-    public static OrderPricingInputs Empty => new([], [], null, null);
+    public static OrderPricingInputs Empty => new([], []);
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

@@ -15,7 +15,6 @@ internal sealed class ServiceCatalogueAuditEventConfiguration : IEntityTypeConfi
     {
         builder.ToTable("service_catalogue_audit_events", table =>
         {
-            table.HasCheckConstraint("ck_service_catalogue_audit_service", "service IN (0, 100, 200, 300, 400, 500, 600, 700)");
             table.HasCheckConstraint("ck_service_catalogue_audit_action", "action IN (0, 100, 200)");
             table.HasCheckConstraint("ck_service_catalogue_audit_actor_name", "btrim(actor_name) <> ''");
             table.HasCheckConstraint("ck_service_catalogue_audit_snapshots", """

@@ -27,13 +27,11 @@ internal static class OrderPriceCalculator
             throw Invalid("selectedServices", "Выберите дополнительные услуги из списка.");
         foreach (var (service, amount) in inputs.ManualAmounts)
         {
-            if (service is ServiceKind.Product or ServiceKind.DomesticDelivery || !Enum.IsDefined(service)
+            if (service is ServiceKind.Product || !Enum.IsDefined(service)
                 || !tariffs.Any(tariff => tariff.Service == service && tariff.PriceMethod == PriceMethod.Manual))
                 throw Invalid("manualAmounts", "Ручная сумма допустима только для услуги с действующим ручным тарифом. Автоматические суммы менять нельзя.");
             if (!ValidAmount(amount)) throw Invalid("manualAmounts", "Укажите неотрицательные суммы до 99999999,99 с двумя дробными знаками.");
         }
-        if (inputs.DomesticDeliveryRub is { } domestic && !ValidAmount(domestic)) throw Invalid("domesticDeliveryRub", "Укажите неотрицательную сумму с двумя дробными знаками.");
-        if (inputs.CustomsRub is { } customs && !ValidAmount(customs)) throw Invalid("customsRub", "Укажите неотрицательную сумму с двумя дробными знаками.");
     }
 
     private static bool ValidAmount(decimal amount) => amount >= 0 && amount <= ServiceCatalogueRules.MaximumAmount && Round(amount) == amount;
@@ -65,10 +63,9 @@ internal static class OrderPriceCalculator
         {
             var tariff = tariffs.SingleOrDefault(row => row.Service == service);
             var currency = service == ServiceKind.Product ? Currency.Usd
-                : service == ServiceKind.DomesticDelivery ? Currency.Rub
                 : tariff?.Currency ?? Currency.Rub;
-            // Product and domestic delivery have dedicated Demo inputs, not catalogue-derived amounts.
-            var snapshot = tariff is null || service is ServiceKind.Product or ServiceKind.DomesticDelivery
+            // Merchandise comes from the order product; all services use catalogue tariffs.
+            var snapshot = tariff is null || service is ServiceKind.Product
                 ? null : ServiceCatalogueService.ToDto(tariff);
             if (service is ServiceKind.WarehousePhoto or ServiceKind.ProductInspection or ServiceKind.ShipmentInsurance
                 && !inputs.SelectedServices.Contains(service))
@@ -78,7 +75,6 @@ internal static class OrderPriceCalculator
             }
             decimal? amount;
             if (service == ServiceKind.Product) amount = merchandise;
-            else if (service == ServiceKind.DomesticDelivery) amount = inputs.DomesticDeliveryRub;
             else if (tariff is null) amount = null;
             else
             {
@@ -99,7 +95,7 @@ internal static class OrderPriceCalculator
             components.Add(new(service, amount is not null && rub is not null ? PriceComponentState.Calculated : PriceComponentState.NotCalculated,
                 currency, amount is null ? null : Round(amount.Value), rub is null ? null : Round(rub.Value), snapshot));
         }
-        var included = components.Where(item => item.Service != ServiceKind.DomesticDelivery && item.State != PriceComponentState.NotApplicable).ToArray();
+        var included = components.Where(item => item.Service.IsIncludedInTotal() && item.State != PriceComponentState.NotApplicable).ToArray();
         decimal? total = included.All(item => item.State == PriceComponentState.Calculated) ? included.Sum(item => item.AmountRub!.Value) : null;
         return new(now, rate is null ? null : new(rate.Id, rate.Provider, rate.BaseCurrency, rate.QuoteCurrency, rate.Nominal, rate.OfficialRate, rate.SourceEffectiveDate),
             components.ToArray(), total, inputs);
