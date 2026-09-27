@@ -40,7 +40,8 @@ public sealed partial class OrderService
             await FindPublicOrder(number, token);
             return new OrderHistoryOpsDto(
                 [new(0, ((OrderHistoryKind)0).GetDisplayName(), "created"), new(100, ((OrderHistoryKind)100).GetDisplayName(), "product-changed"),
-                 new(200, ((OrderHistoryKind)200).GetDisplayName(), "parsed"), new(300, ((OrderHistoryKind)300).GetDisplayName(), "price-calculated"), new(400, ((OrderHistoryKind)400).GetDisplayName(), "quote-confirmed")],
+                 new(200, ((OrderHistoryKind)200).GetDisplayName(), "parsed"), new(300, ((OrderHistoryKind)300).GetDisplayName(), "price-calculated"), new(400, ((OrderHistoryKind)400).GetDisplayName(), "quote-confirmed"),
+                 new(500, OrderHistoryKind.CustomerCancelled.GetDisplayName(), "customer-cancelled")],
                 [new(1, ((OrderHistoryArea)1).GetDisplayName(), "creation"), new(2, ((OrderHistoryArea)2).GetDisplayName(), "product"), new(4, ((OrderHistoryArea)4).GetDisplayName(), "pricing"), new(8, ((OrderHistoryArea)8).GetDisplayName(), "status")],
                 [new(0, "Покупатель", "customer"), new(100, "Сотрудник", "staff"), new(200, "Система", "system")]);
         }, token);
@@ -223,6 +224,7 @@ public sealed partial class OrderService
                 product is null ? null : JsonSerializer.Deserialize<OrderProductDto>(product.After, PricingJson),
                 evidence.StatusBefore, evidence.StatusAfter, evidence.SourceUrl,
                 before is null ? null : ReadCalculation(before), price is null ? null : ReadCalculation(price),
-                before?.ValidUntil, price?.ValidUntil);
+                before?.ValidUntil, price?.ValidUntil)
+            { CancellationReason = evidence.CancellationReason };
         }, token);
 }

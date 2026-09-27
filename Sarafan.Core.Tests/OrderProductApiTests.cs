@@ -49,6 +49,53 @@ public sealed class OrderProductApiTests
     public void Cleanup() { _customer.Dispose(); _staff.Dispose(); }
 
     [Test]
+    public async Task CustomerCancellationIsOwnedVersionedAndVisibleInStaffHistory()
+    {
+        using var createdResponse = await Create(Guid.NewGuid());
+        createdResponse.EnsureSuccessStatusCode();
+        var created = (await createdResponse.Content.ReadFromJsonAsync<OrderDto>())!;
+        var path = $"/api/v1/orders/{created.OrderNumber}/cancel";
+        Assert.That(created.CanCancel, Is.True);
+        using var anonymous = IntegrationTestEnvironment.Factory.CreateClient();
+        using var unauthorized = await anonymous.PostAsJsonAsync(path,
+            new CancelOrderRequest { ExpectedUpdatedAt = created.UpdatedAt });
+        Assert.That(unauthorized.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        using var missing = await _customer.PostAsJsonAsync("/api/v1/orders/not-an-order/cancel",
+            new CancelOrderRequest { ExpectedUpdatedAt = created.UpdatedAt });
+        await Problem(missing, HttpStatusCode.NotFound, "resource_not_found");
+
+        using var invalidReason = await _customer.PostAsJsonAsync(path,
+            new CancelOrderRequest { ExpectedUpdatedAt = created.UpdatedAt, Reason = new string('a', 2001) });
+        await Problem(invalidReason, HttpStatusCode.BadRequest, "validation_failed");
+        using var stale = await _customer.PostAsJsonAsync(path,
+            new CancelOrderRequest { ExpectedUpdatedAt = created.UpdatedAt.AddSeconds(-1) });
+        await Problem(stale, HttpStatusCode.Conflict, "order_update_conflict");
+
+        using var cancelledResponse = await _customer.PostAsJsonAsync(path,
+            new CancelOrderRequest { ExpectedUpdatedAt = created.UpdatedAt, Reason = "  Передумал  " });
+        cancelledResponse.EnsureSuccessStatusCode();
+        var cancelled = (await cancelledResponse.Content.ReadFromJsonAsync<OrderDto>())!;
+        Assert.That(cancelled.Status, Is.EqualTo(OrderStatus.Cancelled));
+        Assert.That(cancelled.CanCancel, Is.False);
+        Assert.That(cancelled.CancelledAt, Is.EqualTo(cancelled.UpdatedAt));
+        Assert.That(cancelledResponse.Headers.CacheControl!.NoStore, Is.True);
+
+        using var replayResponse = await _customer.PostAsJsonAsync(path,
+            new CancelOrderRequest { ExpectedUpdatedAt = created.UpdatedAt, Reason = "Иная причина" });
+        replayResponse.EnsureSuccessStatusCode();
+        var replay = (await replayResponse.Content.ReadFromJsonAsync<OrderDto>())!;
+        Assert.That(replay.CancelledAt, Is.EqualTo(cancelled.CancelledAt));
+        var historyPath = $"/api/v1/backoffice/orders/{created.OrderNumber}/history";
+        var history = (await _staff.GetFromJsonAsync<OrderHistoryPageDto>(historyPath))!;
+        Assert.That(history.Items.Count(item => item.Kind == OrderHistoryKind.CustomerCancelled), Is.EqualTo(1));
+        var key = history.Items.Single(item => item.Kind == OrderHistoryKind.CustomerCancelled).EventKey;
+        var detail = (await _staff.GetFromJsonAsync<OrderHistoryDetailDto>($"{historyPath}/{key}"))!;
+        Assert.That(detail.CancellationReason, Is.EqualTo("Передумал"));
+        Assert.That(detail.StatusBefore, Is.EqualTo(OrderStatus.UnderReview));
+        Assert.That(detail.StatusAfter, Is.EqualTo(OrderStatus.Cancelled));
+    }
+
+    [Test]
     public async Task HistoryEndpointsGroupActionsAndProtectEvidence()
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();

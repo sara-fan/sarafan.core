@@ -623,6 +623,8 @@ public sealed class OperationLoggingTests
         productCorrection.EnsureSuccessStatusCode();
         await ExercisePricingBoundaries(client);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", customerToken);
+        using var cancelOrder = await client.PostAsJsonAsync($"/api/v1/orders/{createdOrder.OrderNumber}/cancel",
+            new CancelOrderRequest { ExpectedUpdatedAt = createdOrder.UpdatedAt, Reason = Secret });
         using var get = await client.GetAsync("/api/v1/customers/me");
         using var update = await client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = Secret });
         using var photo = await client.GetAsync("/api/v1/customers/me/photo");
@@ -642,6 +644,7 @@ public sealed class OperationLoggingTests
         Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(createOrder.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        Assert.That(cancelOrder.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
         Assert.That(listOrders.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(getOrder.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(backofficeOrderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));

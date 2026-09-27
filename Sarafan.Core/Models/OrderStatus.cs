@@ -25,6 +25,9 @@ public enum OrderStatus
 
 public static class OrderStatusExtensions
 {
+    public static bool CanCustomerCancel(this OrderStatus status)
+        => status is OrderStatus.UnderReview or OrderStatus.QuoteReady or OrderStatus.QuoteExpired;
+
     public static string GetDisplayName(this OrderStatus status) => status switch
     {
         OrderStatus.UnderReview => "На проверке",

@@ -21,6 +21,12 @@ public sealed class CreateOrderRequest
     public string? Comment { get; set; }
 }
 
+public sealed class CancelOrderRequest
+{
+    public DateTimeOffset? ExpectedUpdatedAt { get; set; }
+    public string? Reason { get; set; }
+}
+
 public sealed class ProductPreviewRequest
 {
     public string? SourceUrl { get; set; }
@@ -62,6 +68,9 @@ public sealed record OrderDto(
 {
     public required OrderProductDto Product { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
+    public bool CanCancel { get; init; }
+    public DateTimeOffset? CancelledAt { get; init; }
     public bool ShowReviewFields { get; init; }
     public required CustomerPricingDto Pricing { get; init; }
 }
