@@ -356,7 +356,7 @@ public sealed class ConsentApiTests
         Assert.That(datePage.Items, Has.Some.EqualTo(request));
         Assert.That(datePage.RequestedFrom, Is.EqualTo(requestDate));
         Assert.That(datePage.RequestedTo, Is.EqualTo(requestDate));
-        using var invalidQueue = await _client.GetAsync("/api/v1/backoffice/consents/withdrawal-requests?search=customer");
+        using var invalidQueue = await _client.GetAsync("/api/v1/backoffice/consents/withdrawal-requests?search=" + new string('x', 201));
         Assert.That((await invalidQueue.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(),
             Is.EqualTo("invalid_consent_withdrawal_request_filter"));
         using var completed = await _client.PutAsJsonAsync("/api/v1/backoffice/consents/withdrawal-requests/processed",

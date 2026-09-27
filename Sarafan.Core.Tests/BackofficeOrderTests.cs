@@ -121,7 +121,6 @@ public sealed class BackofficeOrderTests
     [TestCase("11111111-1", "11111111-1")]
     [TestCase("blue widget", "11111111-2")]
     [TestCase("rare shop", "11111111-3")]
-    [TestCase("source-token", "11111111-4")]
     public async Task List_SearchesEveryAllowlistedFieldCaseInsensitively(string search, string expected)
     {
         using var response = await SendAsAdministratorAsync(
@@ -131,6 +130,14 @@ public sealed class BackofficeOrderTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(body!.Items.Select(item => item.OrderNumber), Does.Contain(expected));
         Assert.That(body.Search, Is.EqualTo(search.ToUpperInvariant()));
+    }
+
+    [Test]
+    public async Task List_DoesNotSearchHiddenSourceUrl()
+    {
+        using var response = await SendAsAdministratorAsync("/api/v1/backoffice/orders?search=source-token");
+        var page = await response.Content.ReadFromJsonAsync<BackofficeOrderPageDto>();
+        Assert.That(page!.Items, Is.Empty);
     }
 
     [Test]

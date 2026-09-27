@@ -125,34 +125,15 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
             cancellationToken);
 
     public IQueryable<LegalDocumentAuditEvent> ApplyLegalDocumentAuditSearch(
-        IQueryable<LegalDocumentAuditEvent> query,
-        string search,
-        Guid? documentId)
-        => query.Where(item => EF.Functions.ILike(item.Title, $"%{search}%")
-            || EF.Functions.ILike(item.DisplayVersion, $"%{search}%")
-            || documentId != null && item.DocumentId == documentId);
+        IQueryable<LegalDocumentAuditEvent> query, string search)
+        => ListDisplaySearch.LegalAudit(query, search);
 
     public IQueryable<CustomerConsentWithdrawalRequest> ApplyWithdrawalSearch(
-        IQueryable<CustomerConsentWithdrawalRequest> query,
-        string search)
-        => query.Where(item => EF.Functions.Like(item.CustomerId.ToString(), $"%{search}%"));
+        IQueryable<CustomerConsentWithdrawalRequest> query, string search)
+        => ListDisplaySearch.Withdrawals(query, search);
 
     public IQueryable<Order> ApplyOrderSearch(IQueryable<Order> query, string search)
-    {
-        var escaped = search
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal);
-        var pattern = $"%{escaped}%";
-        return query.Where(item =>
-            EF.Functions.ILike(
-                item.Customer.OrderCode + "-" + item.CustomerOrderNumber.ToString(),
-                pattern,
-                "\\")
-            || EF.Functions.ILike(item.SourceUrl, pattern, "\\")
-            || item.ProductName != null && EF.Functions.ILike(item.ProductName, pattern, "\\")
-            || item.StoreName != null && EF.Functions.ILike(item.StoreName, pattern, "\\"));
-    }
+        => ListDisplaySearch.Orders(query, search);
 
     public IQueryable<Store> ApplyStoreSearch(IQueryable<Store> query, string search)
     {
@@ -164,17 +145,9 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
     }
 
     public IQueryable<ServiceCatalogueAuditEvent> ApplyServiceCatalogueAuditSearch(
-        IQueryable<ServiceCatalogueAuditEvent> query,
-        string search,
-        long? entryId)
-    {
-        var escaped = search
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal);
-        return query.Where(item => EF.Functions.ILike(item.ActorName, $"%{escaped}%", "\\")
-            || entryId != null && item.EntryId == entryId);
-    }
+        AppDbContext database, IQueryable<ServiceCatalogueAuditEvent> query, string search)
+        => PostgreSqlCatalogueSearch.Apply(database, query, search);
+
 }
 
 [ExcludeFromCodeCoverage]

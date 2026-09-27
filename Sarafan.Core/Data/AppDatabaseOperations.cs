@@ -44,17 +44,14 @@ internal interface IAppDatabaseOperations
         CancellationToken cancellationToken);
     IQueryable<LegalDocumentAuditEvent> ApplyLegalDocumentAuditSearch(
         IQueryable<LegalDocumentAuditEvent> query,
-        string search,
-        Guid? documentId);
+        string search);
     IQueryable<CustomerConsentWithdrawalRequest> ApplyWithdrawalSearch(
         IQueryable<CustomerConsentWithdrawalRequest> query,
         string search);
     IQueryable<Order> ApplyOrderSearch(IQueryable<Order> query, string search);
     IQueryable<Store> ApplyStoreSearch(IQueryable<Store> query, string search);
     IQueryable<ServiceCatalogueAuditEvent> ApplyServiceCatalogueAuditSearch(
-        IQueryable<ServiceCatalogueAuditEvent> query,
-        string search,
-        long? entryId);
+        AppDbContext database, IQueryable<ServiceCatalogueAuditEvent> query, string search);
 }
 
 internal static class AppDatabaseOperations
@@ -169,36 +166,23 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
     }
 
     public IQueryable<LegalDocumentAuditEvent> ApplyLegalDocumentAuditSearch(
-        IQueryable<LegalDocumentAuditEvent> query,
-        string search,
-        Guid? documentId)
-        => query.Where(item => item.Title.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || item.DisplayVersion.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || documentId != null && item.DocumentId == documentId);
+        IQueryable<LegalDocumentAuditEvent> query, string search)
+        => ListDisplaySearch.LegalAudit(query, search);
 
     public IQueryable<CustomerConsentWithdrawalRequest> ApplyWithdrawalSearch(
-        IQueryable<CustomerConsentWithdrawalRequest> query,
-        string search)
-        => query.Where(item => item.CustomerId.ToString().Contains(search, StringComparison.Ordinal));
+        IQueryable<CustomerConsentWithdrawalRequest> query, string search)
+        => ListDisplaySearch.Withdrawals(query, search);
 
     public IQueryable<Order> ApplyOrderSearch(IQueryable<Order> query, string search)
-        => query.Where(item =>
-            $"{item.Customer.OrderCode}-{item.CustomerOrderNumber}".Contains(
-                search,
-                StringComparison.OrdinalIgnoreCase)
-            || item.SourceUrl.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || item.ProductName != null && item.ProductName.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || item.StoreName != null && item.StoreName.Contains(search, StringComparison.OrdinalIgnoreCase));
+        => ListDisplaySearch.Orders(query, search);
 
     public IQueryable<Store> ApplyStoreSearch(IQueryable<Store> query, string search)
         => query.Where(item => item.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
 
     public IQueryable<ServiceCatalogueAuditEvent> ApplyServiceCatalogueAuditSearch(
-        IQueryable<ServiceCatalogueAuditEvent> query,
-        string search,
-        long? entryId)
-        => query.Where(item => item.ActorName.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || entryId != null && item.EntryId == entryId);
+        AppDbContext database, IQueryable<ServiceCatalogueAuditEvent> query, string search)
+        => CatalogueDisplaySearch.Apply(query, search);
+
 }
 
 internal sealed class InMemoryAppDatabaseTransaction : IAppDatabaseTransaction

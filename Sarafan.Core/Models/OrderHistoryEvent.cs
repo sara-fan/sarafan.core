@@ -9,6 +9,31 @@ public enum OrderHistoryActor { Customer = 0, Staff = 100, System = 200 }
 [Flags]
 public enum OrderHistoryArea { Creation = 1, Product = 2, Pricing = 4, Status = 8 }
 
+public static class OrderHistoryKindExtensions
+{
+    public static string GetDisplayName(this OrderHistoryKind kind) => kind switch
+    {
+        OrderHistoryKind.Created => "Создание заказа",
+        OrderHistoryKind.ProductChanged => "Изменение товара",
+        OrderHistoryKind.Parsed => "Распознавание товара",
+        OrderHistoryKind.PriceCalculated => "Расчёт стоимости",
+        OrderHistoryKind.QuoteConfirmed => "Подтверждение расчёта",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+    };
+}
+
+public static class OrderHistoryAreaExtensions
+{
+    public static string GetDisplayName(this OrderHistoryArea area) => area switch
+    {
+        OrderHistoryArea.Creation => "Создание",
+        OrderHistoryArea.Product => "Товар",
+        OrderHistoryArea.Pricing => "Стоимость",
+        OrderHistoryArea.Status => "Статус",
+        _ => throw new ArgumentOutOfRangeException(nameof(area), area, null)
+    };
+}
+
 public sealed class OrderHistoryEvent
 {
     public long Id { get; set; }
