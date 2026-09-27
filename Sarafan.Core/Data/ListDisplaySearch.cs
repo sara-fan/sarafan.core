@@ -93,7 +93,7 @@ internal static class ListDisplaySearch
         return Apply(query, search,
             row => AppDbContext.SearchDate(AppDbContext.SearchLocalTime("Europe/Moscow", row.At), "DD.MM.YYYY, HH24:MI") + " МСК",
             Label<OrderService.HistoryRow, OrderHistoryKind>(row => row.Kind, value => value.GetDisplayName()),
-            row => row.ActorName + (row.ActorNameHistorical ? "" : " (текущее имя)"),
+            row => row.ActorName,
             row => (((row.Areas & OrderHistoryArea.Creation) != 0 ? creation : "")
                 + ((row.Areas & OrderHistoryArea.Product) != 0 ? product : "")
                 + ((row.Areas & OrderHistoryArea.Pricing) != 0 ? pricing : "")

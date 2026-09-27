@@ -112,9 +112,11 @@ public sealed class OrderCreationTests
             Assert.That(first.Characteristics, Is.Null);
             Assert.That(first.AppliedExchangeRate, Is.Null);
             Assert.That(getByLocation.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(getByLocationResponse, Is.EqualTo(first));
+            Assert.That(getByLocationResponse! with { Pricing = first.Pricing }, Is.EqualTo(first));
             Assert.That(replayResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
-            Assert.That(replay, Is.EqualTo(first));
+            Assert.That(replay! with { Pricing = first.Pricing }, Is.EqualTo(first));
+            Assert.That(getByLocationResponse.Pricing!.AsOf, Is.GreaterThanOrEqualTo(first.Pricing!.AsOf));
+            Assert.That(replay.Pricing!.AsOf, Is.GreaterThanOrEqualTo(first.Pricing.AsOf));
             Assert.That(conflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
             Assert.That(conflict?.Code, Is.EqualTo("order_creation_conflict"));
             Assert.That(quantityConflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
@@ -335,7 +337,7 @@ public sealed class OrderCreationTests
         {
             Assert.That(create.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(stored, Is.EqualTo(order));
+            Assert.That(stored! with { Pricing = order.Pricing }, Is.EqualTo(order));
         }
     }
 

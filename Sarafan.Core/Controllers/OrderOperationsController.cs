@@ -21,6 +21,12 @@ public sealed class OrderOperationsController(
     public async Task<ActionResult<OrderOpsDto>> Operations(CancellationToken cancellationToken)
         => Ok(OrderOperationsCatalog.CreatePublic(await tlds.GetRequiredAsync(cancellationToken)) with
         {
-            ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken))
+            ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken)),
+            PricingStates =
+            [
+                new(0, "Ориентировочная стоимость", "forecast"),
+                new(100, "Подтверждённая стоимость", "confirmed"),
+                new(200, "Срок подтверждения истёк", "expired")
+            ]
         });
 }

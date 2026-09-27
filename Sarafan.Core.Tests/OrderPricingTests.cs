@@ -18,6 +18,135 @@ public sealed partial class OrderPricingTests
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
     [Test]
+    public async Task AnonymousForecastUsesCalculatorWithoutWritingAnOrderOrSnapshot()
+    {
+        var forecast = await service.ForecastAsync(new(new(50, Currency.Usd), 2), default);
+        var expected = await OrderPriceCalculator.CalculateAsync(db, order, Now, OrderPricingInputs.Empty, null, default);
+        Assert.Multiple(() =>
+        {
+            Assert.That(forecast.State, Is.EqualTo(CustomerPricingState.Forecast));
+            Assert.That(forecast.TotalRub, Is.EqualTo(expected.TotalRub));
+            Assert.That(forecast.CalculatedAt, Is.EqualTo(expected.CalculatedAt));
+            Assert.That(forecast.ValidUntil, Is.Null);
+            Assert.That(forecast.CustomsRub, Is.Null);
+            Assert.That(forecast.DomesticDeliveryRub, Is.Null);
+        });
+        Assert.That(await db.Orders.CountAsync(), Is.EqualTo(1));
+        Assert.That(await db.OrderPricingSnapshots.CountAsync(), Is.Zero);
+        var missing = await service.ForecastAsync(new(null, 2), default);
+        Assert.That(missing.TotalRub, Is.Null);
+        Assert.That(missing.CalculatedAt, Is.Null);
+    }
+
+    [Test]
+    public async Task AnonymousForecastExposesKnownExcludedAmounts()
+    {
+        db.AddRange(Tariff(ServiceKind.DomesticDelivery, PriceMethod.Fixed, Currency.Rub, amount: 55m),
+            Tariff(ServiceKind.CustomsPayments, PriceMethod.Fixed, Currency.Rub, amount: 120m));
+        await db.SaveChangesAsync();
+
+        var forecast = await service.ForecastAsync(new(new(50, Currency.Usd), 2), default);
+        Assert.Multiple(() =>
+        {
+            Assert.That(forecast.DomesticDeliveryRub, Is.EqualTo(55m));
+            Assert.That(forecast.CustomsRub, Is.EqualTo(120m));
+        });
+    }
+
+    [TestCase(0, "invalid_order_quantity", "quantity")]
+    [TestCase(5, "invalid_order_quantity", "quantity")]
+    public void AnonymousForecastRejectsInvalidQuantity(int quantity, string code, string field)
+    {
+        var error = Assert.ThrowsAsync<ServiceException>(() =>
+            service.ForecastAsync(new(new(50, Currency.Usd), quantity), default));
+        Assert.That(error!.Code, Is.EqualTo(code));
+        Assert.That(error.Errors, Does.ContainKey(field));
+    }
+
+    [TestCase(0)]
+    [TestCase(1.001)]
+    [TestCase(100000000)]
+    public void AnonymousForecastRejectsInvalidPrice(decimal amount)
+    {
+        var error = Assert.ThrowsAsync<ServiceException>(() =>
+            service.ForecastAsync(new(new(amount, Currency.Usd), 1), default));
+        Assert.That(error!.Code, Is.EqualTo("invalid_order_seller_price"));
+        Assert.That(error.Errors, Does.ContainKey("sellerPrice"));
+    }
+
+    [Test]
+    public async Task CustomerReadsRetainKnownAndUnknownExcludedAmounts()
+    {
+        db.AddRange(Tariff(ServiceKind.DomesticDelivery, PriceMethod.Manual, Currency.Rub),
+            Tariff(ServiceKind.CustomsPayments, PriceMethod.Manual, Currency.Rub));
+        var inputs = OrderPricingInputs.Empty with
+        {
+            ManualAmounts = new() { [ServiceKind.DomesticDelivery] = 55m, [ServiceKind.CustomsPayments] = 120m }
+        };
+        await db.SaveChangesAsync();
+        var calculated = await OrderPriceCalculator.CalculateAsync(db, order, Now, inputs, null, default);
+        db.OrderPricingSnapshots.Add(new() { Order = order, At = Now, Payload = JsonSerializer.Serialize(calculated, WebJson) });
+        await db.SaveChangesAsync();
+        var forecast = await service.GetAsync(order.CustomerId, "12345678-1", default);
+        Assert.That(forecast.Pricing!.State, Is.EqualTo(CustomerPricingState.Forecast));
+        Assert.Multiple(() =>
+        {
+            Assert.That(forecast.Pricing.DomesticDeliveryRub, Is.EqualTo(55m));
+            Assert.That(forecast.Pricing.CustomsRub, Is.EqualTo(120m));
+        });
+        Assert.That((await service.ListAsync(order.CustomerId, default)).Single().Pricing,
+            Is.EqualTo(forecast.Pricing));
+
+        db.OrderPricingSnapshots.Add(new()
+        {
+            Order = order,
+            At = Now,
+            ValidUntil = Now.AddHours(1),
+            Payload = JsonSerializer.Serialize(calculated, WebJson)
+        });
+        await db.SaveChangesAsync();
+        var confirmed = await service.GetAsync(order.CustomerId, "12345678-1", default);
+        Assert.That(confirmed.Pricing!.State, Is.EqualTo(CustomerPricingState.Confirmed));
+        Assert.That(confirmed.Pricing.CustomsRub, Is.EqualTo(120m));
+        Assert.That(confirmed.Pricing.DomesticDeliveryRub, Is.EqualTo(55m));
+
+        var later = new OrderService(db, null!, null!, null!, null!, null!, new OffsetClock(Now.AddHours(1)),
+            NullLogger<OrderService>.Instance);
+        var expired = await later.GetAsync(order.CustomerId, "12345678-1", default);
+        Assert.That(expired.Pricing!.State, Is.EqualTo(CustomerPricingState.Expired));
+        Assert.That(expired.Pricing.TotalRub, Is.EqualTo(confirmed.Pricing.TotalRub));
+        Assert.That(expired.Pricing.DomesticDeliveryRub, Is.EqualTo(55m));
+    }
+
+    [Test]
+    public async Task StaffSavedDomesticDeliveryAppearsInCustomerDetailAndList()
+    {
+        db.Add(Tariff(ServiceKind.DomesticDelivery, PriceMethod.Manual, Currency.Rub));
+        await db.SaveChangesAsync();
+        var inputs = OrderPricingInputs.Empty with
+        {
+            ManualAmounts = new() { [ServiceKind.DomesticDelivery] = 1000m }
+        };
+
+        var saved = await service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, inputs), actorId, Shift, default);
+        var forecast = await service.GetAsync(order.CustomerId, "12345678-1", default);
+        Assert.That(forecast.Pricing.DomesticDeliveryRub, Is.EqualTo(1000m));
+        Assert.That((await service.ListAsync(order.CustomerId, default)).Single().Pricing.DomesticDeliveryRub,
+            Is.EqualTo(1000m));
+
+        await service.ConfirmPricingAsync("12345678-1", new(saved.UpdatedAt), actorId, Shift, default);
+        var confirmed = await service.GetAsync(order.CustomerId, "12345678-1", default);
+        Assert.That(confirmed.Pricing.State, Is.EqualTo(CustomerPricingState.Confirmed));
+        Assert.That(confirmed.Pricing.DomesticDeliveryRub, Is.EqualTo(1000m));
+        Assert.That(JsonSerializer.Serialize(confirmed, WebJson), Does.Contain("\"domesticDeliveryRub\":1000"));
+    }
+
+    private sealed class OffsetClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    [Test]
     public void ManualAmountsUseNumericKeysWithoutChangingOtherEnums()
     {
         var inputs = OrderPricingInputs.Empty with
