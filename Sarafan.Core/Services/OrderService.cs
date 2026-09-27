@@ -515,15 +515,15 @@ public sealed partial class OrderService(
                 rate.OfficialRate,
                 rate.SourceEffectiveDate)
             : null)
-    {
-        Product = CurrentProduct(order),
-        CreatedAt = order.CreatedAt,
-        UpdatedAt = order.UpdatedAt,
-        CanCancel = order.Status.CanCustomerCancel(),
-        CancelledAt = cancelledAt,
-        ShowReviewFields = order.Status == OrderStatus.UnderReview,
-        Pricing = pricing
-    };
+        {
+            Product = CurrentProduct(order),
+            CreatedAt = order.CreatedAt,
+            UpdatedAt = order.UpdatedAt,
+            CanCancel = order.Status.CanCustomerCancel(),
+            CancelledAt = cancelledAt,
+            ShowReviewFields = order.Status == OrderStatus.UnderReview,
+            Pricing = pricing
+        };
 
     private static BackofficeOrderListItemDto ToBackofficeDto(BackofficeOrderProjection order) => new(
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
