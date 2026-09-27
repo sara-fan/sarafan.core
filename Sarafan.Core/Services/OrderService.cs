@@ -407,8 +407,14 @@ public sealed partial class OrderService(
             throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
         }
 
+        var cancelledAt = order.Status == OrderStatus.Cancelled
+            ? await database.Set<OrderHistoryEvent>().AsNoTracking()
+                .Where(item => item.OrderId == order.Id && item.Kind == OrderHistoryKind.CustomerCancelled)
+                .OrderByDescending(item => item.Id).Select(item => (DateTimeOffset?)item.At)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
         return ToDto(order, order.Customer.OrderCode!,
-            await CustomerPricingAsync(order.Id, timeProvider.GetUtcNow(), cancellationToken));
+            await CustomerPricingAsync(order.Id, timeProvider.GetUtcNow(), cancellationToken), cancelledAt);
     }
 
     private async Task<IReadOnlyList<CustomerOrderListItemDto>> ListCoreAsync(
@@ -484,7 +490,8 @@ public sealed partial class OrderService(
         return string.IsNullOrEmpty(normalized) ? null : normalized;
     }
 
-    private static OrderDto ToDto(Order order, string customerOrderCode, CustomerPricingDto pricing) => new(
+    private static OrderDto ToDto(Order order, string customerOrderCode, CustomerPricingDto pricing,
+        DateTimeOffset? cancelledAt = null) => new(
         $"{customerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
         ProductSourceUrl.NormalizeStored(order.SourceUrl),
@@ -508,12 +515,15 @@ public sealed partial class OrderService(
                 rate.OfficialRate,
                 rate.SourceEffectiveDate)
             : null)
-    {
-        Product = CurrentProduct(order),
-        CreatedAt = order.CreatedAt,
-        ShowReviewFields = order.Status == OrderStatus.UnderReview,
-        Pricing = pricing
-    };
+        {
+            Product = CurrentProduct(order),
+            CreatedAt = order.CreatedAt,
+            UpdatedAt = order.UpdatedAt,
+            CanCancel = order.Status.CanCustomerCancel(),
+            CancelledAt = cancelledAt,
+            ShowReviewFields = order.Status == OrderStatus.UnderReview,
+            Pricing = pricing
+        };
 
     private static BackofficeOrderListItemDto ToBackofficeDto(BackofficeOrderProjection order) => new(
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",

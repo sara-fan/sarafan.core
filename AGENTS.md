@@ -220,6 +220,8 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 
 ## Order statuses
 
+- Customer cancellation is an immediate, final transition from UnderReview, QuoteReady, or QuoteExpired to Cancelled. Require ownership and the expected UpdatedAt version for the first transition; repeat cancellation is read-only. Persist the status, advanced UpdatedAt, and one customer history event atomically. Retain pricing snapshots and derive CancelledAt from that event. The optional reason is staff-history-only and must never enter logs or customer DTOs. See `docs/customer-order-cancellation-api.md`.
+
 - Keep `OrderStatus` as the single stable, sparse numeric order-status enum. Exact execution states occupy the approved values in the `300` range; `InProgress` and `Completed` are presentation meanings, not enum members. Do not reuse unassigned values or add a status absent from the product specification.
 - Core owns the exact and upper-level Russian names, route aliases, terminal-state marker, and stable presentation progress percentage exposed by anonymous `GET /api/v1/orders/ops`. Clients consume this catalogue for grouping and presentation instead of maintaining their own mappings or deriving progress from catalogue order, and order statuses do not use a lookup table.
 - Back-office aggregate filters are metadata, never `OrderStatus` members: `work` (`В работе`) contains every defined exact status from `0` through `380`, while `in_progress` (`Выполняется`) contains every defined exact status from `300` through `380`. Return exact statuses on rows even when an aggregate filter selected them.

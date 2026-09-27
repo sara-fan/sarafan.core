@@ -222,6 +222,7 @@ public sealed class OperationLoggingTests
             new UpdateOrderProductRequest { ProductName = Secret, Comment = Secret },
             new OrderProductDto(Secret, new(10, Currency.Usd), 1, Secret, Secret, Secret),
             new CreateOrderRequest { SourceUrl = Secret, Product = new() { ProductName = Secret } },
+            new CancelOrderRequest { ExpectedUpdatedAt = DateTimeOffset.UtcNow, Reason = Secret },
             new OrderLimitRatePair(OrderProductTestData.Rate(Currency.Usd, 80), OrderProductTestData.Rate(Currency.Eur, 100)),
             new BackofficeOrderDetailsDto(Secret, OrderStatus.UnderReview, Secret, default, default,
                 new(Secret, null, 1, null, null, null),
@@ -260,6 +261,7 @@ public sealed class OperationLoggingTests
         Assert.That(summaries, Does.Contain("cancellation requested=False"));
         Assert.That(summaries, Does.Contain($"ServiceStatus(name=Sarafan.Core; status=ok; version={VersionInfo.AppVersion})"));
         Assert.That(summaries, Does.Contain("RequestCodeRequest(phone/consents=[redacted])"));
+        Assert.That(summaries, Does.Contain("CancelOrderRequest(version/reason=[redacted])"));
         Assert.That(summaries, Does.Contain("BackofficeUserDto collection(count=1)"));
         Assert.That(summaries, Does.Contain("BackofficeRoleDto collection(count=1)"));
         Assert.That(summaries, Does.Contain("PhoneResolveRequest(phone=[redacted])"));
@@ -623,6 +625,8 @@ public sealed class OperationLoggingTests
         productCorrection.EnsureSuccessStatusCode();
         await ExercisePricingBoundaries(client);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", customerToken);
+        using var cancelOrder = await client.PostAsJsonAsync($"/api/v1/orders/{createdOrder.OrderNumber}/cancel",
+            new CancelOrderRequest { ExpectedUpdatedAt = createdOrder.UpdatedAt, Reason = Secret });
         using var get = await client.GetAsync("/api/v1/customers/me");
         using var update = await client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = Secret });
         using var photo = await client.GetAsync("/api/v1/customers/me/photo");
@@ -642,6 +646,7 @@ public sealed class OperationLoggingTests
         Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(createOrder.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        Assert.That(cancelOrder.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
         Assert.That(listOrders.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(getOrder.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(backofficeOrderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
@@ -697,6 +702,10 @@ public sealed class OperationLoggingTests
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("AuthenticationSession(tokens/customer=[redacted])")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("CustomerDto([redacted])")), Is.True);
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1601).Any(record => record.Message.Contains("CustomerOrderListItemDto collection(count=")), Is.True);
+        var cancelEntry = _logs.Records.Single(record => record.Event.Id == 1600 &&
+            Equals(record.Attributes["code.function.name"], $"{typeof(OrderService).FullName}.{nameof(OrderService.CancelAsync)}"));
+        Assert.That(cancelEntry.Attributes["sarafan.operation.inputs"],
+            Does.Contain("request=CancelOrderRequest(version/reason=[redacted])").And.Not.Contain(Secret));
         Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
         Assert.That(
             string.Join(' ', _logs.Records.Select(record => record.Message)),
