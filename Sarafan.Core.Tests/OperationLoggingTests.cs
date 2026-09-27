@@ -505,6 +505,53 @@ public sealed class OperationLoggingTests
     }
 
     [Test]
+    public async Task ForecastAndHistoryBoundariesDescribeShapesWithoutPrivateValues()
+    {
+        await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var now = DateTimeOffset.Parse("2026-09-27T12:34:56Z");
+        var customer = new Customer { Phone = Secret, CreatedAt = now, UpdatedAt = now };
+        customer.AllocateOrderNumber("87654321");
+        database.Add(customer);
+        await database.SaveChangesAsync();
+        var order = new Order(customer.Id, 1, "https://example.test/" + Secret, 1, null, Guid.NewGuid(), now);
+        database.Add(order);
+        await database.SaveChangesAsync();
+        var service = new OrderService(database, null!, null!, null!, null!, null!, TimeProvider.System,
+            _factory.CreateLogger<OrderService>());
+        string[] roles = [BackofficeRoles.Administrator];
+        await service.ForecastAsync(new(null, 1), default);
+        await service.HistoryOperationsAsync("87654321-1", roles, default);
+        await service.HistoryAsync("87654321-1", roles, 1, 25, "timestamp", "desc", Secret, 1, 0,
+            "2026-09-01", "2026-09-30", default);
+        await service.HistoryDetailAsync("87654321-1", $"3-{order.Id}", roles, default);
+        await service.PricingOperationsAsync(roles, default);
+        await service.GetPricingAsync("87654321-1", roles, default);
+        Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("87654321-1",
+            new(null, OrderPricingInputs.Empty), 987654, [], default));
+        Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync("87654321-1",
+            new(null), 987654, [], default));
+        var entries = _logs.Records.Where(record => record.Event.Id == 1600).ToArray();
+        foreach (var method in new[] { nameof(OrderService.ForecastAsync), nameof(OrderService.HistoryOperationsAsync),
+            nameof(OrderService.HistoryAsync), nameof(OrderService.HistoryDetailAsync), nameof(OrderService.PricingOperationsAsync),
+            nameof(OrderService.GetPricingAsync), nameof(OrderService.UpdatePricingAsync), nameof(OrderService.ConfirmPricingAsync) })
+        {
+            var entry = entries.Single(record => record.Attributes["code.function.name"]?.ToString() == $"Sarafan.Core.Services.OrderService.{method}");
+            var summary = entry.Attributes["sarafan.operation.inputs"]!.ToString()!;
+            foreach (var parameter in typeof(OrderService).GetMethod(method)!.GetParameters())
+                Assert.That(summary, Does.Contain(parameter.Name + "="), method);
+        }
+        var messages = string.Join(" ", _logs.Records.Select(record => record.Message));
+        foreach (var expected in new[] { "OrderForecastRequest(sellerPrice/quantity=[redacted])",
+            "CustomerPricingDto(state/amounts/timestamps=[redacted])", "OrderHistoryOpsDto(metadata=[redacted])",
+            "OrderHistoryItemDto page(count=0; filters=[redacted])", "OrderHistoryDetailDto(event/evidence=[redacted])" })
+            Assert.That(messages, Does.Contain(expected));
+        foreach (var secret in new[] { Secret, "87654321", "987654", "2026-09", "https://example.test/", "pricing=[redacted]" })
+            Assert.That(messages, Does.Not.Contain(secret));
+        AssertPrivate();
+    }
+
+    [Test]
     public async Task HttpFlow_LogsEveryControllerActionAndServiceBoundaryWithSafeOutputs()
     {
         using var app = IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder =>
@@ -523,6 +570,8 @@ public sealed class OperationLoggingTests
         using var preview = await client.PostAsJsonAsync(
             "/api/v1/orders/preview",
             new ProductPreviewRequest { SourceUrl = previewSourceUrl });
+        using var forecast = await client.PostAsJsonAsync(
+            "/api/v1/orders/forecast", new OrderForecastRequest(new(10, Currency.Usd), 1));
         using var resolve = await client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
         using var invalid = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone = "" });
         using var request = await client.PostAsJsonAsync("/api/v1/auth/code/request", await ConsentTestData.Request(client, phone));
@@ -589,6 +638,7 @@ public sealed class OperationLoggingTests
         Assert.That(customerOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(orderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(preview.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(forecast.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(createOrder.StatusCode, Is.EqualTo(HttpStatusCode.Created));
@@ -611,6 +661,7 @@ public sealed class OperationLoggingTests
             typeof(CustomersController),
             typeof(OrderOperationsController),
             typeof(OrderPreviewController),
+            typeof(OrderForecastController),
             typeof(OrdersController),
             typeof(StatusController)
         ];

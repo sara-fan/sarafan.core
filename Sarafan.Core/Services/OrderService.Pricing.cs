@@ -18,13 +18,15 @@ public sealed partial class OrderService
     internal const int QuoteValidityHours = 24;
 
     public Task<OrderPricingOpsDto> PricingOperationsAsync(string[] roles, CancellationToken token)
-        => PricingRun(nameof(PricingOperationsAsync), () => Task.FromResult(new OrderPricingOpsDto(
+        => PricingRun(nameof(PricingOperationsAsync),
+            () => LogValueSummary.Inputs((nameof(roles), roles), (nameof(token), token)), () => Task.FromResult(new OrderPricingOpsDto(
             ServiceCatalogueRules.Operations(roles),
             [new(0, "Рассчитана", "calculated"), new(100, "Не рассчитана", "not-calculated"), new(200, "Не применяется", "not-applicable")],
             QuoteValidityHours, BackofficeAuthorization.IsAllowed(roles, BackofficeAction.ManageOrderPricing))), token);
 
     public Task<OrderPricingDto> GetPricingAsync(string orderNumber, string[] roles, CancellationToken token)
-        => PricingRun(nameof(GetPricingAsync), async () =>
+        => PricingRun(nameof(GetPricingAsync),
+            () => LogValueSummary.Inputs((nameof(orderNumber), orderNumber), (nameof(roles), roles), (nameof(token), token)), async () =>
         {
             BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManualQuotes);
             var order = await FindPublicOrder(orderNumber, token);
@@ -33,17 +35,21 @@ public sealed partial class OrderService
 
     public Task<OrderPricingDto> UpdatePricingAsync(string orderNumber, OrderPricingWriteRequest request,
         int actorId, string[] roles, CancellationToken token)
-        => PricingRun(nameof(UpdatePricingAsync), () => MutatePricingAsync(orderNumber, request.ExpectedUpdatedAt,
+        => PricingRun(nameof(UpdatePricingAsync),
+            () => LogValueSummary.Inputs((nameof(orderNumber), orderNumber), (nameof(request), request),
+                (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)), () => MutatePricingAsync(orderNumber, request.ExpectedUpdatedAt,
             request.Inputs, false, actorId, roles, token), token);
 
     public Task<OrderPricingDto> ConfirmPricingAsync(string orderNumber, ConfirmOrderPricingRequest request,
         int actorId, string[] roles, CancellationToken token)
-        => PricingRun(nameof(ConfirmPricingAsync), () => MutatePricingAsync(orderNumber, request.ExpectedUpdatedAt,
+        => PricingRun(nameof(ConfirmPricingAsync),
+            () => LogValueSummary.Inputs((nameof(orderNumber), orderNumber), (nameof(request), request),
+                (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)), () => MutatePricingAsync(orderNumber, request.ExpectedUpdatedAt,
             null, true, actorId, roles, token), token);
 
-    private Task<T> PricingRun<T>(string method, Func<Task<T>> action, CancellationToken token)
+    private Task<T> PricingRun<T>(string method, Func<string> inputs, Func<Task<T>> action, CancellationToken token)
         => OperationLogging.RunAsync(logger, $"{typeof(OrderService).FullName}.{method}",
-            () => LogValueSummary.Inputs(("pricing", "[redacted]")), action, token);
+            inputs, action, token);
 
     private async Task<OrderPricingDto> MutatePricingAsync(string number, DateTimeOffset? expectedUpdatedAt,
         OrderPricingInputs? inputs, bool confirm, int actorId, string[] roles, CancellationToken token)

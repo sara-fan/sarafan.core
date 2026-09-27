@@ -8,7 +8,7 @@ namespace Sarafan.Core.RestModels;
 
 public sealed record OrderHistoryOpsDto(EnumOpsItemDto[] Kinds, EnumOpsItemDto[] Areas, EnumOpsItemDto[] ActorTypes);
 public sealed record OrderHistoryItemDto(string EventKey, DateTimeOffset At, OrderHistoryKind Kind,
-    OrderHistoryArea Areas, OrderHistoryActor ActorType, string ActorName, bool ActorNameHistorical);
+    OrderHistoryArea Areas, OrderHistoryActor ActorType, string ActorName);
 public sealed class OrderHistoryPageDto : PagedResult<OrderHistoryItemDto>
 {
     public OrderHistoryArea? Area { get; init; }

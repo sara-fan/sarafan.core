@@ -155,7 +155,6 @@ public sealed partial class OrderPricingTests
         var page = await service.HistoryAsync("12345678-1", [role], 1, 25, "timestamp", "desc", null, null, null, null, null, default);
         Assert.That(page.Items, Has.Length.EqualTo(4));
         var correction = page.Items.Single(item => item.Kind == OrderHistoryKind.ProductChanged);
-        Assert.That(correction.ActorNameHistorical, Is.False);
         var corrected = await service.HistoryDetailAsync("12345678-1", correction.EventKey, [role], default);
         Assert.That(corrected.ProductBefore, Is.EqualTo(product));
         Assert.That(corrected.ProductAfter!.Quantity, Is.EqualTo(3));

@@ -216,7 +216,8 @@ public sealed partial class OrderService(
                     return new Allocation(order, customer.OrderCode!);
                 }, cancellationToken);
 
-                return ToDto(allocation);
+                return ToDto(allocation.Order, allocation.CustomerOrderCode,
+                    await CustomerPricingAsync(allocation.Order.Id, timeProvider.GetUtcNow(), cancellationToken));
             }
             catch (DbUpdateException exception) when (
                 assignedNewCode && collisionDetector.IsCollision(exception))
@@ -406,7 +407,8 @@ public sealed partial class OrderService(
             throw new ServiceException(StatusCodes.Status404NotFound, "resource_not_found");
         }
 
-        return ToDto(order);
+        return ToDto(order, order.Customer.OrderCode!,
+            await CustomerPricingAsync(order.Id, timeProvider.GetUtcNow(), cancellationToken));
     }
 
     private async Task<IReadOnlyList<CustomerOrderListItemDto>> ListCoreAsync(
@@ -419,6 +421,7 @@ public sealed partial class OrderService(
             .OrderByDescending(item => item.CreatedAt)
             .ThenByDescending(item => item.Id)
             .Select(item => new CustomerOrderProjection(
+                item.Id,
                 item.Customer.OrderCode!,
                 item.CustomerOrderNumber,
                 item.Status,
@@ -432,7 +435,10 @@ public sealed partial class OrderService(
                 item.CreatedAt))
             .ToArrayAsync(cancellationToken);
 
-        return rows.Select(ToCustomerDto).ToArray();
+        var snapshots = await LatestCustomerPricingAsync(rows.Select(row => row.Id).ToArray(), cancellationToken);
+        var now = timeProvider.GetUtcNow();
+        return rows.Select(row => ToCustomerDto(row,
+            CustomerPricing(snapshots.GetValueOrDefault(row.Id), now))).ToArray();
     }
 
     private static int NormalizeQuantity(int? quantity)
@@ -478,11 +484,7 @@ public sealed partial class OrderService(
         return string.IsNullOrEmpty(normalized) ? null : normalized;
     }
 
-    private static OrderDto ToDto(Allocation allocation) => ToDto(allocation.Order, allocation.CustomerOrderCode);
-
-    private static OrderDto ToDto(Order order) => ToDto(order, order.Customer.OrderCode!);
-
-    private static OrderDto ToDto(Order order, string customerOrderCode) => new(
+    private static OrderDto ToDto(Order order, string customerOrderCode, CustomerPricingDto pricing) => new(
         $"{customerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
         ProductSourceUrl.NormalizeStored(order.SourceUrl),
@@ -509,7 +511,8 @@ public sealed partial class OrderService(
     {
         Product = CurrentProduct(order),
         CreatedAt = order.CreatedAt,
-        ShowReviewFields = order.Status == OrderStatus.UnderReview
+        ShowReviewFields = order.Status == OrderStatus.UnderReview,
+        Pricing = pricing
     };
 
     private static BackofficeOrderListItemDto ToBackofficeDto(BackofficeOrderProjection order) => new(
@@ -525,7 +528,7 @@ public sealed partial class OrderService(
         order.CreatedAt,
         order.UpdatedAt);
 
-    private static CustomerOrderListItemDto ToCustomerDto(CustomerOrderProjection order) => new(
+    private static CustomerOrderListItemDto ToCustomerDto(CustomerOrderProjection order, CustomerPricingDto pricing) => new(
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
         ProductSourceUrl.NormalizeStored(order.SourceUrl),
@@ -536,11 +539,13 @@ public sealed partial class OrderService(
             ? new OrderSellerPriceDto(order.SellerPrice.Value, order.SellerPriceCurrency.Value)
             : null,
         order.Quantity,
-        order.CreatedAt);
+        order.CreatedAt)
+    { Pricing = pricing };
 
     private sealed record Allocation(Order Order, string CustomerOrderCode);
 
     private sealed record CustomerOrderProjection(
+        long Id,
         string CustomerOrderCode,
         long CustomerOrderNumber,
         OrderStatus Status,

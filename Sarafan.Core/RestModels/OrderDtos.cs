@@ -63,6 +63,7 @@ public sealed record OrderDto(
     public required OrderProductDto Product { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public bool ShowReviewFields { get; init; }
+    public required CustomerPricingDto Pricing { get; init; }
 }
 
 public sealed record CustomerOrderListItemDto(
@@ -74,7 +75,10 @@ public sealed record CustomerOrderListItemDto(
     string? ImageUrl,
     OrderSellerPriceDto? SellerPrice,
     int Quantity,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt)
+{
+    public required CustomerPricingDto Pricing { get; init; }
+}
 
 public sealed record OrderStatusOpsItemDto(
     int Value,
@@ -99,6 +103,7 @@ public sealed record OrderOpsDto(
     ProductSourceUrlOpsDto ProductSourceUrl)
 {
     public OrderProductLimitsDto? ProductLimits { get; init; }
+    public IReadOnlyList<EnumOpsItemDto> PricingStates { get; init; } = [];
 }
 
 public sealed record BackofficeOrderStatusFilterGroupDto(

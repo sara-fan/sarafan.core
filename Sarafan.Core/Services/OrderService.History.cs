@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Sarafan.Core.Authentication;
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
+using Sarafan.Core.Observability;
 using Sarafan.Core.RestModels;
 
 namespace Sarafan.Core.Services;
@@ -32,7 +33,8 @@ public sealed partial class OrderService
         });
 
     public Task<OrderHistoryOpsDto> HistoryOperationsAsync(string number, string[] roles, CancellationToken token)
-        => PricingRun(nameof(HistoryOperationsAsync), async () =>
+        => PricingRun(nameof(HistoryOperationsAsync),
+            () => LogValueSummary.Inputs((nameof(number), number), (nameof(roles), roles), (nameof(token), token)), async () =>
         {
             BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManualQuotes);
             await FindPublicOrder(number, token);
@@ -53,7 +55,6 @@ public sealed partial class OrderService
         public OrderHistoryArea Areas { get; set; }
         public OrderHistoryActor ActorType { get; set; }
         public string ActorName { get; set; } = "";
-        public bool ActorNameHistorical { get; set; }
         public long? ProductAuditId { get; set; }
         public long? PricingSnapshotId { get; set; }
     }
@@ -82,7 +83,6 @@ public sealed partial class OrderService
             Areas = item.Areas,
             ActorType = item.ActorType,
             ActorName = item.ActorName,
-            ActorNameHistorical = true,
             ProductAuditId = item.ProductAuditId,
             PricingSnapshotId = item.PricingSnapshotId
         });
@@ -100,7 +100,6 @@ public sealed partial class OrderService
             ActorName = item.Kind == OrderProductAuditKind.Created ? "Покупатель" : item.ActorId == null ? "Система"
                 : database.BackofficeUsers.Where(actor => actor.Id == item.ActorId)
                     .Select(actor => (actor.LastName + " " + actor.FirstName + " " + (actor.Patronymic ?? "")).Trim()).FirstOrDefault() ?? "Сотрудник недоступен",
-            ActorNameHistorical = item.ActorId == null,
             ProductAuditId = item.Id,
             PricingSnapshotId = pairs.Where(pair => pair.ProductId == item.Id).Select(pair => (long?)pair.PriceId).FirstOrDefault()
         });
@@ -113,7 +112,6 @@ public sealed partial class OrderService
             Areas = OrderHistoryArea.Pricing | (item.ValidUntil == null ? 0 : OrderHistoryArea.Status),
             ActorType = item.ActorId == null ? OrderHistoryActor.System : OrderHistoryActor.Staff,
             ActorName = item.ActorName ?? "Система",
-            ActorNameHistorical = true,
             ProductAuditId = null,
             PricingSnapshotId = item.Id
         });
@@ -128,7 +126,6 @@ public sealed partial class OrderService
                 Areas = OrderHistoryArea.Creation,
                 ActorType = OrderHistoryActor.Customer,
                 ActorName = "Покупатель",
-                ActorNameHistorical = true,
                 ProductAuditId = null,
                 PricingSnapshotId = null
             });
@@ -136,11 +133,15 @@ public sealed partial class OrderService
     }
 
     private static OrderHistoryItemDto HistoryItem(HistoryRow row)
-        => new($"{row.Source}-{row.Id}", row.At, row.Kind, row.Areas, row.ActorType, row.ActorName, row.ActorNameHistorical);
+        => new($"{row.Source}-{row.Id}", row.At, row.Kind, row.Areas, row.ActorType, row.ActorName);
 
     public Task<OrderHistoryPageDto> HistoryAsync(string number, string[] roles, int page, int pageSize,
         string sortBy, string sortOrder, string? search, int? area, int? actorType, string? from, string? to, CancellationToken token)
-        => PricingRun(nameof(HistoryAsync), async () =>
+        => PricingRun(nameof(HistoryAsync),
+            () => LogValueSummary.Inputs((nameof(number), number), (nameof(roles), roles),
+                (nameof(page), page), (nameof(pageSize), pageSize), (nameof(sortBy), sortBy), (nameof(sortOrder), sortOrder),
+                (nameof(search), search), (nameof(area), area), (nameof(actorType), actorType),
+                (nameof(from), from), (nameof(to), to), (nameof(token), token)), async () =>
         {
             BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManualQuotes);
             var order = await FindPublicOrder(number, token);
@@ -195,7 +196,8 @@ public sealed partial class OrderService
         }, token);
 
     public Task<OrderHistoryDetailDto> HistoryDetailAsync(string number, string eventKey, string[] roles, CancellationToken token)
-        => PricingRun(nameof(HistoryDetailAsync), async () =>
+        => PricingRun(nameof(HistoryDetailAsync),
+            () => LogValueSummary.Inputs((nameof(number), number), (nameof(eventKey), eventKey), (nameof(roles), roles), (nameof(token), token)), async () =>
         {
             BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManualQuotes);
             var order = await FindPublicOrder(number, token);

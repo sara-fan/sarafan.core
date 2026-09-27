@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
@@ -71,6 +72,44 @@ public sealed class OrderPreviewTests
             Assert.That(preview, Is.EqualTo(new ProductPreviewDto(expected, ProductPreviewDto.ManualReviewOutcome)));
             Assert.That(await CountOrders(), Is.EqualTo(before));
         }
+    }
+
+    [Test]
+    public async Task AnonymousForecastExposesOnlyCustomerProjectionAndWritesNothing()
+    {
+        using var opsResponse = await _client.GetAsync("/api/v1/orders/ops");
+        var ops = (await opsResponse.Content.ReadFromJsonAsync<OrderOpsDto>())!;
+        using var response = await _client.PostAsJsonAsync("/api/v1/orders/forecast",
+            new OrderForecastRequest(new(25m, Currency.Usd), 2));
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        await using var scope = _app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
+            Assert.That(ops.PricingStates.Select(item => item.Value), Is.EqualTo(new[] { 0, 100, 200 }));
+            Assert.That(ops.PricingStates[0].Name, Is.EqualTo("Ориентировочная стоимость"));
+            Assert.That(root.EnumerateObject().Select(item => item.Name),
+                Is.EquivalentTo(new[] { "state", "totalRub", "calculatedAt", "validUntil", "asOf", "domesticDeliveryRub", "customsRub" }));
+            Assert.That(root.GetProperty("state").GetInt32(), Is.Zero);
+            Assert.That(root.GetProperty("domesticDeliveryRub").ValueKind, Is.EqualTo(JsonValueKind.Null));
+            Assert.That(root.GetProperty("customsRub").ValueKind, Is.EqualTo(JsonValueKind.Null));
+            Assert.That(await database.Orders.CountAsync(), Is.Zero);
+            Assert.That(await database.OrderPricingSnapshots.CountAsync(), Is.Zero);
+        }
+    }
+
+    [Test]
+    public async Task AnonymousForecastRejectsInvalidSellerPriceWithFieldError()
+    {
+        using var response = await _client.PostAsJsonAsync("/api/v1/orders/forecast",
+            new OrderForecastRequest(new(1.001m, Currency.Usd), 1));
+        var problem = await response.Content.ReadFromJsonAsync<SarafanProblemDetails>();
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        Assert.That(problem!.Code, Is.EqualTo("invalid_order_seller_price"));
+        Assert.That(problem.Errors, Does.ContainKey("sellerPrice"));
     }
 
     [TestCase(null)]

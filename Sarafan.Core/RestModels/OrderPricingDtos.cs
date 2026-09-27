@@ -30,3 +30,11 @@ public sealed record OrderPricingDto(string OrderNumber, DateTimeOffset UpdatedA
     ServiceCatalogueEntryDto[] ActiveTariffs);
 public sealed record OrderPricingOpsDto(ServiceCatalogueOpsDto Catalogue, EnumOpsItemDto[] ComponentStates,
     int ValidityHours, bool CanManage);
+
+public enum CustomerPricingState { Forecast = 0, Confirmed = 100, Expired = 200 }
+
+public sealed record CustomerPricingDto(CustomerPricingState State, decimal? TotalRub,
+    DateTimeOffset? CalculatedAt, DateTimeOffset? ValidUntil, DateTimeOffset AsOf,
+    decimal? DomesticDeliveryRub, decimal? CustomsRub);
+
+public sealed record OrderForecastRequest(OrderSellerPriceDto? SellerPrice, int? Quantity);

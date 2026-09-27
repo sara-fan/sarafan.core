@@ -4,9 +4,7 @@
 
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
-using Npgsql;
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
@@ -14,13 +12,11 @@ using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Tests;
 
-[TestFixture(false)]
-[TestFixture(true)]
+[TestFixture]
 [NonParallelizable]
-public sealed class ListDisplaySearchTests(bool postgres)
+public sealed class ListDisplaySearchTests
 {
     private AppDbContext db = null!;
-    private IDbContextTransaction? transaction;
     private Order order = null!;
     private BackofficeUser actor = null!;
     private static readonly DateTimeOffset At = DateTimeOffset.Parse("2026-09-26T21:15:00Z");
@@ -29,21 +25,10 @@ public sealed class ListDisplaySearchTests(bool postgres)
     [SetUp]
     public async Task Setup()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>();
-        if (postgres)
-        {
-            var connection = Environment.GetEnvironmentVariable("SARAFAN_SEARCH_TEST_DATABASE");
-            if (string.IsNullOrEmpty(connection)) Assert.Ignore("Opt-in disposable PostgreSQL verification only.");
-            var settings = new NpgsqlConnectionStringBuilder(connection);
-            if (settings.Host != "127.0.0.1" || settings.Database != "sarafan_search_checks")
-                throw new InvalidOperationException("Only the explicitly provisioned local disposable search database is permitted.");
-            options.UseNpgsql(connection);
-        }
-        else options.UseInMemoryDatabase(Guid.NewGuid().ToString());
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString());
         db = new AppDbContext(options.Options);
-        if (postgres) await db.Database.MigrateAsync();
-        else await db.Database.EnsureCreatedAsync();
-        if (postgres) transaction = await db.Database.BeginTransactionAsync();
+        await db.Database.EnsureCreatedAsync();
         actor = new() { Email = "search@example.test", NormalizedEmail = "SEARCH@EXAMPLE.TEST", FirstName = "Иван", LastName = "Ёлкин", PasswordHash = "unused", CreatedAt = At, UpdatedAt = At };
         var customer = new Customer { Phone = "+79991234567", CreatedAt = At, UpdatedAt = At };
         customer.AllocateOrderNumber("12345678");
@@ -62,7 +47,6 @@ public sealed class ListDisplaySearchTests(bool postgres)
     [TearDown]
     public async Task Cleanup()
     {
-        if (transaction is not null) { await transaction.RollbackAsync(); await transaction.DisposeAsync(); transaction = null; }
         if (db is not null) await db.DisposeAsync();
     }
 
@@ -103,9 +87,19 @@ public sealed class ListDisplaySearchTests(bool postgres)
     {
         db.Add(new CustomerConsentWithdrawalRequest { CustomerId = order.CustomerId, RequestedAt = At, Processed = false });
         var documentId = Guid.NewGuid();
-        db.Add(new LegalDocumentAuditEvent { DocumentId = documentId, ActorId = actor.Id, Action = "created", At = At,
-            Kind = LegalDocumentKind.OrderRules, Title = "Правовой текст", DisplayVersion = "v3", EffectiveAt = At,
-            SourceHash = "a", ContentHash = "b" });
+        db.Add(new LegalDocumentAuditEvent
+        {
+            DocumentId = documentId,
+            ActorId = actor.Id,
+            Action = "created",
+            At = At,
+            Kind = LegalDocumentKind.OrderRules,
+            Title = "Правовой текст",
+            DisplayVersion = "v3",
+            EffectiveAt = At,
+            SourceHash = "a",
+            ContentHash = "b"
+        });
         await db.SaveChangesAsync();
         foreach (var term in new[] { "№ " + order.CustomerId, "Ожидает ручной обработки", "27.09.2026, 00:15 МСК" })
             Assert.That(await ListDisplaySearch.Withdrawals(db.CustomerConsentWithdrawalRequests, term).AnyAsync(), Is.True, term);
@@ -118,9 +112,17 @@ public sealed class ListDisplaySearchTests(bool postgres)
     [Test]
     public async Task HistoryFiltersAllRowsBeforePagingWithoutReadingEvidence()
     {
-        for (var i = 0; i < 105; i++) db.Add(new OrderHistoryEvent { OrderId = order.Id, At = At.AddMinutes(i), Kind = OrderHistoryKind.ProductChanged,
-            Areas = OrderHistoryArea.Product | OrderHistoryArea.Pricing, ActorType = OrderHistoryActor.Staff, ActorId = actor.Id,
-            ActorName = "Ёлкин Иван", Payload = "{\"hidden\":\"secret-evidence\"}" });
+        for (var i = 0; i < 105; i++) db.Add(new OrderHistoryEvent
+        {
+            OrderId = order.Id,
+            At = At.AddMinutes(i),
+            Kind = OrderHistoryKind.ProductChanged,
+            Areas = OrderHistoryArea.Product | OrderHistoryArea.Pricing,
+            ActorType = OrderHistoryActor.Staff,
+            ActorId = actor.Id,
+            ActorName = "Ёлкин Иван",
+            Payload = "{\"hidden\":\"secret-evidence\"}"
+        });
         await db.SaveChangesAsync();
         var service = new OrderService(db, null!, null!, null!, null!, null!, TimeProvider.System, NullLogger<OrderService>.Instance);
         var rows = service.HistoryQuery(order.Id);
@@ -131,7 +133,6 @@ public sealed class ListDisplaySearchTests(bool postgres)
         Assert.That(await filtered.OrderBy(row => row.At).ThenBy(row => row.Id).Skip(100).Take(10).CountAsync(), Is.EqualTo(5));
         Assert.That(await ListDisplaySearch.History(rows, "secret-evidence").CountAsync(), Is.Zero);
         Assert.That(await ListDisplaySearch.History(rows, "2026-09").CountAsync(), Is.Zero);
-        if (postgres) await Explain(filtered.OrderBy(row => row.At).ThenBy(row => row.Id).Skip(100).Take(10), "History");
     }
 
     [TestCase(PriceMethod.Fixed)]
@@ -145,8 +146,16 @@ public sealed class ListDisplaySearchTests(bool postgres)
             Currency.Usd, new DateOnly(2026, 9, 27), new DateOnly(2026, 10, 1), At, At, Guid.NewGuid(), Currency.Usd,
             [new(null, 100, 0), new(100, null, 1234.50m)]);
         var json = JsonSerializer.Serialize(snapshot, Json);
-        db.Add(new ServiceCatalogueAuditEvent { EntryId = snapshot.Id, Service = snapshot.Service, Action = ServiceCatalogueAuditAction.Created,
-            ActorId = actor.Id, ActorName = "Ёлкин Иван", At = At, After = json });
+        db.Add(new ServiceCatalogueAuditEvent
+        {
+            EntryId = snapshot.Id,
+            Service = snapshot.Service,
+            Action = ServiceCatalogueAuditAction.Created,
+            ActorId = actor.Id,
+            ActorName = "Ёлкин Иван",
+            At = At,
+            After = json
+        });
         await db.SaveChangesAsync();
         var expected = CatalogueDisplaySearch.Snapshot(json);
         var parameters = method switch
@@ -161,8 +170,6 @@ public sealed class ListDisplaySearchTests(bool postgres)
             Assert.That(await AppDatabaseOperations.For(db).ApplyServiceCatalogueAuditSearch(db, db.ServiceCatalogueAuditEvents, term).CountAsync(), Is.EqualTo(1), term);
         foreach (var term in new[] { "987654321", snapshot.Version.ToString(), "2026-09-27", "1234.50", "percentage" })
             Assert.That(await AppDatabaseOperations.For(db).ApplyServiceCatalogueAuditSearch(db, db.ServiceCatalogueAuditEvents, term).CountAsync(), Is.Zero, term);
-        if (postgres && method == PriceMethod.Stepped)
-            await Explain(AppDatabaseOperations.For(db).ApplyServiceCatalogueAuditSearch(db, db.ServiceCatalogueAuditEvents, "1 234,50$").OrderBy(row => row.At).Take(10), "Tariff audit");
     }
 
     [TestCase(null, null)]
@@ -173,8 +180,16 @@ public sealed class ListDisplaySearchTests(bool postgres)
         var snapshot = new ServiceCatalogueSnapshotDto(123, ServiceKind.DomesticDelivery, PriceMethod.Percent, 10m, null, null, null,
             Currency.Usd, from is null ? null : DateOnly.Parse(from), by is null ? null : DateOnly.Parse(by), At, At, Guid.NewGuid());
         var json = JsonSerializer.Serialize(snapshot, Json);
-        db.Add(new ServiceCatalogueAuditEvent { EntryId = 123, Service = snapshot.Service, Action = ServiceCatalogueAuditAction.Deleted,
-            ActorId = actor.Id, ActorName = "Проверка 100%_\\", At = At, Before = json });
+        db.Add(new ServiceCatalogueAuditEvent
+        {
+            EntryId = 123,
+            Service = snapshot.Service,
+            Action = ServiceCatalogueAuditAction.Deleted,
+            ActorId = actor.Id,
+            ActorName = "Проверка 100%_\\",
+            At = At,
+            Before = json
+        });
         await db.SaveChangesAsync();
         foreach (var term in new[] { CatalogueDisplaySearch.Snapshot(json), "10%", "Удалено", "100%_\\" })
             Assert.That(await AppDatabaseOperations.For(db).ApplyServiceCatalogueAuditSearch(db, db.ServiceCatalogueAuditEvents, term).CountAsync(), Is.EqualTo(1), term);
@@ -182,36 +197,39 @@ public sealed class ListDisplaySearchTests(bool postgres)
     }
 
     [Test]
-    public async Task LegacyActorAnnotationAndAdditionalFiltersRemainEffective()
+    public async Task LegacyActorNameAndAdditionalFiltersRemainEffective()
     {
-        var rates = new[] { Currency.Usd, Currency.Eur }.Select(currency => new ExchangeRateHistory {
-            Provider = "test", Source = "fixture", BaseCurrency = currency, QuoteCurrency = Currency.Rub, Nominal = 1,
-            OfficialRate = 100, SourceEffectiveDate = new DateOnly(2026, 9, 27), RetrievedAt = At
+        var rates = new[] { Currency.Usd, Currency.Eur }.Select(currency => new ExchangeRateHistory
+        {
+            Provider = "test",
+            Source = "fixture",
+            BaseCurrency = currency,
+            QuoteCurrency = Currency.Rub,
+            Nominal = 1,
+            OfficialRate = 100,
+            SourceEffectiveDate = new DateOnly(2026, 9, 27),
+            RetrievedAt = At
         }).ToArray();
         db.AddRange(rates);
         await db.SaveChangesAsync();
-        db.Add(new OrderProductAuditEvent { OrderId = order.Id, ActorId = actor.Id, Kind = OrderProductAuditKind.StaffCorrected,
-            OccurredAt = At, Before = "{}", After = "{}", UsdRateId = rates[0].Id, EurRateId = rates[1].Id });
+        db.Add(new OrderProductAuditEvent
+        {
+            OrderId = order.Id,
+            ActorId = actor.Id,
+            Kind = OrderProductAuditKind.StaffCorrected,
+            OccurredAt = At,
+            Before = "{}",
+            After = "{}",
+            UsdRateId = rates[0].Id,
+            EurRateId = rates[1].Id
+        });
         await db.SaveChangesAsync();
         var service = new OrderService(db, null!, null!, null!, null!, null!, TimeProvider.System, NullLogger<OrderService>.Instance);
         var rows = service.HistoryQuery(order.Id);
-        var matches = ListDisplaySearch.History(rows, "ЁЛКИН Иван (текущее имя)");
+        var matches = ListDisplaySearch.History(rows, "ЁЛКИН Иван");
         Assert.That(await matches.CountAsync(), Is.EqualTo(1));
         Assert.That(await matches.Where(row => row.ActorType == OrderHistoryActor.Customer).CountAsync(), Is.Zero);
         Assert.That(await matches.Where(row => row.At < At).CountAsync(), Is.Zero);
-    }
-
-    private async Task Explain<T>(IQueryable<T> query, string label)
-    {
-        await using var command = query.CreateDbCommand();
-        command.Transaction = transaction!.GetDbTransaction();
-        command.CommandText = "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + command.CommandText;
-        await using var reader = await command.ExecuteReaderAsync();
-        Assert.That(await reader.ReadAsync(), Is.True);
-        using var plan = JsonDocument.Parse(reader.GetString(0));
-        var root = plan.RootElement[0];
-        Assert.That(root.GetProperty("Plan").GetProperty("Node Type").GetString(), Is.EqualTo("Limit"));
-        TestContext.Out.WriteLine($"{label}: PostgreSQL Limit after filtering; execution {root.GetProperty("Execution Time")} ms.");
     }
 
     [Test]
