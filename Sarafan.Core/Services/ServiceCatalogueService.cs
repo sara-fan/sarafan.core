@@ -159,16 +159,13 @@ public sealed class ServiceCatalogueService(
                 || sortOrderKey is not ("asc" or "desc"))
                 throw new ServiceException(400, "invalid_service_catalogue_audit_filter");
 
-            var searchedEntryId = long.TryParse(search, out var parsedEntryId) && parsedEntryId > 0
-                ? parsedEntryId
-                : (long?)null;
             var query = database.ServiceCatalogueAuditEvents.AsNoTracking().Where(item =>
                 (service == null || item.Service == service)
                 && (action == null || item.Action == action)
                 && (entryId == null || item.EntryId == entryId));
             if (search is not null)
                 query = AppDatabaseOperations.For(database)
-                    .ApplyServiceCatalogueAuditSearch(query, search, searchedEntryId);
+                    .ApplyServiceCatalogueAuditSearch(database, query, search);
 
             var total = await query.CountAsync(token);
             var descending = sortOrderKey == "desc";

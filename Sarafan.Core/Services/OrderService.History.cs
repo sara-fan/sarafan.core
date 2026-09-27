@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Sarafan.Core.Authentication;
+using Sarafan.Core.Data;
 using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
 
@@ -36,9 +37,9 @@ public sealed partial class OrderService
             BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManualQuotes);
             await FindPublicOrder(number, token);
             return new OrderHistoryOpsDto(
-                [new(0, "Создание заказа", "created"), new(100, "Изменение товара", "product-changed"),
-                 new(200, "Распознавание товара", "parsed"), new(300, "Расчёт стоимости", "price-calculated"), new(400, "Подтверждение расчёта", "quote-confirmed")],
-                [new(1, "Создание", "creation"), new(2, "Товар", "product"), new(4, "Стоимость", "pricing"), new(8, "Статус", "status")],
+                [new(0, ((OrderHistoryKind)0).GetDisplayName(), "created"), new(100, ((OrderHistoryKind)100).GetDisplayName(), "product-changed"),
+                 new(200, ((OrderHistoryKind)200).GetDisplayName(), "parsed"), new(300, ((OrderHistoryKind)300).GetDisplayName(), "price-calculated"), new(400, ((OrderHistoryKind)400).GetDisplayName(), "quote-confirmed")],
+                [new(1, ((OrderHistoryArea)1).GetDisplayName(), "creation"), new(2, ((OrderHistoryArea)2).GetDisplayName(), "product"), new(4, ((OrderHistoryArea)4).GetDisplayName(), "pricing"), new(8, ((OrderHistoryArea)8).GetDisplayName(), "status")],
                 [new(0, "Покупатель", "customer"), new(100, "Сотрудник", "staff"), new(200, "Система", "system")]);
         }, token);
 
@@ -153,7 +154,7 @@ public sealed partial class OrderService
                 || fromDate > toDate || fromDate == DateOnly.MinValue || toDate == DateOnly.MaxValue)
                 throw new ServiceException(400, "invalid_order_list_filter");
             var query = HistoryQuery(order.Id);
-            if (search is not null) { var term = search.ToLowerInvariant(); query = query.Where(row => row.ActorName.ToLower().Contains(term)); }
+            if (search is not null) query = ListDisplaySearch.History(query, search);
             if (area is not null) query = query.Where(row => ((int)row.Areas & area.Value) != 0);
             if (actorType is not null) query = query.Where(row => (int)row.ActorType == actorType.Value);
             if (fromDate is not null) { var start = ConsentCalendar.Midnight(fromDate.Value); query = query.Where(row => row.At >= start); }

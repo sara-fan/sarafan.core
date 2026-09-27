@@ -73,7 +73,7 @@ public sealed class ConsentWithdrawalRequestService(
             var sortByKey = sortBy?.Trim().ToLowerInvariant();
             var sortOrderKey = sortOrder?.Trim().ToLowerInvariant();
             if (page < 1 || pageSize is < 1 or > 100
-                || search is { Length: > 10 } || search?.Any(character => !char.IsAsciiDigit(character)) == true
+                || search is { Length: > 200 }
                 || sortByKey is not ("processed" or "requestedat" or "customerid")
                 || sortOrderKey is not ("asc" or "desc"))
                 throw new ServiceException(400, "invalid_consent_withdrawal_request_filter");

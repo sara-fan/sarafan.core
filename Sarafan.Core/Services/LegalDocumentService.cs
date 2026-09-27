@@ -112,13 +112,12 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
             || sortByKey is not ("at" or "action" or "title" or "displayversion" or "effectiveat" or "actorname")
             || sortOrderKey is not ("asc" or "desc"))
             throw new ServiceException(400, "invalid_legal_document_audit_filter");
-        var searchedId = Guid.TryParse(search, out var parsedDocumentId) ? parsedDocumentId : (Guid?)null;
         var query = database.LegalDocumentAuditEvents.AsNoTracking().Where(x =>
             (kind == null || x.Kind == kind) && (action == null || x.Action == action)
             && (documentId == null || x.DocumentId == documentId));
         if (search is not null)
             query = AppDatabaseOperations.For(database)
-                .ApplyLegalDocumentAuditSearch(query, search, searchedId);
+                .ApplyLegalDocumentAuditSearch(query, search);
         var total = await query.CountAsync(token);
         var descending = sortOrderKey == "desc";
         var ordered = (sortByKey, descending) switch
