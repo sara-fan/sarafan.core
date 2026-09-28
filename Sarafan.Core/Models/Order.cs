@@ -83,6 +83,16 @@ public sealed class Order
         if (confirmed) Status = OrderStatus.QuoteReady;
     }
 
+    internal OrderStatus CancelByCustomer(DateTimeOffset now)
+    {
+        if (!Status.CanCustomerCancel()) throw new InvalidOperationException("This order cannot be cancelled by its customer.");
+        var previous = Status;
+        var timestamp = NormalizeToPostgresTimestamp(now);
+        UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
+        Status = OrderStatus.Cancelled;
+        return previous;
+    }
+
     private void ApplyProduct(Sarafan.Core.RestModels.OrderProductDto product)
     {
         ProductName = product.ProductName;

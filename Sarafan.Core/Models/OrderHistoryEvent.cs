@@ -4,7 +4,7 @@
 
 namespace Sarafan.Core.Models;
 
-public enum OrderHistoryKind { Created = 0, ProductChanged = 100, Parsed = 200, PriceCalculated = 300, QuoteConfirmed = 400 }
+public enum OrderHistoryKind { Created = 0, ProductChanged = 100, Parsed = 200, PriceCalculated = 300, QuoteConfirmed = 400, CustomerCancelled = 500 }
 public enum OrderHistoryActor { Customer = 0, Staff = 100, System = 200 }
 [Flags]
 public enum OrderHistoryArea { Creation = 1, Product = 2, Pricing = 4, Status = 8 }
@@ -18,6 +18,7 @@ public static class OrderHistoryKindExtensions
         OrderHistoryKind.Parsed => "Распознавание товара",
         OrderHistoryKind.PriceCalculated => "Расчёт стоимости",
         OrderHistoryKind.QuoteConfirmed => "Подтверждение расчёта",
+        OrderHistoryKind.CustomerCancelled => "Отмена покупателем",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
     };
 }

@@ -62,6 +62,7 @@ internal static class LogValueSummary
             => $"ProductPreviewDto(sourceUrl/product=[redacted]; outcome={preview.Outcome})",
         ProductPreviewDto => "ProductPreviewDto(sourceUrl/product=[redacted]; outcome=[redacted])",
         CreateOrderRequest => "CreateOrderRequest(sourceUrl/product=[redacted])",
+        CancelOrderRequest => "CancelOrderRequest(version/reason=[redacted])",
         OrderProductRequest => "OrderProductRequest([redacted])",
         UpdateOrderProductRequest => "UpdateOrderProductRequest([redacted])",
         BackofficeOrderDetailsDto => "BackofficeOrderDetailsDto(order/product/customer=[redacted])",
