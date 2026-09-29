@@ -81,8 +81,8 @@ public sealed class PhoneNormalizerTests
         ("", PhoneValidationReason.Empty, "Введите номер телефона."),
         ("+7abc", PhoneValidationReason.UnsupportedCharacters, "Используйте цифры, обычные пробелы, скобки и дефисы. Знак + допускается только в начале номера."),
         ("9210001112", PhoneValidationReason.WrongPrefix, "Начните номер с +7 или 8. Например: +7 (921) 123-45-67."),
-        ("892100011", PhoneValidationReason.TooShort, "Номер слишком короткий. Введите 11 цифр, начиная с 8 или +7."),
-        ("892100011123", PhoneValidationReason.TooLong, "Номер слишком длинный. Введите 11 цифр, начиная с 8 или +7."),
+        ("892100011", PhoneValidationReason.TooShort, "Номер слишком короткий. Должно быть 11 цифр. Знак +, пробелы, скобки и дефисы не учитываются."),
+        ("892100011123", PhoneValidationReason.TooLong, "Номер слишком длинный. Должно быть 11 цифр. Знак +, пробелы, скобки и дефисы не учитываются."),
         ("8 921 000 11 12", PhoneValidationReason.FormattedDomesticNumber, "Для номера с пробелами, скобками или дефисами замените начальную 8 на +7. Например: +7 (921) 123-45-67.")
     ];
 
@@ -125,7 +125,7 @@ public sealed class PhoneNormalizerTests
             {
                 Assert.That(problem.Code, Is.EqualTo("invalid_phone"));
                 Assert.That(problem.Type, Is.EqualTo("https://sarafan.sw.consulting/problems/invalid-phone"));
-                Assert.That(problem.Title, Is.EqualTo("Некорректный номер телефона"));
+                Assert.That(problem.Title, Is.EqualTo("Проверьте номер телефона"));
                 Assert.That(problem.Detail, Is.EqualTo(failure.Detail));
                 Assert.That(problem.Detail, Does.Not.Contain(failure.Phone));
             }
