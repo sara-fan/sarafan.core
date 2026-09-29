@@ -172,8 +172,8 @@ public sealed class SarafanProblemDetailsFactory(
                 "Повторите попытку создания заказа позже."),
             ["invalid_code"] = new(
                 StatusCodes.Status401Unauthorized,
-                "Некорректный код подтверждения",
-                "Код подтверждения неверен."),
+                "Не удалось войти",
+                "Код неверный, попробуйте ещё раз"),
             ["invalid_access_token"] = new(
                 StatusCodes.Status401Unauthorized,
                 "Недействительный токен доступа",

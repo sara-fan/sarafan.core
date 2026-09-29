@@ -574,7 +574,7 @@ public sealed class ProblemDetailsContractTests
         }
 
         Assert.That(factory.Create(context, 401, "invalid_code").Detail,
-            Is.EqualTo("Код подтверждения неверен."));
+            Is.EqualTo("Код неверный, попробуйте ещё раз"));
     }
 
     [Test]
