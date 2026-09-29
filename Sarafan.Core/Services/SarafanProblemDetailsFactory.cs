@@ -112,7 +112,7 @@ public sealed class SarafanProblemDetailsFactory(
                 "Проверьте корректность указанных данных."),
             ["invalid_phone"] = new(
                 StatusCodes.Status400BadRequest,
-                "Некорректный номер телефона",
+                "Проверьте номер телефона",
                 "Введите 11 цифр, начиная с 8 или +7. Например: +7 (921) 123-45-67."),
             ["invalid_auth_request"] = new(
                 StatusCodes.Status400BadRequest,
@@ -431,8 +431,8 @@ public sealed class SarafanProblemDetailsFactory(
         PhoneValidationReason.Empty => "Введите номер телефона.",
         PhoneValidationReason.UnsupportedCharacters => "Используйте цифры, обычные пробелы, скобки и дефисы. Знак + допускается только в начале номера.",
         PhoneValidationReason.WrongPrefix => "Начните номер с +7 или 8. Например: +7 (921) 123-45-67.",
-        PhoneValidationReason.TooShort => "Номер слишком короткий. Введите 11 цифр, начиная с 8 или +7.",
-        PhoneValidationReason.TooLong => "Номер слишком длинный. Введите 11 цифр, начиная с 8 или +7.",
+        PhoneValidationReason.TooShort => "Номер слишком короткий. Должно быть 11 цифр. Знак +, пробелы, скобки и дефисы не учитываются.",
+        PhoneValidationReason.TooLong => "Номер слишком длинный. Должно быть 11 цифр. Знак +, пробелы, скобки и дефисы не учитываются.",
         PhoneValidationReason.FormattedDomesticNumber => "Для номера с пробелами, скобками или дефисами замените начальную 8 на +7. Например: +7 (921) 123-45-67.",
         _ => fallback
     };
