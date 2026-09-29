@@ -5,6 +5,7 @@
 using System.Text;
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -73,6 +74,11 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<VerificationAttemptStore>();
+builder.Services.AddOptions<AnonymousApiProtectionOptions>()
+    .Bind(builder.Configuration.GetSection(AnonymousApiProtectionOptions.SectionName))
+    .Validate(options => { options.Validate(); return true; })
+    .ValidateOnStart();
+builder.Services.AddSingleton<AnonymousApiProtectionRegistry>();
 builder.Services.AddSingleton<IPhoneNormalizer, PhoneNormalizer>();
 builder.Services.AddSingleton<IVerificationCodeProvider, PhoneSuffixVerificationCodeProvider>();
 builder.Services.AddSingleton<VerificationCodeReleaseGate>();
@@ -85,6 +91,7 @@ builder.Services.AddScoped<StoreService>();
 builder.Services.AddScoped<ServiceCatalogueService>();
 builder.Services.AddScoped<OrderLimitService>();
 builder.Services.AddScoped<ProductPreviewService>();
+builder.Services.AddScoped<AnonymousForecastService>();
 builder.Services.AddOptions<ConsentOptions>().Bind(builder.Configuration.GetSection(ConsentOptions.SectionName))
     .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddScoped<LegalDocumentService>();
@@ -138,6 +145,8 @@ builder.Services
     });
 builder.Services.AddAuthorization(options =>
 {
+    options.FallbackPolicy = new AuthorizationPolicyBuilder(JwtBearerDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser().Build();
     CustomerAuthorization.Configure(options);
     BackofficeAuthorization.Configure(options);
 });
@@ -207,7 +216,9 @@ if (migrateOnly)
 }
 
 app.UseForwardedHeaders();
+app.UseRouting();
 app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseMiddleware<AnonymousApiProtectionMiddleware>();
 app.UseExceptionHandler();
 app.UseStatusCodePages(async context =>
 {
@@ -221,13 +232,39 @@ app.UseStatusCodePages(async context =>
 });
 app.UseMiddleware<RetiredConsentCookieMiddleware>();
 app.UseAuthentication();
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+HashSet<Endpoint> applicationEndpoints = [];
+app.Use(async (context, next) =>
+{
+    var endpoint = context.GetEndpoint();
+    if (endpoint is null)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    if (!applicationEndpoints.Contains(endpoint))
+    {
+        // Routing generates rejection endpoints for unsupported methods and media types.
+        // Their delegates preserve the established 405/415 responses without invoking an action.
+        await endpoint.RequestDelegate!(context);
+        return;
+    }
+    await next(context);
+});
 app.UseAuthorization();
 
-app.MapGet("/", () => Results.Redirect("/api/v1/status/status"));
+if (app.Environment.IsDevelopment())
+    app.MapGet("/", () => Results.Redirect("/swagger"))
+        .WithAnonymousApiPolicy(AnonymousApiPolicies.Health);
 
 app.MapControllers();
+app.ValidateAnonymousApiPolicies();
+applicationEndpoints = ((IEndpointRouteBuilder)app).DataSources
+    .SelectMany(source => source.Endpoints).ToHashSet();
 
 app.Lifetime.ApplicationStarted.Register(() => SarafanEvents.ApplicationStarted(
     applicationLogger,

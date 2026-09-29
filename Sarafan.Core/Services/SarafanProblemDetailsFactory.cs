@@ -273,6 +273,10 @@ public sealed class SarafanProblemDetailsFactory(
             ["service_unavailable"] = new(
                 StatusCodes.Status503ServiceUnavailable,
                 "Сервис временно недоступен",
+                "Повторите попытку позже."),
+            ["anonymous_api_timeout"] = new(
+                StatusCodes.Status503ServiceUnavailable,
+                "Время ожидания истекло",
                 "Повторите попытку позже.")
         };
 

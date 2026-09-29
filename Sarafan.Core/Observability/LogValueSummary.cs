@@ -44,6 +44,8 @@ internal static class LogValueSummary
         StoreListDto<StaffStoreDto> stores => $"StaffStoreDto collection(count={stores.Items.Length})",
         StoreOpsDto => "StoreOpsDto(catalogue/actions=[redacted])",
         ServiceCatalogueWriteRequest => "ServiceCatalogueWriteRequest(parameters/dates/version=[redacted])",
+        AnonymousForecastRequest => "AnonymousForecastRequest(sellerPrice/quantity=[redacted])",
+        AnonymousForecastDto => "AnonymousForecastDto(calculatedAt/totalRub=[redacted])",
         OrderForecastRequest => "OrderForecastRequest(sellerPrice/quantity=[redacted])",
         CustomerPricingDto => "CustomerPricingDto(state/amounts/timestamps=[redacted])",
         OrderHistoryOpsDto => "OrderHistoryOpsDto(metadata=[redacted])",

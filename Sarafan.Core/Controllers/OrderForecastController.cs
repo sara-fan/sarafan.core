@@ -4,6 +4,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sarafan.Core.Authentication;
 using Sarafan.Core.RestModels;
 using Sarafan.Core.Services;
 
@@ -16,7 +17,7 @@ public sealed class OrderForecastController(OrderService orders,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpPost]
-    [RequestSizeLimit(32 * 1024)]
+    [AnonymousApiPolicy(AnonymousApiPolicies.Forecast)]
     [ProducesResponseType<CustomerPricingDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<CustomerPricingDto>> Forecast(OrderForecastRequest request,
         CancellationToken cancellationToken)

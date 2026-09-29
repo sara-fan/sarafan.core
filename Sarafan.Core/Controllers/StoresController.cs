@@ -5,6 +5,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
+using Sarafan.Core.Authentication;
 using Sarafan.Core.RestModels;
 using Sarafan.Core.Services;
 
@@ -16,6 +17,7 @@ namespace Sarafan.Core.Controllers;
 public sealed class StoresController(StoreService stores, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicRead)]
     public async Task<ActionResult<StoreListDto<PublicStoreDto>>> List(CancellationToken token)
     {
         var sort = "recommended";
@@ -34,6 +36,7 @@ public sealed class StoresController(StoreService stores, SarafanProblemDetailsF
     }
 
     [HttpGet("featured")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicRead)]
     public async Task<ActionResult<StoreListDto<PublicStoreDto>>> Featured(CancellationToken token)
     {
         if (Request.Query.ContainsKey("search")) throw new ServiceException(400, "invalid_store_search");
@@ -41,6 +44,7 @@ public sealed class StoresController(StoreService stores, SarafanProblemDetailsF
     }
 
     [HttpGet("{id:int}/logo")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicDownload)]
     public async Task<ActionResult> Logo(int id, CancellationToken token)
     {
         // Always check current visibility before File evaluates conditional request headers.

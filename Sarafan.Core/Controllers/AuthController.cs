@@ -24,6 +24,7 @@ public sealed class AuthController(
     [AllowAnonymous]
 
     [HttpGet("ops")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicRead)]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public ActionResult<AuthenticationOpsDto> Operations() => Ok(new AuthenticationOpsDto(
         Enum.GetValues<AuthenticationFlowStep>()
@@ -33,6 +34,7 @@ public sealed class AuthController(
     [AllowAnonymous]
 
     [HttpPost("phone/resolve")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.Authentication)]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType<PhoneResolveDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<PhoneResolveDto>> Resolve(
@@ -42,6 +44,7 @@ public sealed class AuthController(
 
     [AllowAnonymous]
     [HttpPost("code/request")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.Authentication)]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     public async Task<ActionResult> RequestCode(
         RequestCodeRequest request,
@@ -56,6 +59,7 @@ public sealed class AuthController(
 
     [AllowAnonymous]
     [HttpPost("code/verify")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.Authentication)]
     [ProducesResponseType<AuthenticationSessionDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<AuthenticationSessionDto>> VerifyCode(
         VerifyCodeRequest request,
@@ -73,6 +77,7 @@ public sealed class AuthController(
     [AllowAnonymous]
 
     [HttpPost("refresh")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.Session)]
     [ProducesResponseType<AuthenticationSessionDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<AuthenticationSessionDto>> Refresh(CancellationToken cancellationToken)
     {
@@ -102,6 +107,7 @@ public sealed class AuthController(
     [AllowAnonymous]
 
     [HttpPost("logout")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.Logout)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> Logout(CancellationToken cancellationToken)
     {

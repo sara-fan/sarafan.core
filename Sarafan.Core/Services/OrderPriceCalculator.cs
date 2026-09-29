@@ -48,6 +48,17 @@ internal static class OrderPriceCalculator
 
     internal static async Task<OrderPriceCalculationDto> CalculateAsync(AppDbContext database, Order order,
         DateTimeOffset now, OrderPricingInputs inputs, IAutomaticPriceSource? automatic, CancellationToken token)
+        => await CalculateCoreAsync(database, order.SellerPrice, order.SellerPriceCurrency, order.Quantity,
+            order, now, inputs, automatic, token);
+
+    internal static Task<OrderPriceCalculationDto> CalculateForecastAsync(AppDbContext database,
+        OrderSellerPriceDto price, int quantity, DateTimeOffset now, CancellationToken token)
+        => CalculateCoreAsync(database, price.Amount, price.Currency, quantity, null, now,
+            OrderPricingInputs.Empty, null, token);
+
+    private static async Task<OrderPriceCalculationDto> CalculateCoreAsync(AppDbContext database,
+        decimal? sellerPrice, Currency? sellerCurrency, int quantity, Order? order,
+        DateTimeOffset now, OrderPricingInputs inputs, IAutomaticPriceSource? automatic, CancellationToken token)
     {
         var today = ConsentCalendar.LocalDate(now);
         var rate = await database.ExchangeRateHistory.AsNoTracking()
@@ -56,8 +67,8 @@ internal static class OrderPriceCalculator
             .OrderByDescending(row => row.SourceEffectiveDate).ThenByDescending(row => row.Id).FirstOrDefaultAsync(token);
         var tariffs = await TariffsAsync(database, now, token);
         var usdRub = rate is null ? (decimal?)null : rate.OfficialRate / rate.Nominal;
-        var merchandise = order.SellerPriceCurrency == Currency.Usd && order.SellerPrice > 0
-            ? order.SellerPrice * order.Quantity : null;
+        var merchandise = sellerCurrency == Currency.Usd && sellerPrice > 0
+            ? sellerPrice * quantity : null;
         var components = new List<PriceComponentDto>();
         foreach (var service in Enum.GetValues<ServiceKind>())
         {
@@ -82,7 +93,7 @@ internal static class OrderPriceCalculator
                 {
                     PriceMethod.Fixed => tariff.Amount,
                     PriceMethod.Manual => inputs.ManualAmounts.TryGetValue(service, out var manual) ? manual : null,
-                    PriceMethod.Auto => automatic is null ? null : await automatic.GetAmountAsync(order, service, currency, token),
+                    PriceMethod.Auto => automatic is null || order is null ? null : await automatic.GetAmountAsync(order, service, currency, token),
                     PriceMethod.Percent => Percentage(merchandise, tariff),
                     PriceMethod.Stepped => Step(merchandise, tariff.Bands),
                     _ => null

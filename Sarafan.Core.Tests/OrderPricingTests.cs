@@ -299,6 +299,29 @@ public sealed partial class OrderPricingTests
 
     [TearDown] public void TearDown() => db.Dispose();
 
+    [Test]
+    public async Task AnonymousForecastMatchesSavedOrderCalculationForSameInputs()
+    {
+        var configured = db.ServiceCatalogueEntries.Select(item => item.Service).ToHashSet();
+        db.ServiceCatalogueEntries.AddRange(Enum.GetValues<ServiceKind>()
+            .Where(kind => kind.IsIncludedInTotal() && kind != ServiceKind.Product && !configured.Contains(kind))
+            .Select(kind => Tariff(kind, PriceMethod.Fixed, Currency.Rub, amount: 1m)));
+        await db.SaveChangesAsync();
+
+        var saved = await OrderPriceCalculator.CalculateAsync(db, order, Now,
+            OrderPricingInputs.Empty, null, default);
+        var forecast = await OrderPriceCalculator.CalculateForecastAsync(db,
+            new OrderSellerPriceDto(order.SellerPrice!.Value, order.SellerPriceCurrency!.Value),
+            order.Quantity, Now, default);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(saved.TotalRub, Is.Not.Null);
+            Assert.That(forecast.TotalRub, Is.EqualTo(saved.TotalRub));
+            Assert.That(forecast.CalculatedAt, Is.EqualTo(saved.CalculatedAt));
+        });
+    }
+
     private static ServiceCatalogueEntry Tariff(ServiceKind kind, PriceMethod method, Currency currency,
         decimal? amount = null, decimal? percentage = null, decimal? minimum = null)
         => new(kind, method, percentage, minimum, null, amount, currency, new(2026, 1, 1), null, Now);

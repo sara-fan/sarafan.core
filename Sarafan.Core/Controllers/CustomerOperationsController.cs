@@ -4,6 +4,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sarafan.Core.Authentication;
 
 using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
@@ -16,6 +17,7 @@ namespace Sarafan.Core.Controllers;
 public sealed class CustomerOperationsController(SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet("ops")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicRead)]
     public ActionResult<CustomerOpsDto> Operations() => Ok(new CustomerOpsDto(
         Enum.GetValues<CustomerState>()
             .Select(state => new EnumOpsItemDto((int)state, state.GetDisplayName(), state.GetRouteAlias()))

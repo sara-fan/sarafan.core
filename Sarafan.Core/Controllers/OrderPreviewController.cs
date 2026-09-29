@@ -4,6 +4,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sarafan.Core.Authentication;
 
 using Sarafan.Core.RestModels;
 using Sarafan.Core.Services;
@@ -15,10 +16,18 @@ namespace Sarafan.Core.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class OrderPreviewController(
     ProductPreviewService previews,
+    AnonymousForecastService forecasts,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
+    [HttpPost("forecast")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.Forecast)]
+    [ProducesResponseType<AnonymousForecastDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<AnonymousForecastDto>> Forecast(
+        AnonymousForecastRequest request, CancellationToken cancellationToken)
+        => Ok(await forecasts.CalculateAsync(request, cancellationToken));
+
     [HttpPost]
-    [RequestSizeLimit(32 * 1024)]
+    [AnonymousApiPolicy(AnonymousApiPolicies.ProductPreview)]
     [ProducesResponseType<ProductPreviewDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<ProductPreviewDto>> Preview(
         ProductPreviewRequest request,

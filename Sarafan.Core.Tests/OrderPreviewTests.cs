@@ -14,7 +14,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-using Sarafan.Core.Controllers;
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
@@ -168,12 +167,12 @@ public sealed class OrderPreviewTests
     }
 
     [Test]
-    public void Preview_BoundsTheAnonymousRequestBody()
+    public async Task Preview_BoundsTheAnonymousRequestBody()
     {
-        var action = typeof(OrderPreviewController).GetMethod(nameof(OrderPreviewController.Preview));
-        var limit = action?.GetCustomAttribute<RequestSizeLimitAttribute>();
-
-        Assert.That(((IRequestSizeLimitMetadata?)limit)?.MaxRequestBodySize, Is.EqualTo(32 * 1024));
+        using var response = await _client.PostAsync("/api/v1/orders/preview",
+            new StringContent(new string('x', 32 * 1024 + 1)));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.RequestEntityTooLarge));
+        Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("request-too-large"));
     }
 
     [Test]

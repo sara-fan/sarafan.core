@@ -25,6 +25,11 @@ public sealed record PriceComponentDto(ServiceKind Service, PriceComponentState 
     decimal? Amount, decimal? AmountRub, ServiceCatalogueEntryDto? Tariff);
 public sealed record OrderPriceCalculationDto(DateTimeOffset CalculatedAt, OrderAppliedExchangeRateDto? ExchangeRate,
     PriceComponentDto[] Components, decimal? TotalRub, OrderPricingInputs Inputs);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record AnonymousForecastSellerPriceDto(decimal Amount, Currency Currency);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record AnonymousForecastRequest(AnonymousForecastSellerPriceDto? SellerPrice, int Quantity);
+public sealed record AnonymousForecastDto(DateTimeOffset CalculatedAt, decimal? TotalRub);
 public sealed record OrderPricingDto(string OrderNumber, DateTimeOffset UpdatedAt, bool CanEdit, bool CanConfirm,
     bool Confirmed, bool Expired, DateTimeOffset? ValidUntil, OrderPriceCalculationDto Calculation,
     ServiceCatalogueEntryDto[] ActiveTariffs);

@@ -626,24 +626,10 @@ public sealed class BackofficeFlowTests
     }
 
     [Test]
-    public async Task Swagger_DeclaresDedicatedBackofficeSchemeAndRoutes()
+    public async Task Swagger_IsUnavailableOutsideDevelopment()
     {
         using var response = await _client.GetAsync("/swagger/v1/swagger.json");
-        response.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = document.RootElement;
-        var schemes = root.GetProperty("components").GetProperty("securitySchemes");
-        var paths = root.GetProperty("paths");
-
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(schemes.TryGetProperty("Bearer", out _), Is.True);
-            Assert.That(schemes.TryGetProperty("BackofficeBearer", out var backoffice), Is.True);
-            Assert.That(backoffice.GetProperty("scheme").GetString(), Is.EqualTo("bearer"));
-            Assert.That(paths.TryGetProperty("/api/v1/backoffice/auth/login", out _), Is.True);
-            Assert.That(paths.TryGetProperty("/api/v1/backoffice/users/ops", out _), Is.True);
-            Assert.That(paths.TryGetProperty("/api/v1/backoffice/roles", out _), Is.True);
-        }
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
 
     private static async Task<BackofficeAuthenticationSessionDto> Login(

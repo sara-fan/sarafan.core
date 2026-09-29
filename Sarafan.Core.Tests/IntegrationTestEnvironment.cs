@@ -129,6 +129,15 @@ public sealed class IntegrationTestEnvironment
             });
             builder.ConfigureServices(services =>
             {
+                services.PostConfigure<AnonymousApiProtectionOptions>(options =>
+                {
+                    foreach (var policy in options.Policies.Values)
+                    {
+                        policy.ClientPerMinute = policy.ClientBurst = 10000;
+                        policy.AggregatePerMinute = policy.AggregateBurst = 100000;
+                        policy.Concurrency = 1024;
+                    }
+                });
                 services.AddDataProtection().UseEphemeralDataProtectionProvider();
                 services.RemoveAll<DbContextOptions<AppDbContext>>();
                 services.RemoveAll<IDbContextOptionsConfiguration<AppDbContext>>();
