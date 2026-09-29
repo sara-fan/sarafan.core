@@ -23,6 +23,7 @@ public sealed class BackofficeAuthController(
 
     [AllowAnonymous]
     [HttpPost("login")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.StaffAuthentication)]
     [ProducesResponseType<BackofficeAuthenticationSessionDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<BackofficeAuthenticationSessionDto>> Login(
         BackofficeLoginRequest request,
@@ -39,6 +40,7 @@ public sealed class BackofficeAuthController(
 
     [AllowAnonymous]
     [HttpPost("refresh")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.StaffSession)]
     [ProducesResponseType<BackofficeAuthenticationSessionDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<BackofficeAuthenticationSessionDto>> Refresh(
         CancellationToken cancellationToken)
@@ -68,6 +70,7 @@ public sealed class BackofficeAuthController(
 
     [AllowAnonymous]
     [HttpPost("logout")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.StaffLogout)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> Logout(CancellationToken cancellationToken)
     {

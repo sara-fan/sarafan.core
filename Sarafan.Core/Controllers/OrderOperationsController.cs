@@ -4,6 +4,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sarafan.Core.Authentication;
 
 using Sarafan.Core.RestModels;
 using Sarafan.Core.Services;
@@ -18,6 +19,7 @@ public sealed class OrderOperationsController(
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet("ops")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicRead)]
     public async Task<ActionResult<OrderOpsDto>> Operations(CancellationToken cancellationToken)
         => Ok(OrderOperationsCatalog.CreatePublic(await tlds.GetRequiredAsync(cancellationToken)) with
         {

@@ -3,7 +3,9 @@
 // This file is a part of the Sarafan application
 
 using System.Net;
-using System.Text.Json;
+
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Sarafan.Core.Tests;
 
@@ -25,37 +27,34 @@ public sealed class SwaggerEndpointTests
     }
 
     [Test]
-    public async Task SwaggerUi_IsAvailable()
+    public async Task SwaggerUi_IsUnavailableOutsideDevelopment()
     {
         using var response = await _client.GetAsync("/swagger/index.html");
 
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
 
     [Test]
-    public async Task SwaggerDocument_DescribesApiAndBearerAuthentication()
+    public async Task SwaggerDocument_IsUnavailableOutsideDevelopment()
     {
         using var response = await _client.GetAsync("/swagger/v1/swagger.json");
-        await using var responseStream = await response.Content.ReadAsStreamAsync();
-        using var document = await JsonDocument.ParseAsync(responseStream);
-        var root = document.RootElement;
-        var bearerScheme = root
-            .GetProperty("components")
-            .GetProperty("securitySchemes")
-            .GetProperty("Bearer");
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+    }
 
-        using (Assert.EnterMultipleScope())
+    [Test]
+    public async Task SwaggerAndRootRedirect_AreAvailableInDevelopment()
+    {
+        using var development = IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Development"));
+        using var client = development.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var root = await client.GetAsync("/");
+        using var swagger = await client.GetAsync("/swagger/v1/swagger.json");
+
+        Assert.Multiple(() =>
         {
-            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(root.GetProperty("info").GetProperty("title").GetString(), Is.EqualTo("Sarafan Core Api"));
-            Assert.That(root.GetProperty("info").GetProperty("version").GetString(), Is.EqualTo("v1"));
-            Assert.That(root.GetProperty("paths").TryGetProperty("/api/v1/Status/status", out _), Is.True);
-            Assert.That(bearerScheme.GetProperty("type").GetString(), Is.EqualTo("http"));
-            Assert.That(bearerScheme.GetProperty("scheme").GetString(), Is.EqualTo("bearer"));
-            Assert.That(root.GetProperty("security")[0].TryGetProperty("Bearer", out _), Is.True);
-            Assert.That(root.GetProperty("components").GetProperty("schemas").GetProperty("VerifyCodeRequest")
-                .GetProperty("properties").EnumerateObject().Select(property => property.Name),
-                Is.EquivalentTo(new[] { "phone", "code", "onboardingToken" }));
-        }
+            Assert.That(root.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
+            Assert.That(root.Headers.Location?.OriginalString, Is.EqualTo("/swagger"));
+            Assert.That(swagger.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        });
     }
 }

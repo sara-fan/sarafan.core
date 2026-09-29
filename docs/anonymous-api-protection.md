@@ -1,0 +1,11 @@
+# Anonymous API protection
+
+Every explicitly anonymous application endpoint declares a named `AnonymousApiPolicy`. Core validates this inventory at startup; private access is the authorization fallback. Add a new anonymous endpoint by selecting a policy in `AnonymousApiPolicies`, applying its attribute (or `WithAnonymousApiPolicy` for a minimal endpoint), and adding validation and boundary tests.
+
+`AnonymousApiProtection:Policies` in `appsettings.json` contains every policy limit. Environment variables such as `AnonymousApiProtection__Policies__Forecast__ClientBurst` can override individual values. Startup rejects invalid or missing policies. Each policy independently limits a client's token burst and replenishment, the instance-wide token burst and replenishment, simultaneous work, request-body size and execution time. There is no waiting queue. The client registry is capped at 4,096 entries per policy and expires idle, fully replenished entries after at least two minutes. Limits are per Core instance; shared enforcement is required before scaling Core replicas.
+
+The effective remote address comes from ASP.NET Core after its trusted forwarded-header middleware. Customer and staff authentication/session/logout use separate policy namespaces. Existing phone/account attempt limits remain in force. Rejections return RFC 9457 `429 rate_limited` with `Retry-After: 1`; an execution deadline returns `503 anonymous_api_timeout` when the response is still writable. Client applications retain session credentials on these temporary failures.
+
+`POST /api/v1/orders/preview/forecast` accepts `{ "sellerPrice": { "amount": 12.50, "currency": 840 }, "quantity": 2 }` anonymously. It returns `{ "calculatedAt": "...", "totalRub": 1234.56 }`, or `totalRub: null` when required included components cannot be calculated. It creates no order or snapshot, returns no internal components, and uses the current saved official rate and active catalogue tariffs. The actual order is priced again on creation.
+
+Application limits control work admitted to Core. Upstream protection is needed for volumetric attacks. Test and tune limits with representative shared-IP visitors and catalogue image bursts before a production rollout.

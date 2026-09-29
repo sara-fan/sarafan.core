@@ -109,6 +109,58 @@ public sealed class OperationLoggingTests
     }
 
     [Test]
+    public void AnonymousForecastSummaries_IdentifyShapesWithoutPricesOrDates()
+    {
+        var request = new AnonymousForecastRequest(new(987654321m, Currency.Usd), 17);
+        var result = new AnonymousForecastDto(new DateTimeOffset(2031, 12, 25, 0, 0, 0, TimeSpan.Zero), 987654321m);
+
+        Assert.That(LogValueSummary.Describe(request),
+            Is.EqualTo("AnonymousForecastRequest(sellerPrice/quantity=[redacted])"));
+        Assert.That(LogValueSummary.Describe(result),
+            Is.EqualTo("AnonymousForecastDto(calculatedAt/totalRub=[redacted])"));
+        Assert.That(LogValueSummary.Inputs(("request", request)),
+            Is.EqualTo("request=AnonymousForecastRequest(sellerPrice/quantity=[redacted])"));
+        Assert.That(LogValueSummary.Describe(request) + LogValueSummary.Describe(result),
+            Does.Not.Contain("987654321").And.Not.Contain("2031").And.Not.Contain("17"));
+    }
+
+    [Test]
+    public async Task AnonymousAdmissionRejections_KeepCentralizedSafeRequestLogs()
+    {
+        using var app = IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureLogging(logging => logging.AddProvider(_logs)
+                .AddFilter<LogCollector>(null, LogLevel.Debug));
+            builder.ConfigureServices(services => services.PostConfigure<AnonymousApiProtectionOptions>(options =>
+            {
+                var forecast = options.Policies[AnonymousApiPolicies.Forecast];
+                forecast.ClientPerMinute = 1;
+                forecast.ClientBurst = 2;
+            }));
+        });
+        using var client = app.CreateClient();
+        var path = $"/api/v1/orders/preview/forecast?private={Secret}";
+        using var oversizedBody = new StringContent(new string('x', 3000));
+        using var oversized = await client.PostAsync(path, oversizedBody);
+        using var accepted = await client.PostAsJsonAsync(path,
+            new { sellerPrice = new { amount = 10m, currency = 840 }, quantity = 1 });
+        using var throttled = await client.PostAsJsonAsync(path,
+            new { sellerPrice = new { amount = 10m, currency = 840 }, quantity = 1 });
+
+        Assert.That(oversized.StatusCode, Is.EqualTo(HttpStatusCode.RequestEntityTooLarge));
+        Assert.That(accepted.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(throttled.StatusCode, Is.EqualTo(HttpStatusCode.TooManyRequests));
+        var requests = _logs.Records.Where(record => record.Event.Id == 1200
+            && Equals(record.Attributes["http.route"], "api/v1/orders/preview/forecast")).ToArray();
+        Assert.That(requests.Select(record => record.Attributes["http.response.status_code"]),
+            Is.EqualTo(new object[] { 413, 200, 429 }));
+        Assert.That(requests, Has.All.Matches<CapturedLog>(record =>
+            Equals(record.Attributes["http.request.method"], "POST")
+            && !record.Message.Contains(Secret, StringComparison.Ordinal)));
+        AssertPrivate();
+    }
+
+    [Test]
     public void SynchronousFailure_PreservesExceptionAndStackAndLogsWarning()
     {
         var failure = new InvalidOperationException(Secret);
@@ -574,6 +626,9 @@ public sealed class OperationLoggingTests
             new ProductPreviewRequest { SourceUrl = previewSourceUrl });
         using var forecast = await client.PostAsJsonAsync(
             "/api/v1/orders/forecast", new OrderForecastRequest(new(10, Currency.Usd), 1));
+        using var anonymousForecast = await client.PostAsJsonAsync(
+            "/api/v1/orders/preview/forecast",
+            new { sellerPrice = new { amount = 10m, currency = 840 }, quantity = 1 });
         using var resolve = await client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
         using var invalid = await client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone = "" });
         using var request = await client.PostAsJsonAsync("/api/v1/auth/code/request", await ConsentTestData.Request(client, phone));
@@ -643,6 +698,7 @@ public sealed class OperationLoggingTests
         Assert.That(orderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(preview.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(forecast.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(anonymousForecast.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(resolve.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(request.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
         Assert.That(createOrder.StatusCode, Is.EqualTo(HttpStatusCode.Created));
@@ -689,7 +745,8 @@ public sealed class OperationLoggingTests
                      typeof(AuthenticationService),
                      typeof(JwtTokenService),
                      typeof(OrderService),
-                     typeof(ProductPreviewService)
+                     typeof(ProductPreviewService),
+                     typeof(AnonymousForecastService)
                  })
         {
             foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))

@@ -33,15 +33,11 @@ public sealed class StatusEndpointTests
     }
 
     [Test]
-    public async Task Root_RedirectsToStatusEndpoint()
+    public async Task Root_IsUnavailableOutsideDevelopment()
     {
         using var response = await _client.GetAsync("/");
 
-        using (Assert.EnterMultipleScope())
-        {
-            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
-            Assert.That(response.Headers.Location?.OriginalString, Is.EqualTo("/api/v1/status/status"));
-        }
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
 
     [Test]

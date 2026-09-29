@@ -170,7 +170,7 @@ public sealed class ProblemDetailsContractTests
     }
 
     [Test]
-    public async Task UnknownRoute_ReturnsResourceNotFoundProblem()
+    public async Task UnknownRoute_ReturnsStructuredNotFound()
     {
         using var response = await _client.GetAsync("/api/v1/does-not-exist?source=test");
         var problem = await ReadProblem(response);
@@ -490,22 +490,10 @@ public sealed class ProblemDetailsContractTests
     }
 
     [Test]
-    public async Task Swagger_DeclaresProblemMediaTypeAndSchema()
+    public async Task Swagger_IsUnavailableOutsideDevelopment()
     {
         using var response = await _client.GetAsync("/swagger/v1/swagger.json");
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var problemContent = document.RootElement
-            .GetProperty("paths")
-            .GetProperty("/api/v1/auth/code/request")
-            .GetProperty("post")
-            .GetProperty("responses")
-            .GetProperty("400")
-            .GetProperty("content")
-            .GetProperty(SarafanProblemDetailsFactory.MediaType);
-
-        Assert.That(
-            problemContent.GetProperty("schema").GetProperty("$ref").GetString(),
-            Does.EndWith("/SarafanProblemDetails"));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
 
     [TestCase(400, "bad_request")]
@@ -565,7 +553,8 @@ public sealed class ProblemDetailsContractTests
             ["request_too_large"] = 413,
             ["unsupported_media_type"] = 415,
             ["bad_request"] = 400,
-            ["service_unavailable"] = 503
+            ["service_unavailable"] = 503,
+            ["anonymous_api_timeout"] = 503
         };
         var factory = new SarafanProblemDetailsFactory();
         var context = Context("/catalog");

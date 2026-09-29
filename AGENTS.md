@@ -1,5 +1,12 @@
 # Agent Guidelines for Sarafan Project
 
+## Anonymous API protection
+
+- Every explicitly anonymous application endpoint must declare one `AnonymousApiPolicy` from the central catalogue. Startup validation rejects missing or unknown policies; authenticated access is the fallback.
+- Keep request admission before body binding and service work. Bound per-client state, request bytes, aggregate rate, concurrency and deadlines; derive client identity only from trusted forwarded headers and the effective remote address.
+- Keep authentication's account/phone attempt limits in addition to admission limits. Throttling and anonymous request timeouts must not invalidate customer or staff refresh credentials.
+- Anonymous forecasts are read-only and use the order pricing calculator; missing included prices yield an unknown total. Do not persist a draft forecast or expose component details publicly.
+
 ## Specification and repository guidance
 
 - Follow the current specification identified in the [specification README](https://github.com/sara-fan/sarafan.spec#source-of-truth). If an implementation issue conflicts with it, flag the discrepancy before implementing the affected behavior.

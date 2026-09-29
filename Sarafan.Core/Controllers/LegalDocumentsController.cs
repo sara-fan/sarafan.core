@@ -4,6 +4,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sarafan.Core.Authentication;
 using Sarafan.Core.Models;
 using Sarafan.Core.Services;
 
@@ -14,8 +15,10 @@ namespace Sarafan.Core.Controllers;
 public sealed class LegalDocumentsController(LegalDocumentService documents, SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet("ops")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicRead)]
     public ActionResult Operations() => Ok(LegalDocumentService.Operations());
     [HttpGet("current/{kind:int}")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicRead)]
     public async Task<ActionResult> Current(LegalDocumentKind kind, CancellationToken token)
     {
         var document = await documents.CurrentAsync(kind, token);
@@ -23,8 +26,10 @@ public sealed class LegalDocumentsController(LegalDocumentService documents, Sar
     }
 
     [HttpGet("documents/{id:guid}")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicRead)]
     public async Task<ActionResult> Read(Guid id, CancellationToken token) => Ok(await documents.ReadAsync(id, false, token));
     [HttpGet("documents/{id:guid}/source")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.PublicDownload)]
     public async Task<ActionResult> Download(Guid id, CancellationToken token)
     {
         Response.Headers.XContentTypeOptions = "nosniff";

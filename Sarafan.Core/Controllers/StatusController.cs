@@ -4,6 +4,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sarafan.Core.Authentication;
 
 using Sarafan.Core.RestModels;
 using Sarafan.Core.Services;
@@ -17,6 +18,7 @@ public sealed class StatusController(SarafanProblemDetailsFactory problemDetails
     [AllowAnonymous]
 
     [HttpGet("status")]
+    [AnonymousApiPolicy(AnonymousApiPolicies.Health)]
     [ProducesResponseType<ServiceStatus>(StatusCodes.Status200OK)]
     public ActionResult<ServiceStatus> Status()
         => Ok(new ServiceStatus("Sarafan.Core", "ok", VersionInfo.AppVersion));
