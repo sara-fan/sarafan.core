@@ -104,10 +104,8 @@ public sealed class ConsentPolicyTests
     {
         var expected = new[]
         {
-            (LegalDocumentKind.PersonalDataConsent, 1, "Согласие на хранение и обработку персональных данных", "personal-data-consent"),
+            (LegalDocumentKind.PersonalDataConsent, 1, "Согласие на обработку персональных данных", "personal-data-consent"),
             (LegalDocumentKind.UserAgreement, 2, "Пользовательское соглашение", "user-agreement"),
-            (LegalDocumentKind.OrderRules, 3, "Правила заказа товаров", "order-rules"),
-            (LegalDocumentKind.PrivacyPolicy, 4, "Политика обработки персональных данных", "privacy-policy")
         };
 
         var operations = LegalDocumentService.Operations().Kinds;
@@ -126,6 +124,98 @@ public sealed class ConsentPolicyTests
         Assert.That(LegalDocumentKindExtensions.TryFromRouteAlias("unknown", out _), Is.False);
         Assert.That(() => ((LegalDocumentKind)99).GetDisplayName(), Throws.TypeOf<ArgumentOutOfRangeException>());
         Assert.That(() => ((LegalDocumentKind)99).GetRouteAlias(), Throws.TypeOf<ArgumentOutOfRangeException>());
+    }
+
+    [TestCase(3)]
+    [TestCase(4)]
+    public async Task RetiredDocumentsStayStoredButAreHiddenBeforeLimitsAndPaging(int retiredKind)
+    {
+        var current = await CreateCurrent();
+        await _consents.DecidePersonalDataAsync(_customer, Decision(current), default);
+        var auditCount = (await _documents.AuditAsync(null, null, null, null, 1, 100, "at", "desc", default)).Pagination.TotalCount;
+        var retired = new List<LegalDocument>();
+        for (var index = 0; index < 205; index++)
+        {
+            var document = new LegalDocument
+            {
+                Kind = (LegalDocumentKind)retiredKind,
+                Title = "Retired",
+                DisplayVersion = Guid.NewGuid().ToString(),
+                Source = Encoding.UTF8.GetBytes("Retired"),
+                Html = "<p>Retired</p>",
+                SourceHash = new string('a', 64),
+                ContentHash = new string('b', 64),
+                RendererVersion = "test",
+                CreatedBy = _admin,
+                CreatedAt = _clock.Now,
+                EffectiveAt = _clock.Now.AddDays(index)
+            };
+            retired.Add(document);
+            _db.LegalDocuments.Add(document);
+            _db.ConsentEvents.Add(new ConsentEvent
+            {
+                CustomerId = _customer,
+                SubjectKey = $"customer:{_customer}",
+                DocumentId = document.Id,
+                Kind = document.Kind,
+                ContentHash = document.ContentHash,
+                Decision = "grant",
+                Source = "test",
+                IdempotencyKey = Guid.NewGuid(),
+                At = _clock.Now,
+                RetainUntil = _clock.Now.AddDays(100)
+            });
+            _db.LegalDocumentAuditEvents.Add(new LegalDocumentAuditEvent
+            {
+                DocumentId = document.Id,
+                ActorId = _admin,
+                Kind = document.Kind,
+                Action = "created",
+                At = _clock.Now,
+                Title = document.Title,
+                DisplayVersion = document.DisplayVersion,
+                EffectiveAt = document.EffectiveAt,
+                SourceHash = document.SourceHash,
+                ContentHash = document.ContentHash
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var list = await _documents.ListAsync(null, default);
+        Assert.That(list.Any(x => x.Id == current.Id), Is.True);
+        Assert.That(list.All(x => Enum.IsDefined(x.Kind)), Is.True);
+        var audit = await _documents.AuditAsync(null, null, null, null, 1, 1, "at", "desc", default);
+        Assert.That(audit.Pagination.TotalCount, Is.EqualTo(auditCount));
+        Assert.That(audit.Items.All(x => Enum.IsDefined(x.Kind)), Is.True);
+        var history = (await _consents.CustomerAsync(_customer, default)).History;
+        Assert.That(history.Select(x => x.DocumentId), Is.EqualTo(new[] { current.Id }));
+
+        foreach (var administrator in new[] { false, true })
+        {
+            Reject(() => _documents.ReadAsync(retired[0].Id, administrator, default), "legal_document_not_found");
+            Reject(() => _documents.DownloadAsync(retired[0].Id, administrator, default), "legal_document_not_found");
+        }
+        Reject(() => _documents.DeleteAsync(retired[1].Id, _admin, default), "legal_document_not_found");
+        Assert.That(await _db.LegalDocuments.CountAsync(x => x.Kind == (LegalDocumentKind)retiredKind), Is.EqualTo(205));
+        Assert.That(await _db.ConsentEvents.CountAsync(x => x.Kind == (LegalDocumentKind)retiredKind), Is.EqualTo(205));
+        Assert.That(await _db.LegalDocumentAuditEvents.CountAsync(x => x.Kind == (LegalDocumentKind)retiredKind), Is.EqualTo(205));
+    }
+
+    [TestCase(0)]
+    [TestCase(3)]
+    [TestCase(4)]
+    public void RetiredKindsCannotBeResolvedOrPublished(int retiredKind)
+    {
+        var kind = (LegalDocumentKind)retiredKind;
+        Reject(() => _documents.CurrentAsync(kind, default), "invalid_legal_document_kind");
+        Reject(() => _documents.ListAsync(kind, default), "invalid_legal_document_kind");
+        Reject(() => _documents.AuditAsync(kind, null, null, null, 1, 10, "at", "desc", default), "invalid_legal_document_kind");
+        Reject(() => _documents.PreviewAsync(new LegalDocumentPreviewRequest { Kind = kind }, default), "invalid_legal_document_kind");
+        Reject(() => _documents.CreateAsync(new LegalDocumentRequest { Kind = kind }, _admin, default), "invalid_legal_document_kind");
+        Assert.That(() => kind.GetDisplayName(), Throws.TypeOf<ArgumentOutOfRangeException>());
+        Assert.That(() => kind.GetRouteAlias(), Throws.TypeOf<ArgumentOutOfRangeException>());
+        Assert.That(LegalDocumentKindExtensions.TryFromRouteAlias("order-rules", out _), Is.False);
+        Assert.That(LegalDocumentKindExtensions.TryFromRouteAlias("privacy-policy", out _), Is.False);
     }
 
     [Test]
