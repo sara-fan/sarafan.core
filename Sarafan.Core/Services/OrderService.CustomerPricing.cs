@@ -33,8 +33,7 @@ public sealed partial class OrderService
                 OrderPricingInputs.Empty, null, token);
             return new CustomerPricingDto(CustomerPricingState.Forecast, calculation.TotalRub,
                 calculation.CalculatedAt, null, now,
-                ExcludedRub(calculation, ServiceKind.DomesticDelivery),
-                ExcludedRub(calculation, ServiceKind.CustomsPayments));
+                null, null);
         }, token);
 
     private static ServiceException ForecastInvalid(string field, string detail)
@@ -55,8 +54,7 @@ public sealed partial class OrderService
         var state = snapshot.ValidUntil is null ? CustomerPricingState.Forecast
             : now >= snapshot.ValidUntil ? CustomerPricingState.Expired : CustomerPricingState.Confirmed;
         return new(state, calculation.TotalRub, calculation.CalculatedAt, snapshot.ValidUntil, now,
-            ExcludedRub(calculation, ServiceKind.DomesticDelivery),
-            ExcludedRub(calculation, ServiceKind.CustomsPayments));
+            null, snapshot.ValidUntil is null ? null : ExcludedRub(calculation, ServiceKind.CustomsPayments));
     }
 
     private static decimal? ExcludedRub(OrderPriceCalculationDto calculation, ServiceKind service)

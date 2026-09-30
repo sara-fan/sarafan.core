@@ -22,6 +22,8 @@ public sealed partial class OrderPricingTests
     [Test]
     public async Task UnifiedPricingHistoryRetainsDetailsAndFrozenStatusWithoutDuplicates()
     {
+        db.Add(Tariff(ServiceKind.CustomsPayments, PriceMethod.Fixed, Currency.Rub, amount: 0));
+        await db.SaveChangesAsync();
         var ops = await service.HistoryOperationsAsync("12345678-1", Admin, default);
         Assert.That(ops.Kinds, Has.Length.EqualTo(6));
         var saved = await service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, Sarafan.Core.RestModels.OrderPricingInputs.Empty), actorId, Shift, default);

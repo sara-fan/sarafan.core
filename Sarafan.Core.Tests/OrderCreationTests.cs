@@ -52,6 +52,37 @@ public sealed class OrderCreationTests
     }
 
     [Test]
+    public async Task CreateReplayDetailAndListConcealCalculatedExtrasWithoutDiscardingEvidence()
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        database.AddRange(
+            new ServiceCatalogueEntry(ServiceKind.DomesticDelivery, PriceMethod.Fixed, null, null, null, 55m, Currency.Rub, null, null, now),
+            new ServiceCatalogueEntry(ServiceKind.CustomsPayments, PriceMethod.Fixed, null, null, null, 120m, Currency.Rub, null, null, now));
+        await database.SaveChangesAsync();
+        var key = Guid.NewGuid();
+        using var createdResponse = await Create(_client, "https://shop.example.com/item", key);
+        createdResponse.EnsureSuccessStatusCode();
+        var created = (await createdResponse.Content.ReadFromJsonAsync<OrderDto>())!;
+        using var replayResponse = await Create(_client, "https://shop.example.com/item", key);
+        replayResponse.EnsureSuccessStatusCode();
+        var replay = (await replayResponse.Content.ReadFromJsonAsync<OrderDto>())!;
+        var detail = (await _client.GetFromJsonAsync<OrderDto>(createdResponse.Headers.Location!))!;
+        var list = (await _client.GetFromJsonAsync<CustomerOrderListItemDto[]>("/api/v1/orders"))!;
+        foreach (var pricing in new[] { created.Pricing, replay.Pricing, detail.Pricing, list.Single().Pricing })
+        {
+            Assert.That(pricing.DomesticDeliveryRub, Is.Null);
+            Assert.That(pricing.CustomsRub, Is.Null);
+        }
+        var snapshot = await database.OrderPricingSnapshots.SingleAsync();
+        var calculation = JsonSerializer.Deserialize<OrderPriceCalculationDto>(snapshot.Payload, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.That(calculation.Components.Single(item => item.Service == ServiceKind.DomesticDelivery).AmountRub, Is.EqualTo(55m));
+        Assert.That(calculation.Components.Single(item => item.Service == ServiceKind.CustomsPayments).AmountRub, Is.EqualTo(120m));
+        Assert.That(await database.Set<OrderHistoryEvent>().CountAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
     public async Task Create_AllocatesNormalizedIdentityAndReplaysExactRequest()
     {
         Assert.That(_session.Customer.OrderCode, Is.Null);
