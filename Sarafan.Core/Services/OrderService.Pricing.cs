@@ -73,7 +73,17 @@ public sealed partial class OrderService
             // Confirmation freezes the displayed saved calculation, not today's possibly changed tariffs/rates.
             if (latest is null) throw new ServiceException(409, "order_pricing_unavailable");
             calculation = ReadCalculation(latest);
-            if (calculation.TotalRub is null) throw new ServiceException(409, "order_pricing_unavailable");
+            if (!CanConfirmCalculation(calculation))
+            {
+                if (calculation.TotalRub is null) throw new ServiceException(409, "order_pricing_unavailable");
+                var manual = (await OrderPriceCalculator.TariffsAsync(database, now, token))
+                    .Any(tariff => tariff.Service == ServiceKind.CustomsPayments && tariff.PriceMethod == PriceMethod.Manual);
+                throw new ServiceException(409, "order_customs_unresolved")
+                {
+                    Errors = manual ? new Dictionary<string, string[]>
+                    { ["manualAmounts"] = ["Укажите таможенные платежи; 0 означает, что платежи не ожидаются."] } : null
+                };
+            }
         }
         else
         {
@@ -124,7 +134,7 @@ public sealed partial class OrderService
             : ReadCalculation(latest);
         var editable = order.Status == OrderStatus.UnderReview && BackofficeAuthorization.IsAllowed(roles, BackofficeAction.ManageOrderPricing);
         return new($"{order.Customer.OrderCode}-{order.CustomerOrderNumber}", order.UpdatedAt, editable,
-            editable && latest is not null && calculation.TotalRub is not null,
+            editable && latest is not null && CanConfirmCalculation(calculation),
             latest?.ValidUntil is not null, latest?.ValidUntil is { } until && now >= until, latest?.ValidUntil,
             calculation,
             (await OrderPriceCalculator.TariffsAsync(database, now, token)).Select(ServiceCatalogueService.ToDto).ToArray());
@@ -145,6 +155,9 @@ public sealed partial class OrderService
         database.OrderPricingSnapshots.Add(snapshot);
         return snapshot;
     }
+
+    private static bool CanConfirmCalculation(OrderPriceCalculationDto calculation)
+        => calculation.TotalRub is not null && ExcludedRub(calculation, ServiceKind.CustomsPayments) is not null;
 
     private static OrderPriceCalculationDto ReadCalculation(OrderPricingSnapshot snapshot)
         => JsonSerializer.Deserialize<OrderPriceCalculationDto>(snapshot.Payload, PricingJson)

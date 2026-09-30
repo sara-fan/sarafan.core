@@ -39,7 +39,7 @@ public sealed partial class OrderPricingTests
     }
 
     [Test]
-    public async Task AnonymousForecastExposesKnownExcludedAmounts()
+    public async Task AnonymousForecastConcealsKnownExcludedAmounts()
     {
         db.AddRange(Tariff(ServiceKind.DomesticDelivery, PriceMethod.Fixed, Currency.Rub, amount: 55m),
             Tariff(ServiceKind.CustomsPayments, PriceMethod.Fixed, Currency.Rub, amount: 120m));
@@ -48,8 +48,8 @@ public sealed partial class OrderPricingTests
         var forecast = await service.ForecastAsync(new(new(50, Currency.Usd), 2), default);
         Assert.Multiple(() =>
         {
-            Assert.That(forecast.DomesticDeliveryRub, Is.EqualTo(55m));
-            Assert.That(forecast.CustomsRub, Is.EqualTo(120m));
+            Assert.That(forecast.DomesticDeliveryRub, Is.Null);
+            Assert.That(forecast.CustomsRub, Is.Null);
         });
     }
 
@@ -75,7 +75,7 @@ public sealed partial class OrderPricingTests
     }
 
     [Test]
-    public async Task CustomerReadsRetainKnownAndUnknownExcludedAmounts()
+    public async Task CustomerReadsPublishCustomsOnlyAfterConfirmation()
     {
         db.AddRange(Tariff(ServiceKind.DomesticDelivery, PriceMethod.Manual, Currency.Rub),
             Tariff(ServiceKind.CustomsPayments, PriceMethod.Manual, Currency.Rub));
@@ -91,8 +91,8 @@ public sealed partial class OrderPricingTests
         Assert.That(forecast.Pricing!.State, Is.EqualTo(CustomerPricingState.Forecast));
         Assert.Multiple(() =>
         {
-            Assert.That(forecast.Pricing.DomesticDeliveryRub, Is.EqualTo(55m));
-            Assert.That(forecast.Pricing.CustomsRub, Is.EqualTo(120m));
+            Assert.That(forecast.Pricing.DomesticDeliveryRub, Is.Null);
+            Assert.That(forecast.Pricing.CustomsRub, Is.Null);
         });
         Assert.That((await service.ListAsync(order.CustomerId, default)).Single().Pricing,
             Is.EqualTo(forecast.Pricing));
@@ -108,20 +108,21 @@ public sealed partial class OrderPricingTests
         var confirmed = await service.GetAsync(order.CustomerId, "12345678-1", default);
         Assert.That(confirmed.Pricing!.State, Is.EqualTo(CustomerPricingState.Confirmed));
         Assert.That(confirmed.Pricing.CustomsRub, Is.EqualTo(120m));
-        Assert.That(confirmed.Pricing.DomesticDeliveryRub, Is.EqualTo(55m));
+        Assert.That(confirmed.Pricing.DomesticDeliveryRub, Is.Null);
 
         var later = new OrderService(db, null!, null!, null!, null!, null!, new OffsetClock(Now.AddHours(1)),
             NullLogger<OrderService>.Instance);
         var expired = await later.GetAsync(order.CustomerId, "12345678-1", default);
         Assert.That(expired.Pricing!.State, Is.EqualTo(CustomerPricingState.Expired));
         Assert.That(expired.Pricing.TotalRub, Is.EqualTo(confirmed.Pricing.TotalRub));
-        Assert.That(expired.Pricing.DomesticDeliveryRub, Is.EqualTo(55m));
+        Assert.That(expired.Pricing.DomesticDeliveryRub, Is.Null);
     }
 
     [Test]
-    public async Task StaffSavedDomesticDeliveryAppearsInCustomerDetailAndList()
+    public async Task StaffSavedDomesticDeliveryRemainsInternal()
     {
-        db.Add(Tariff(ServiceKind.DomesticDelivery, PriceMethod.Manual, Currency.Rub));
+        db.AddRange(Tariff(ServiceKind.DomesticDelivery, PriceMethod.Manual, Currency.Rub),
+            Tariff(ServiceKind.CustomsPayments, PriceMethod.Fixed, Currency.Rub, amount: 0));
         await db.SaveChangesAsync();
         var inputs = OrderPricingInputs.Empty with
         {
@@ -130,15 +131,15 @@ public sealed partial class OrderPricingTests
 
         var saved = await service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, inputs), actorId, Shift, default);
         var forecast = await service.GetAsync(order.CustomerId, "12345678-1", default);
-        Assert.That(forecast.Pricing.DomesticDeliveryRub, Is.EqualTo(1000m));
+        Assert.That(forecast.Pricing.DomesticDeliveryRub, Is.Null);
         Assert.That((await service.ListAsync(order.CustomerId, default)).Single().Pricing.DomesticDeliveryRub,
-            Is.EqualTo(1000m));
+            Is.Null);
 
         await service.ConfirmPricingAsync("12345678-1", new(saved.UpdatedAt), actorId, Shift, default);
         var confirmed = await service.GetAsync(order.CustomerId, "12345678-1", default);
         Assert.That(confirmed.Pricing.State, Is.EqualTo(CustomerPricingState.Confirmed));
-        Assert.That(confirmed.Pricing.DomesticDeliveryRub, Is.EqualTo(1000m));
-        Assert.That(JsonSerializer.Serialize(confirmed, WebJson), Does.Contain("\"domesticDeliveryRub\":1000"));
+        Assert.That(confirmed.Pricing.DomesticDeliveryRub, Is.Null);
+        Assert.That(JsonSerializer.Serialize(confirmed, WebJson), Does.Contain("\"domesticDeliveryRub\":null"));
     }
 
     private sealed class OffsetClock(DateTimeOffset now) : TimeProvider
@@ -174,6 +175,7 @@ public sealed partial class OrderPricingTests
     [Test]
     public async Task ManualPricingRoundTripsRequestsSnapshotsAndRetainedHistory()
     {
+        db.Add(Tariff(ServiceKind.CustomsPayments, PriceMethod.Fixed, Currency.Rub, amount: 0));
         db.ServiceCatalogueEntries.RemoveRange(db.ServiceCatalogueEntries.Where(item => item.Service == ServiceKind.UsWarehouseExpenses));
         db.Add(Tariff(ServiceKind.UsWarehouseExpenses, PriceMethod.Manual, Currency.Usd));
         await db.SaveChangesAsync();
@@ -350,14 +352,14 @@ public sealed partial class OrderPricingTests
         Assert.That(saved.Calculation.Components.Where(item => item.Service != missingService)
             .All(item => item.State == PriceComponentState.Calculated), Is.True);
         var included = missingService.IsIncludedInTotal();
-        Assert.That(saved.CanConfirm, Is.EqualTo(!included));
+        Assert.That(saved.CanConfirm, Is.EqualTo(!included && missingService != ServiceKind.CustomsPayments));
         var snapshotCount = await db.OrderPricingSnapshots.CountAsync();
-        if (included)
+        if (included || missingService == ServiceKind.CustomsPayments)
         {
-            Assert.That(saved.Calculation.TotalRub, Is.Null);
+            if (included) Assert.That(saved.Calculation.TotalRub, Is.Null);
             var error = Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync(
                 "12345678-1", new(saved.UpdatedAt), actorId, Shift, default));
-            Assert.That(error!.Code, Is.EqualTo("order_pricing_unavailable"));
+            Assert.That(error!.Code, Is.EqualTo(included ? "order_pricing_unavailable" : "order_customs_unresolved"));
             Assert.That(await db.OrderPricingSnapshots.CountAsync(), Is.EqualTo(snapshotCount));
             Assert.That(order.Status, Is.EqualTo(OrderStatus.UnderReview));
             return;
@@ -552,6 +554,8 @@ public sealed partial class OrderPricingTests
     [Test]
     public async Task ConfirmationFreezesSavedValuesAndRejectsFurtherWrites()
     {
+        db.Add(Tariff(ServiceKind.CustomsPayments, PriceMethod.Fixed, Currency.Rub, amount: 0));
+        await db.SaveChangesAsync();
         var saved = await service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, OrderPricingInputs.Empty), actorId, Shift, default);
         db.ExchangeRateHistory.Add(OrderProductTestData.Rate(Currency.Usd, 90, date: new(2026, 9, 24)));
         await db.SaveChangesAsync();
