@@ -232,7 +232,9 @@ public sealed class ConsentService(AppDbContext database, TimeProvider clock, IO
         await RequireCustomer(customerId, token);
         var now = clock.GetUtcNow();
         var events = await database.ConsentEvents.AsNoTracking().Include(x => x.Document)
-            .Where(x => x.CustomerId == customerId).OrderByDescending(x => x.Id).Take(200).ToArrayAsync(token);
+            .Where(x => x.CustomerId == customerId
+                && (x.Kind == LegalDocumentKind.PersonalDataConsent || x.Kind == LegalDocumentKind.UserAgreement))
+            .OrderByDescending(x => x.Id).Take(200).ToArrayAsync(token);
         var document = await LegalDocumentService.CurrentEntity(database, LegalDocumentKind.PersonalDataConsent, now, token);
         var last = events.FirstOrDefault(x => x.Kind == LegalDocumentKind.PersonalDataConsent);
         var status = Status(last, document, now);

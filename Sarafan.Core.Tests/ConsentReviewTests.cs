@@ -341,7 +341,7 @@ public sealed class ConsentReviewTests
     {
         await using var database = Database();
         var date = ConsentCalendar.LocalDate(_clock.Now).AddDays(2);
-        var future = await CreateDocument(database, LegalDocumentKind.PrivacyPolicy, date);
+        var future = await CreateDocument(database, LegalDocumentKind.PersonalDataConsent, date);
         Assert.That(future.EffectiveLocalDate, Is.EqualTo(date));
         Assert.That(future.EffectiveAt, Is.EqualTo(ConsentCalendar.Midnight(date)));
         Assert.That(future.EffectiveTimeZone, Is.EqualTo("Europe/Moscow"));

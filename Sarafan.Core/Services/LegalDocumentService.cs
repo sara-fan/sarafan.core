@@ -37,7 +37,9 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
     {
         if (kind is { } value) ValidateKind(value);
         var now = clock.GetUtcNow();
-        var rows = await database.LegalDocuments.AsNoTracking().Where(x => kind == null || x.Kind == kind)
+        var rows = await database.LegalDocuments.AsNoTracking()
+            .Where(x => x.Kind == LegalDocumentKind.PersonalDataConsent || x.Kind == LegalDocumentKind.UserAgreement)
+            .Where(x => kind == null || x.Kind == kind)
             .OrderByDescending(x => x.EffectiveAt).ThenByDescending(x => x.CreatedAt).Take(200)
             .Select(x => new
             {
@@ -88,6 +90,7 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
             var operations = AppDatabaseOperations.For(database);
             var document = await database.LegalDocuments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token)
                 ?? throw new ServiceException(404, "legal_document_not_found");
+            if (!Enum.IsDefined(document.Kind)) throw new ServiceException(404, "legal_document_not_found");
             var now = clock.GetUtcNow();
             var deleted = await operations.DeleteAsync(
                 database,
@@ -112,7 +115,9 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
             || sortByKey is not ("at" or "action" or "title" or "displayversion" or "effectiveat" or "actorname")
             || sortOrderKey is not ("asc" or "desc"))
             throw new ServiceException(400, "invalid_legal_document_audit_filter");
-        var query = database.LegalDocumentAuditEvents.AsNoTracking().Where(x =>
+        var query = database.LegalDocumentAuditEvents.AsNoTracking()
+            .Where(x => x.Kind == LegalDocumentKind.PersonalDataConsent || x.Kind == LegalDocumentKind.UserAgreement)
+            .Where(x =>
             (kind == null || x.Kind == kind) && (action == null || x.Action == action)
             && (documentId == null || x.DocumentId == documentId));
         if (search is not null)
@@ -199,7 +204,7 @@ public sealed class LegalDocumentService(AppDbContext database, TimeProvider clo
     private async Task<LegalDocument> ReadEntity(Guid id, bool administrator, CancellationToken token)
     {
         var row = await database.LegalDocuments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
-        if (row is null || !administrator && row.EffectiveAt > clock.GetUtcNow())
+        if (row is null || !Enum.IsDefined(row.Kind) || !administrator && row.EffectiveAt > clock.GetUtcNow())
             throw new ServiceException(404, "legal_document_not_found");
         return row;
     }

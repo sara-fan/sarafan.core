@@ -6,21 +6,17 @@ namespace Sarafan.Core.Models;
 
 public enum LegalDocumentKind
 {
-    // Value 0 is retired and must never be reused.
+    // Values 0, 3 and 4 are retired and must never be reused.
     PersonalDataConsent = 1,
-    UserAgreement = 2,
-    OrderRules = 3,
-    PrivacyPolicy = 4
+    UserAgreement = 2
 }
 
 public static class LegalDocumentKindExtensions
 {
     public static string GetDisplayName(this LegalDocumentKind kind) => kind switch
     {
-        LegalDocumentKind.PersonalDataConsent => "Согласие на хранение и обработку персональных данных",
+        LegalDocumentKind.PersonalDataConsent => "Согласие на обработку персональных данных",
         LegalDocumentKind.UserAgreement => "Пользовательское соглашение",
-        LegalDocumentKind.OrderRules => "Правила заказа товаров",
-        LegalDocumentKind.PrivacyPolicy => "Политика обработки персональных данных",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
     };
 
@@ -28,8 +24,6 @@ public static class LegalDocumentKindExtensions
     {
         LegalDocumentKind.PersonalDataConsent => "personal-data-consent",
         LegalDocumentKind.UserAgreement => "user-agreement",
-        LegalDocumentKind.OrderRules => "order-rules",
-        LegalDocumentKind.PrivacyPolicy => "privacy-policy",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
     };
 

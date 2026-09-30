@@ -93,7 +93,7 @@ public sealed class ListDisplaySearchTests
             ActorId = actor.Id,
             Action = "created",
             At = At,
-            Kind = LegalDocumentKind.OrderRules,
+            Kind = LegalDocumentKind.UserAgreement,
             Title = "Правовой текст",
             DisplayVersion = "v3",
             EffectiveAt = At,
@@ -103,7 +103,7 @@ public sealed class ListDisplaySearchTests
         await db.SaveChangesAsync();
         foreach (var term in new[] { "№ " + order.CustomerId, "Ожидает ручной обработки", "27.09.2026, 00:15 МСК" })
             Assert.That(await ListDisplaySearch.Withdrawals(db.CustomerConsentWithdrawalRequests, term).AnyAsync(), Is.True, term);
-        foreach (var term in new[] { "Создан", "Правовой текст", "Правила заказа товаров", documentId.ToString()[..8], "v3", "27.09.2026", "ЁЛКИН ИВАН" })
+        foreach (var term in new[] { "Создан", "Правовой текст", "Пользовательское соглашение", documentId.ToString()[..8], "v3", "27.09.2026", "ЁЛКИН ИВАН" })
             Assert.That(await ListDisplaySearch.LegalAudit(db.LegalDocumentAuditEvents, term).AnyAsync(), Is.True, term);
         Assert.That(await ListDisplaySearch.Withdrawals(db.CustomerConsentWithdrawalRequests, "false").AnyAsync(), Is.False);
         Assert.That(await ListDisplaySearch.LegalAudit(db.LegalDocumentAuditEvents, "created").AnyAsync(), Is.False);

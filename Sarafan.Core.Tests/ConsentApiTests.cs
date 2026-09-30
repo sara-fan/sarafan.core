@@ -64,22 +64,24 @@ public sealed class ConsentApiTests
         Assert.That(response.Headers.Contains("Set-Cookie"), Is.False);
     }
 
-    [Test]
-    public async Task RetiredKindIsRejectedAndNeverAdvertised()
+    [TestCase(0)]
+    [TestCase(3)]
+    [TestCase(4)]
+    public async Task RetiredKindIsRejectedAndNeverAdvertised(int retiredKind)
     {
-        using var current = await _client.GetAsync("/api/v1/legal/current/0");
+        using var current = await _client.GetAsync($"/api/v1/legal/current/{retiredKind}");
         Assert.That(current.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
         Authorize(_adminToken);
         using var preview = await _client.PostAsJsonAsync("/api/v1/backoffice/legal-documents/preview", new LegalDocumentPreviewRequest
         {
-            Kind = (LegalDocumentKind)0,
+            Kind = (LegalDocumentKind)retiredKind,
             Title = "Retired",
             FileName = "retired.md",
             Source = Encoding.UTF8.GetBytes("Retired"),
             EffectiveDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1))
         });
         Assert.That((await preview.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_legal_document_kind"));
-        Assert.That(Sarafan.Core.Services.LegalDocumentService.Operations().Kinds.Select(x => x.Value), Does.Not.Contain(0));
+        Assert.That(Sarafan.Core.Services.LegalDocumentService.Operations().Kinds.Select(x => x.Value), Is.EqualTo(new[] { 1, 2 }));
     }
 
     [Test]
@@ -87,8 +89,8 @@ public sealed class ConsentApiTests
     {
         using var publicResponse = await _client.GetAsync("/api/v1/legal/ops");
         var publicOps = await Read<LegalDocumentOpsDto>(publicResponse);
-        Assert.That(publicOps.Kinds.Select(item => item.Value), Is.EqualTo(new[] { 1, 2, 3, 4 }));
-        Assert.That(publicOps.Kinds.Select(item => item.RouteAlias), Does.Contain("privacy-policy"));
+        Assert.That(publicOps.Kinds.Select(item => item.Value), Is.EqualTo(new[] { 1, 2 }));
+        Assert.That(publicOps.Kinds.Select(item => item.RouteAlias), Does.Contain("personal-data-consent"));
 
         using var anonymousStaff = await _client.GetAsync("/api/v1/backoffice/legal-documents/ops");
         Assert.That(anonymousStaff.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
@@ -104,8 +106,8 @@ public sealed class ConsentApiTests
     [Test]
     public async Task LegalDocumentKindsUseOnlyDefinedNumericContracts()
     {
-        using var numeric = await _client.GetAsync($"/api/v1/legal/current/{(int)LegalDocumentKind.PrivacyPolicy}");
-        Assert.That((await Read<CurrentDocumentDto>(numeric)).Document!.Kind, Is.EqualTo(LegalDocumentKind.PrivacyPolicy));
+        using var numeric = await _client.GetAsync($"/api/v1/legal/current/{(int)LegalDocumentKind.PersonalDataConsent}");
+        Assert.That((await Read<CurrentDocumentDto>(numeric)).Document!.Kind, Is.EqualTo(LegalDocumentKind.PersonalDataConsent));
         using var legacyAlias = await _client.GetAsync("/api/v1/legal/current/cookie-consent");
         Assert.That(legacyAlias.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var undefinedRoute = await _client.GetAsync("/api/v1/legal/current/99");
@@ -138,7 +140,7 @@ public sealed class ConsentApiTests
         Assert.That((await undefinedBody.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString(), Is.EqualTo("invalid_legal_document_kind"));
         using var unsafeMarkup = await _client.PostAsJsonAsync("/api/v1/backoffice/legal-documents/preview", new LegalDocumentPreviewRequest
         {
-            Kind = LegalDocumentKind.PrivacyPolicy,
+            Kind = LegalDocumentKind.PersonalDataConsent,
             Title = "Политика",
             FileName = "policy.md",
             Source = Encoding.UTF8.GetBytes("<script>alert(1)</script>"),
@@ -202,7 +204,7 @@ public sealed class ConsentApiTests
         Authorize(_adminToken);
         var payload = new LegalDocumentRequest
         {
-            Kind = LegalDocumentKind.OrderRules,
+            Kind = LegalDocumentKind.UserAgreement,
             Title = "Правила теста",
             DisplayVersion = Guid.NewGuid().ToString(),
             FileName = "rules.md",
@@ -275,10 +277,10 @@ public sealed class ConsentApiTests
         Assert.That(deleted.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
         using var auditAfterDelete = await _client.GetAsync($"/api/v1/backoffice/legal-documents/audit?documentId={document.Id}");
         Assert.That((await Read<LegalDocumentAuditPageDto>(auditAfterDelete)).Items.Select(x => x.Action), Is.EqualTo(new[] { "deleted", "created" }));
-        using var list = await _client.GetAsync($"/api/v1/backoffice/legal-documents?kind={(int)LegalDocumentKind.OrderRules}");
+        using var list = await _client.GetAsync($"/api/v1/backoffice/legal-documents?kind={(int)LegalDocumentKind.UserAgreement}");
         Assert.That((await Read<LegalDocumentDto[]>(list)).Any(x => x.Id == document.Id), Is.False);
         Authorize(null);
-        var current = await Current(LegalDocumentKind.OrderRules);
+        var current = await Current(LegalDocumentKind.UserAgreement);
         Authorize(_adminToken);
         using var effectiveDelete = await _client.DeleteAsync($"/api/v1/backoffice/legal-documents/{current.Id}");
         Assert.That(effectiveDelete.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
