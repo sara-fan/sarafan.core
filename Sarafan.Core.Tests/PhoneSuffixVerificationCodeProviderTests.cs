@@ -31,16 +31,16 @@ public sealed class PhoneSuffixVerificationCodeProviderTests
     }
 
     [Test]
-    public void Operations_HonorCancellation()
+    public async Task Operations_HonorCancellation()
     {
         using var source = new CancellationTokenSource();
         source.Cancel();
 
         using (Assert.EnterMultipleScope())
         {
-            Assert.ThrowsAsync<OperationCanceledException>(() =>
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
                 _provider.RequestCodeAsync("+79991234567", source.Token));
-            Assert.ThrowsAsync<OperationCanceledException>(() =>
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
                 _provider.VerifyCodeAsync("+79991234567", "4567", source.Token));
         }
     }

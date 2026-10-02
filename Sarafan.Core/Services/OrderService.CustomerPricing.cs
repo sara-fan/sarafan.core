@@ -43,10 +43,10 @@ public sealed partial class OrderService
         };
 
     private async Task<CustomerPricingDto> CustomerPricingAsync(long orderId, DateTimeOffset now,
-        CancellationToken token)
-        => CustomerPricing(await LatestPricingAsync(orderId, token), now);
+        CancellationToken token, bool deliverySelected = false)
+        => CustomerPricing(await LatestPricingAsync(orderId, token), now, deliverySelected);
 
-    private static CustomerPricingDto CustomerPricing(OrderPricingSnapshot? snapshot, DateTimeOffset now)
+    private static CustomerPricingDto CustomerPricing(OrderPricingSnapshot? snapshot, DateTimeOffset now, bool deliverySelected = false)
     {
         if (snapshot is null)
             return new(CustomerPricingState.Forecast, null, null, null, now, null, null);
@@ -54,7 +54,7 @@ public sealed partial class OrderService
         var state = snapshot.ValidUntil is null ? CustomerPricingState.Forecast
             : now >= snapshot.ValidUntil ? CustomerPricingState.Expired : CustomerPricingState.Confirmed;
         return new(state, calculation.TotalRub, calculation.CalculatedAt, snapshot.ValidUntil, now,
-            null, snapshot.ValidUntil is null ? null : ExcludedRub(calculation, ServiceKind.CustomsPayments));
+            deliverySelected ? ExcludedRub(calculation, ServiceKind.DomesticDelivery) : null, snapshot.ValidUntil is null ? null : ExcludedRub(calculation, ServiceKind.CustomsPayments));
     }
 
     private static decimal? ExcludedRub(OrderPriceCalculationDto calculation, ServiceKind service)

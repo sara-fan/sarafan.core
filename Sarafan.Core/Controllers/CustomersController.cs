@@ -41,7 +41,6 @@ public sealed class CustomersController(
         var customerId = CurrentCustomerId();
         var customer = await database.Customers
             .AsNoTracking()
-            .Include(item => item.Profile)
             .SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
         if (customer is null)
         {
@@ -63,7 +62,6 @@ public sealed class CustomersController(
     {
         var customerId = CurrentCustomerId();
         var customer = await database.Customers
-            .Include(item => item.Profile)
             .SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
         if (customer is null)
         {
@@ -72,13 +70,38 @@ public sealed class CustomersController(
 
         return await consents.WithPersonalDataAsync<ActionResult<CustomerDto>>(customerId, async () =>
         {
-            Apply(customer.Profile, request);
-            customer.State = CustomerProfileState.Evaluate(customer.Profile);
+            Apply(customer, request);
+            customer.State = CustomerProfileState.Evaluate(customer);
             customer.UpdatedAt = timeProvider.GetUtcNow();
             await database.SaveChangesAsync(cancellationToken);
             var hasPhoto = await database.CustomerPhotos
                 .AsNoTracking()
                 .AnyAsync(item => item.CustomerId == customerId, cancellationToken);
+            return Ok(CustomerDto.From(customer, hasPhoto));
+        }, cancellationToken);
+    }
+
+    [HttpPut("delivery-address")]
+    [ServiceFilter(typeof(PersonalDataConsentFilter))]
+    [ProducesResponseType<CustomerDto>(StatusCodes.Status200OK)]
+    public Task<ActionResult<CustomerDto>> UpdateDeliveryAddress(CustomerDeliveryAddress request, CancellationToken cancellationToken)
+    {
+        var address = request.Normalize();
+        var errors = address.Validate();
+        if (errors.Count > 0) throw new ServiceException(400, "validation_failed") { Errors = errors };
+        var customerId = CurrentCustomerId();
+        return consents.WithPersonalDataAsync<ActionResult<CustomerDto>>(customerId, async () =>
+        {
+            await ConsentTransaction.LockCustomer(database, customerId, cancellationToken);
+            var customer = await database.Customers.SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
+            if (customer is null) return CustomerNotFoundProblem();
+            customer.PostalCode = address.PostalCode;
+            customer.City = address.City;
+            customer.Address = address.Address;
+            customer.State = CustomerProfileState.Evaluate(customer);
+            customer.UpdatedAt = timeProvider.GetUtcNow();
+            await database.SaveChangesAsync(cancellationToken);
+            var hasPhoto = await database.CustomerPhotos.AnyAsync(item => item.CustomerId == customerId, cancellationToken);
             return Ok(CustomerDto.From(customer, hasPhoto));
         }, cancellationToken);
     }
@@ -175,7 +198,7 @@ public sealed class CustomersController(
         return NoContent();
     }
 
-    private static void Apply(CustomerProfile profile, CustomerProfileUpdateRequest request)
+    private static void Apply(Customer profile, CustomerProfileUpdateRequest request)
     {
         profile.LastName = Normalize(request.LastName);
         profile.FirstName = Normalize(request.FirstName);

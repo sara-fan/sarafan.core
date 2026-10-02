@@ -176,9 +176,9 @@ public sealed class CustomerFlowTests
         await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
         {
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var customer = await database.Customers.Include(item => item.Profile)
+            var customer = await database.Customers
                 .SingleAsync(item => item.Id == original.Customer.Id);
-            customer.Profile.FirstName = "Сохранено";
+            customer.FirstName = "Сохранено";
             customer.State = CustomerState.Disabled;
             await database.SaveChangesAsync();
         }
@@ -307,7 +307,7 @@ public sealed class CustomerFlowTests
         await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
         {
             var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var customer = new Customer { Phone = phone, Profile = new CustomerProfile() };
+            var customer = new Customer { Phone = phone };
             database.Customers.Add(customer);
             await database.SaveChangesAsync();
             customerId = customer.Id;
@@ -315,12 +315,7 @@ public sealed class CustomerFlowTests
 
         var agreement = (await _client.GetFromJsonAsync<CurrentDocumentDto>(
             $"/api/v1/legal/current/{(int)LegalDocumentKind.UserAgreement}"))!.Document!;
-        using var codeRequest = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new
-        {
-            phone,
-            termsAccepted = true,
-            termsDocumentId = agreement.Id
-        });
+        using var codeRequest = await _client.PostAsJsonAsync("/api/v1/auth/code/request", await ConsentTestData.Request(_client, phone));
         var receipt = await codeRequest.Content.ReadFromJsonAsync<CodeRequestDto>();
 
         using var verify = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new
@@ -352,6 +347,102 @@ public sealed class CustomerFlowTests
         }
     }
 
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public async Task Login_RenewsOnlyTheOutdatedDocuments(bool agreementChanged, bool personalDataChanged)
+    {
+        var phone = NextPhone();
+        var (original, _) = await Register(phone);
+        var changed = new List<LegalDocumentKind>();
+        if (agreementChanged) changed.Add(LegalDocumentKind.UserAgreement);
+        if (personalDataChanged) changed.Add(LegalDocumentKind.PersonalDataConsent);
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            foreach (var kind in changed)
+            {
+                var previous = await database.LegalDocuments.SingleAsync(item => item.Kind == kind);
+                database.LegalDocuments.Add(new LegalDocument
+                {
+                    Kind = kind,
+                    Title = "Новая версия",
+                    DisplayVersion = "test-v2",
+                    Html = "<p>Новая версия</p>",
+                    Source = System.Text.Encoding.UTF8.GetBytes("Новая версия"),
+                    SourceHash = new string('a', 64),
+                    ContentHash = new string('b', 64),
+                    RendererVersion = previous.RendererVersion,
+                    CreatedBy = previous.CreatedBy,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    EffectiveAt = previous.EffectiveAt.AddSeconds(1)
+                });
+            }
+            await database.SaveChangesAsync();
+        }
+
+        using var resolved = await _client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
+        resolved.EnsureSuccessStatusCode();
+        var resolution = (await resolved.Content.ReadFromJsonAsync<PhoneResolveDto>())!;
+        Assert.That(resolution.NextStep, Is.EqualTo(changed.Count == 0 ? AuthenticationFlowStep.Code : AuthenticationFlowStep.Agreement));
+        Assert.That(resolution.RequiredDocumentKinds, Is.EqualTo(changed));
+        string? receipt = null;
+        if (changed.Count > 0)
+        {
+            using var bypass = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new { phone, code = VerificationCode(phone) });
+            Assert.That(bypass.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+            var request = await ConsentTestData.Request(_client, phone);
+            if (!agreementChanged) { request.TermsAccepted = false; request.TermsDocumentId = null; }
+            if (!personalDataChanged) request.PersonalDataConsent = null;
+            using var codeRequest = await _client.PostAsJsonAsync("/api/v1/auth/code/request", request);
+            Assert.That(codeRequest.StatusCode, Is.EqualTo(HttpStatusCode.Accepted), await codeRequest.Content.ReadAsStringAsync());
+            receipt = (await codeRequest.Content.ReadFromJsonAsync<CodeRequestDto>())!.OnboardingToken;
+        }
+        using var verify = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new { phone, code = VerificationCode(phone), onboardingToken = receipt });
+        Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK), await verify.Content.ReadAsStringAsync());
+        var session = (await verify.Content.ReadFromJsonAsync<AuthenticationSessionDto>())!;
+        Assert.That(session.Customer.Id, Is.EqualTo(original.Customer.Id));
+        using var after = await _client.PostAsJsonAsync("/api/v1/auth/phone/resolve", new { phone });
+        Assert.That((await after.Content.ReadFromJsonAsync<PhoneResolveDto>())!.RequiredDocumentKinds, Is.Empty);
+        await using var verificationScope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var verificationDatabase = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var events = await verificationDatabase.ConsentEvents.Where(item => item.CustomerId == original.Customer.Id).ToListAsync();
+        Assert.That(events.Count, Is.EqualTo(2 + changed.Count));
+        Assert.That(events.Where(item => item.Source == "authentication").Select(item => item.Kind), Is.EquivalentTo(changed));
+    }
+
+    [Test]
+    public async Task Login_RejectsReceiptThatOmitsNewPersonalDataRequirement()
+    {
+        var phone = NextPhone();
+        var (original, _) = await Register(phone);
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.ConsentEvents.RemoveRange(await database.ConsentEvents.Where(item => item.CustomerId == original.Customer.Id && item.Kind == LegalDocumentKind.UserAgreement).ToListAsync());
+            await database.SaveChangesAsync();
+        }
+        var agreement = (await _client.GetFromJsonAsync<CurrentDocumentDto>("/api/v1/legal/current/2"))!.Document!;
+        using var codeRequest = await _client.PostAsJsonAsync("/api/v1/auth/code/request", new { phone, termsAccepted = true, termsDocumentId = agreement.Id });
+        codeRequest.EnsureSuccessStatusCode();
+        var receipt = (await codeRequest.Content.ReadFromJsonAsync<CodeRequestDto>())!.OnboardingToken;
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.ConsentEvents.RemoveRange(await database.ConsentEvents.Where(item => item.CustomerId == original.Customer.Id && item.Kind == LegalDocumentKind.PersonalDataConsent).ToListAsync());
+            await database.SaveChangesAsync();
+        }
+        using var verify = await _client.PostAsJsonAsync("/api/v1/auth/code/verify", new { phone, code = VerificationCode(phone), onboardingToken = receipt });
+        Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        var problem = await verify.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.That(problem.GetProperty("code").GetString(), Is.EqualTo("authentication_requirements_changed"));
+        await using var verificationScope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var databaseAfter = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.That(await databaseAfter.RefreshSessions.CountAsync(item => item.CustomerId == original.Customer.Id), Is.EqualTo(1));
+        Assert.That(await databaseAfter.ConsentEvents.AnyAsync(item => item.CustomerId == original.Customer.Id), Is.False);
+    }
+
     [Test]
     public async Task RegistrationReceipt_RejectsAnAccountCreatedAfterResolution()
     {
@@ -363,7 +454,6 @@ public sealed class CustomerFlowTests
             database.Customers.Add(new Customer
             {
                 Phone = phone,
-                Profile = new CustomerProfile()
             });
             await database.SaveChangesAsync();
         }
@@ -382,7 +472,7 @@ public sealed class CustomerFlowTests
             Assert.That(problem.GetProperty("code").GetString(), Is.EqualTo("authentication_requirements_changed"));
             Assert.That(problem.GetProperty("nextStep").GetInt32(), Is.EqualTo((int)AuthenticationFlowStep.Agreement));
             Assert.That(problem.GetProperty("requiredDocumentKinds").EnumerateArray().Select(item => item.GetInt32()),
-                Is.EqualTo(new[] { (int)LegalDocumentKind.UserAgreement }));
+                Is.EqualTo(new[] { (int)LegalDocumentKind.UserAgreement, (int)LegalDocumentKind.PersonalDataConsent }));
         }
     }
 

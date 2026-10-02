@@ -22,7 +22,7 @@ internal static class OrderProductRules
     {
         if (product.Quantity <= 0) throw new ServiceException(400, "invalid_order_quantity");
         if (product.Quantity > 4) throw new ServiceException(400, "order_quantity_limit_exceeded");
-        if (product.ProductName is null or { Length: > 500 }) throw new ServiceException(400, "invalid_order_product_name");
+        if (product.ProductName is { Length: > 500 }) throw new ServiceException(400, "invalid_order_product_name");
         if (product.StoreName?.Length > 200) throw new ServiceException(400, "invalid_order_store_name");
         ValidatePriceAndQuantity(product.SellerPrice, product.Quantity);
         if (product.Color?.Length > 200) throw new ServiceException(400, "invalid_order_color");
@@ -34,6 +34,7 @@ internal static class OrderProductRules
     {
         if (quantity <= 0) throw new ServiceException(400, "invalid_order_quantity");
         if (quantity > 4) throw new ServiceException(400, "order_quantity_limit_exceeded");
+        if (price is null) return;
         if (price is not { Currency: Currency.Usd, Amount: > 0 and <= 99999999.99m }
             || decimal.Round(price.Amount, 2) != price.Amount)
             throw new ServiceException(400, "invalid_order_seller_price");

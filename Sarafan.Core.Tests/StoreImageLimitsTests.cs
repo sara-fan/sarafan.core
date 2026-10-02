@@ -146,10 +146,10 @@ public sealed class StoreImageLimitsTests
     }
 
     [Test]
-    public void UploadPathRejectsOversizedDeclaredImagesWithCanonicalContentError()
+    public async Task UploadPathRejectsOversizedDeclaredImagesWithCanonicalContentError()
     {
         var bytes = Png(Header(100000, 100000), Zlib(new byte[14]));
-        var failure = Assert.ThrowsAsync<ServiceException>(async () => await StoreRules.ReadLogoAsync(StoreServiceTests.Upload(bytes), default));
+        var failure = await Assert.ThrowsAsync<ServiceException>(async () => await StoreRules.ReadLogoAsync(StoreServiceTests.Upload(bytes), default));
         Assert.That(failure!.Code, Is.EqualTo("invalid_store_logo_content"));
     }
 

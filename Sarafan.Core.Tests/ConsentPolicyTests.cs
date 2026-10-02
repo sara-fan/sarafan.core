@@ -42,7 +42,7 @@ public sealed class ConsentPolicyTests
         _withdrawalRequests = new(_db, _clock, NullLogger<ConsentWithdrawalRequestService>.Instance);
         _retention = new(_db, _clock, NullLogger<ConsentRetentionService>.Instance);
         _admin = await _db.BackofficeUsers.MinAsync(x => x.Id);
-        var customer = new Customer { Phone = "+78880000001", Profile = new() };
+        var customer = new Customer { Phone = "+78880000001" };
         _db.Customers.Add(customer);
         await _db.SaveChangesAsync();
         _customer = customer.Id;
@@ -437,7 +437,7 @@ public sealed class ConsentPolicyTests
             await _db.CustomerConsentWithdrawalRequests.ToListAsync());
         await _db.SaveChangesAsync();
         var customers = Enumerable.Range(2, 12)
-            .Select(value => new Customer { Phone = $"+788800000{value:00}", Profile = new() })
+            .Select(value => new Customer { Phone = $"+788800000{value:00}" })
             .ToArray();
         _db.Customers.AddRange(customers);
         await _db.SaveChangesAsync();
@@ -492,7 +492,7 @@ public sealed class ConsentPolicyTests
         var searched = await _withdrawalRequests.ListAsync(1, 100, "customerId", "asc", customerNumber, null, default);
         Assert.That(searched.Search, Is.EqualTo(customerNumber));
         Assert.That(searched.Items, Is.Not.Empty);
-        Assert.That(searched.Items, Has.All.Matches<CustomerConsentWithdrawalRequestDto>(item => ($"№ {item.CustomerId}").Contains(customerNumber)));
+        Assert.That(searched.Items, Has.All.Matches<CustomerConsentWithdrawalRequestDto>(item => item is not null && ($"№ {item.CustomerId}").Contains(customerNumber)));
         var normalized = await _withdrawalRequests.ListAsync(1, 100, "customerId", "asc", $" {customerNumber} ", null, default);
         Assert.That(normalized.Search, Is.EqualTo(customerNumber));
         var beyondLastPage = await _withdrawalRequests.ListAsync(int.MaxValue, 100, "processed", "asc", null, null, default);
@@ -714,7 +714,7 @@ public sealed class ConsentPolicyTests
         var future = await CreateDocument(LegalDocumentKind.UserAgreement, effectiveDate: ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
         var mine = await _consents.CustomerAsync(_customer, default);
         Assert.That(mine.NextChangeAt, Is.EqualTo(future.EffectiveAt));
-        var error = Assert.ThrowsAsync<ServiceException>(async () => await _consents.WithOrderConsentsAsync(_customer,
+        var error = await Assert.ThrowsAsync<ServiceException>(async () => await _consents.WithOrderConsentsAsync(_customer,
             () => { _clock.Now = future.EffectiveAt; return Task.FromResult(1); }, default));
         Assert.That(error!.Code, Is.EqualTo("consent_version_changed"));
         Assert.That(error.ConsentKind, Is.EqualTo(LegalDocumentKind.UserAgreement));

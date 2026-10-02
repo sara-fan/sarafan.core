@@ -55,9 +55,9 @@ public sealed partial class OrderPricingTests
 
     [TestCase(0, "invalid_order_quantity", "quantity")]
     [TestCase(5, "invalid_order_quantity", "quantity")]
-    public void AnonymousForecastRejectsInvalidQuantity(int quantity, string code, string field)
+    public async Task AnonymousForecastRejectsInvalidQuantity(int quantity, string code, string field)
     {
-        var error = Assert.ThrowsAsync<ServiceException>(() =>
+        var error = await Assert.ThrowsAsync<ServiceException>(() =>
             service.ForecastAsync(new(new(50, Currency.Usd), quantity), default));
         Assert.That(error!.Code, Is.EqualTo(code));
         Assert.That(error.Errors, Does.ContainKey(field));
@@ -66,9 +66,9 @@ public sealed partial class OrderPricingTests
     [TestCase(0)]
     [TestCase(1.001)]
     [TestCase(100000000)]
-    public void AnonymousForecastRejectsInvalidPrice(decimal amount)
+    public async Task AnonymousForecastRejectsInvalidPrice(decimal amount)
     {
-        var error = Assert.ThrowsAsync<ServiceException>(() =>
+        var error = await Assert.ThrowsAsync<ServiceException>(() =>
             service.ForecastAsync(new(new(amount, Currency.Usd), 1), default));
         Assert.That(error!.Code, Is.EqualTo("invalid_order_seller_price"));
         Assert.That(error.Errors, Does.ContainKey("sellerPrice"));
@@ -274,6 +274,8 @@ public sealed partial class OrderPricingTests
     private static readonly string[] Admin = [BackofficeRoles.Administrator];
     private static readonly string[] Shift = [BackofficeRoles.ShiftManager];
     private AppDbContext db = null!;
+    private Microsoft.EntityFrameworkCore.Storage.InMemoryDatabaseRoot reviewDatabaseRoot = null!;
+    private string reviewDatabaseName = null!;
     private Order order = null!;
     private int actorId;
     private OrderService service = null!;
@@ -281,7 +283,9 @@ public sealed partial class OrderPricingTests
     [SetUp]
     public async Task Setup()
     {
-        db = new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        reviewDatabaseRoot = new();
+        reviewDatabaseName = Guid.NewGuid().ToString();
+        db = new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(reviewDatabaseName, reviewDatabaseRoot).Options);
         var customer = new Customer { Phone = "+79990001234", CreatedAt = Now, UpdatedAt = Now };
         customer.AllocateOrderNumber("12345678");
         var actor = new BackofficeUser { Email = "pricing@test.invalid", NormalizedEmail = "pricing@test.invalid", FirstName = "Иван", LastName = "Иванов", PasswordHash = "unused", CreatedAt = Now, UpdatedAt = Now };
@@ -296,7 +300,7 @@ public sealed partial class OrderPricingTests
             Tariff(ServiceKind.InternationalDelivery, PriceMethod.Fixed, Currency.Usd, amount: 1.23m),
             Tariff(ServiceKind.ServiceCommission, PriceMethod.Percent, Currency.Usd, percentage: 10, minimum: 12));
         await db.SaveChangesAsync();
-        service = new(db, null!, null!, null!, null!, null!, new Clock(), NullLogger<OrderService>.Instance);
+        service = new(db, null!, null!, null!, null!, new OrderLimitService(db, new Clock(), NullLogger<OrderLimitService>.Instance), new Clock(), NullLogger<OrderService>.Instance);
     }
 
     [TearDown] public void TearDown() => db.Dispose();
@@ -352,14 +356,14 @@ public sealed partial class OrderPricingTests
         Assert.That(saved.Calculation.Components.Where(item => item.Service != missingService)
             .All(item => item.State == PriceComponentState.Calculated), Is.True);
         var included = missingService.IsIncludedInTotal();
-        Assert.That(saved.CanConfirm, Is.EqualTo(!included && missingService != ServiceKind.CustomsPayments));
+        Assert.That(saved.CanConfirm, Is.EqualTo(!included));
         var snapshotCount = await db.OrderPricingSnapshots.CountAsync();
-        if (included || missingService == ServiceKind.CustomsPayments)
+        if (included)
         {
             if (included) Assert.That(saved.Calculation.TotalRub, Is.Null);
-            var error = Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync(
+            var error = await Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync(
                 "12345678-1", new(saved.UpdatedAt), actorId, Shift, default));
-            Assert.That(error!.Code, Is.EqualTo(included ? "order_pricing_unavailable" : "order_customs_unresolved"));
+            Assert.That(error!.Code, Is.EqualTo("order_pricing_unavailable"));
             Assert.That(await db.OrderPricingSnapshots.CountAsync(), Is.EqualTo(snapshotCount));
             Assert.That(order.Status, Is.EqualTo(OrderStatus.UnderReview));
             return;
@@ -564,15 +568,15 @@ public sealed partial class OrderPricingTests
         Assert.That(confirmed.ValidUntil, Is.EqualTo(Now.AddHours(24)));
         Assert.That((await db.OrderPricingSnapshots.OrderByDescending(item => item.Id).FirstAsync()).ActorName, Is.EqualTo("Иванов Иван"));
         Assert.That(order.Status, Is.EqualTo(OrderStatus.QuoteReady));
-        var ex = Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(confirmed.UpdatedAt, OrderPricingInputs.Empty), actorId, Admin, default));
+        var ex = await Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(confirmed.UpdatedAt, OrderPricingInputs.Empty), actorId, Admin, default));
         Assert.That(ex!.Code, Is.EqualTo("order_not_editable"));
     }
 
     [Test]
     public async Task VersionAndRoleGuardsAreIndependentFromCatalogue()
     {
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(Now.AddSeconds(-1), OrderPricingInputs.Empty), actorId, Shift, default))!.Code, Is.EqualTo("order_update_conflict"));
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, OrderPricingInputs.Empty), actorId, [BackofficeRoles.Operator], default))!.Code, Is.EqualTo("access_denied"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(Now.AddSeconds(-1), OrderPricingInputs.Empty), actorId, Shift, default)))!.Code, Is.EqualTo("order_update_conflict"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, OrderPricingInputs.Empty), actorId, [BackofficeRoles.Operator], default)))!.Code, Is.EqualTo("access_denied"));
         Assert.That((await service.GetPricingAsync("12345678-1", [BackofficeRoles.Operator], default)).CanEdit, Is.False);
         Assert.That(BackofficeAuthorization.IsAllowed(Shift, BackofficeAction.ManageServiceCatalogue), Is.False);
     }
@@ -605,7 +609,7 @@ public sealed partial class OrderPricingTests
         foreach (var roles in new[] { Admin, Shift })
         {
             var changed = OrderPricingInputs.Empty with { SelectedServices = existingSelection ? [] : [ServiceKind.WarehousePhoto] };
-            var error = Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1",
+            var error = await Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1",
                 new(originalVersion, changed), actorId, roles, default));
             Assert.That(error!.Code, Is.EqualTo("invalid_order_pricing"));
             Assert.That(order.UpdatedAt, Is.EqualTo(originalVersion));

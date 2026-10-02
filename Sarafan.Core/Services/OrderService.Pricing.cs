@@ -75,14 +75,7 @@ public sealed partial class OrderService
             calculation = ReadCalculation(latest);
             if (!CanConfirmCalculation(calculation))
             {
-                if (calculation.TotalRub is null) throw new ServiceException(409, "order_pricing_unavailable");
-                var manual = (await OrderPriceCalculator.TariffsAsync(database, now, token))
-                    .Any(tariff => tariff.Service == ServiceKind.CustomsPayments && tariff.PriceMethod == PriceMethod.Manual);
-                throw new ServiceException(409, "order_customs_unresolved")
-                {
-                    Errors = manual ? new Dictionary<string, string[]>
-                    { ["manualAmounts"] = ["Укажите таможенные платежи; 0 означает, что платежи не ожидаются."] } : null
-                };
+                throw new ServiceException(409, "order_pricing_unavailable");
             }
         }
         else
@@ -157,7 +150,7 @@ public sealed partial class OrderService
     }
 
     private static bool CanConfirmCalculation(OrderPriceCalculationDto calculation)
-        => calculation.TotalRub is not null && ExcludedRub(calculation, ServiceKind.CustomsPayments) is not null;
+        => calculation.TotalRub is not null;
 
     private static OrderPriceCalculationDto ReadCalculation(OrderPricingSnapshot snapshot)
         => JsonSerializer.Deserialize<OrderPriceCalculationDto>(snapshot.Payload, PricingJson)

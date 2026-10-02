@@ -133,7 +133,6 @@ public sealed class AuthenticationService(
         if (receipt.TargetCustomerId is { } targetCustomerId)
             await ConsentTransaction.LockCustomer(database, targetCustomerId, cancellationToken);
         var customer = await database.Customers
-            .Include(item => item.Profile)
             .SingleOrDefaultAsync(item => item.Phone == phone, cancellationToken);
         var resolution = await ResolveCoreAsync(phone, cancellationToken);
 
@@ -149,8 +148,7 @@ public sealed class AuthenticationService(
             {
                 Phone = phone,
                 CreatedAt = now,
-                UpdatedAt = now,
-                Profile = new CustomerProfile()
+                UpdatedAt = now
             };
             database.Customers.Add(customer);
             created = true;
@@ -158,7 +156,7 @@ public sealed class AuthenticationService(
         }
         else if (customer.State == CustomerState.Disabled)
         {
-            customer.State = CustomerProfileState.Evaluate(customer.Profile);
+            customer.State = CustomerProfileState.Evaluate(customer);
             customer.TokenVersion++;
             customer.UpdatedAt = now;
             await RevokeAllSessionsAsync(customer.Id, now, cancellationToken);
@@ -174,6 +172,9 @@ public sealed class AuthenticationService(
 
         await database.SaveChangesAsync(cancellationToken);
         await consents.ValidateAuthenticationAtCommitAsync(receiptToken, cancellationToken);
+        var atCommit = await ResolveCoreAsync(phone, cancellationToken);
+        if (atCommit.NextStep != AuthenticationFlowStep.Code || atCommit.TargetCustomerId != customer.Id)
+            throw RequirementsChanged(atCommit);
         await transaction.CommitAsync(cancellationToken);
 
         var hasPhoto = !created && await database.CustomerPhotos.AsNoTracking()
@@ -189,7 +190,9 @@ public sealed class AuthenticationService(
                 || customer is null
                 || customer.State == CustomerState.Disabled
                 || receipt.TargetCustomerId != customer.Id
-                || receipt.TargetCustomerId != resolution.TargetCustomerId)
+                || receipt.TargetCustomerId != resolution.TargetCustomerId
+                || resolution.RequiredDocumentKinds.Contains(LegalDocumentKind.UserAgreement) && !receipt.TermsAccepted
+                || resolution.RequiredDocumentKinds.Contains(LegalDocumentKind.PersonalDataConsent) && !receipt.PersonalDataDocumentId.HasValue)
                 throw RequirementsChanged(resolution);
             return;
         }
@@ -219,7 +222,7 @@ public sealed class AuthenticationService(
         await ConsentTransaction.LockCustomer(database, customerId.Value, cancellationToken);
         var now = timeProvider.GetUtcNow();
 
-        var current = await database.RefreshSessions.Include(item => item.Customer).ThenInclude(item => item.Profile)
+        var current = await database.RefreshSessions.Include(item => item.Customer)
             .SingleOrDefaultAsync(item => item.TokenHash == tokenHash, cancellationToken);
         if (current is null) throw InvalidRefreshToken();
 
@@ -287,7 +290,7 @@ public sealed class AuthenticationService(
         var resolution = await ResolveCoreAsync(phone, cancellationToken);
         if (resolution.NextStep != AuthenticationFlowStep.Code) throw RequirementsChanged(resolution);
 
-        var customer = await database.Customers.Include(item => item.Profile)
+        var customer = await database.Customers
             .SingleOrDefaultAsync(item => item.Phone == phone, cancellationToken);
         if (customer is null
             || customer.State == CustomerState.Disabled
@@ -317,9 +320,15 @@ public sealed class AuthenticationService(
             && await consents.HasCurrentGrantAsync(customer.Id, LegalDocumentKind.UserAgreement, cancellationToken);
 
         if (customer is not null && customer.State != CustomerState.Disabled)
-            return hasCurrentAgreement
+        {
+            var missing = new List<LegalDocumentKind>();
+            if (!hasCurrentAgreement) missing.Add(LegalDocumentKind.UserAgreement);
+            if (!await consents.HasCurrentGrantAsync(customer.Id, LegalDocumentKind.PersonalDataConsent, cancellationToken))
+                missing.Add(LegalDocumentKind.PersonalDataConsent);
+            return missing.Count == 0
                 ? new(AuthenticationFlowStep.Code, [], customer.Id)
-                : new(AuthenticationFlowStep.Agreement, [LegalDocumentKind.UserAgreement], customer.Id);
+                : new(AuthenticationFlowStep.Agreement, missing.ToArray(), customer.Id);
+        }
 
         var required = hasCurrentAgreement
             ? new[] { LegalDocumentKind.PersonalDataConsent }

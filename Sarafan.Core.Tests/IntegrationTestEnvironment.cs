@@ -102,6 +102,7 @@ public sealed class IntegrationTestEnvironment
             DisableJob(builder, nameof(ScheduledJobsOptions.ExchangeRates));
             DisableJob(builder, nameof(ScheduledJobsOptions.ConsentRetention));
             DisableJob(builder, nameof(ScheduledJobsOptions.IanaTldUpdate));
+            DisableJob(builder, nameof(ScheduledJobsOptions.QuoteExpiry));
             builder.UseSetting("Authentication:Issuer", "sarafan.core.tests");
             builder.UseSetting("Authentication:Audience", "sarafan.ui.tests");
             builder.UseSetting("Authentication:SigningKey", "sarafan-tests-signing-key-with-at-least-thirty-two-characters");

@@ -24,7 +24,8 @@ public sealed partial class OrderService(
     OrderLimitService limits,
     TimeProvider timeProvider,
     ILogger<OrderService> logger,
-    IAutomaticPriceSource? automaticPrices = null)
+    IAutomaticPriceSource? automaticPrices = null,
+    Microsoft.Extensions.Options.IOptions<OrderReviewOptions>? reviewOptions = null)
 {
     private const int CodeAllocationAttempts = 10;
     private const int MaximumSearchLength = 2048;
@@ -201,12 +202,12 @@ public sealed partial class OrderService(
                         Kind = OrderProductAuditKind.Created,
                         OccurredAt = order.CreatedAt,
                         After = JsonSerializer.Serialize(product),
-                        UsdRateId = pair.Usd.Id,
-                        EurRateId = pair.Eur.Id
+                        UsdRateId = pair?.Usd.Id,
+                        EurRateId = pair?.Eur.Id
                     };
                     database.Set<OrderProductAuditEvent>().Add(productAudit);
-                    var profile = await database.CustomerProfiles.AsNoTracking()
-                        .SingleOrDefaultAsync(item => item.CustomerId == customerId, cancellationToken);
+                    var profile = await database.Customers.AsNoTracking()
+                        .SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
                     var customerName = string.Join(" ", new[] { profile?.LastName, profile?.FirstName, profile?.Patronymic }
                         .Where(part => !string.IsNullOrWhiteSpace(part)));
                     AddHistory(order, order.CreatedAt, OrderHistoryKind.Created,
@@ -241,6 +242,7 @@ public sealed partial class OrderService(
         string? createdTo,
         CancellationToken cancellationToken)
     {
+        await ExpireQuotesCoreAsync(null, cancellationToken);
         var normalizedSearch = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         var sortByKey = sortBy?.Trim().ToLowerInvariant() switch
         {
@@ -393,6 +395,7 @@ public sealed partial class OrderService(
         string orderNumber,
         CancellationToken cancellationToken)
     {
+        await ExpireQuotesCoreAsync(customerId, cancellationToken);
         var (code, sequence) = ParsePublicOrderNumber(orderNumber);
         var order = await database.Orders
             .AsNoTracking()
@@ -413,14 +416,18 @@ public sealed partial class OrderService(
                 .OrderByDescending(item => item.Id).Select(item => (DateTimeOffset?)item.At)
                 .FirstOrDefaultAsync(cancellationToken)
             : null;
+        var result = await ReviewResultAsync(order.Id, cancellationToken);
         return ToDto(order, order.Customer.OrderCode!,
-            await CustomerPricingAsync(order.Id, timeProvider.GetUtcNow(), cancellationToken), cancelledAt);
+            await CustomerPricingAsync(order.Id, timeProvider.GetUtcNow(), cancellationToken, order.CheckoutData is not null), cancelledAt)
+            with
+        { ReviewReason = result.Reason, ReviewCompletedAt = result.At };
     }
 
     private async Task<IReadOnlyList<CustomerOrderListItemDto>> ListCoreAsync(
         int customerId,
         CancellationToken cancellationToken)
     {
+        await ExpireQuotesCoreAsync(customerId, cancellationToken);
         var rows = await database.Orders
             .AsNoTracking()
             .Where(item => item.CustomerId == customerId && item.Customer.OrderCode != null)
@@ -438,13 +445,14 @@ public sealed partial class OrderService(
                 item.SellerPrice,
                 item.SellerPriceCurrency,
                 item.Quantity,
-                item.CreatedAt))
+                item.CreatedAt,
+                item.CheckoutData != null))
             .ToArrayAsync(cancellationToken);
 
         var snapshots = await LatestCustomerPricingAsync(rows.Select(row => row.Id).ToArray(), cancellationToken);
         var now = timeProvider.GetUtcNow();
         return rows.Select(row => ToCustomerDto(row,
-            CustomerPricing(snapshots.GetValueOrDefault(row.Id), now))).ToArray();
+            CustomerPricing(snapshots.GetValueOrDefault(row.Id), now, row.HasCheckout))).ToArray();
     }
 
     private static int NormalizeQuantity(int? quantity)
@@ -490,7 +498,7 @@ public sealed partial class OrderService(
         return string.IsNullOrEmpty(normalized) ? null : normalized;
     }
 
-    private static OrderDto ToDto(Order order, string customerOrderCode, CustomerPricingDto pricing,
+    private OrderDto ToDto(Order order, string customerOrderCode, CustomerPricingDto pricing,
         DateTimeOffset? cancelledAt = null) => new(
         $"{customerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
@@ -522,8 +530,13 @@ public sealed partial class OrderService(
             CanCancel = order.Status.CanCustomerCancel(),
             CancelledAt = cancelledAt,
             ShowReviewFields = order.Status == OrderStatus.UnderReview,
+            EstimatedDelivery = DeliveryEstimate(order.Status),
+            Checkout = ReadCheckout(order),
             Pricing = pricing
         };
+
+    private static OrderCheckoutDto? ReadCheckout(Order order)
+        => order.CheckoutData is null ? null : JsonSerializer.Deserialize<OrderCheckoutDto>(order.CheckoutData, PricingJson);
 
     private static BackofficeOrderListItemDto ToBackofficeDto(BackofficeOrderProjection order) => new(
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
@@ -538,7 +551,7 @@ public sealed partial class OrderService(
         order.CreatedAt,
         order.UpdatedAt);
 
-    private static CustomerOrderListItemDto ToCustomerDto(CustomerOrderProjection order, CustomerPricingDto pricing) => new(
+    private CustomerOrderListItemDto ToCustomerDto(CustomerOrderProjection order, CustomerPricingDto pricing) => new(
         $"{order.CustomerOrderCode}-{order.CustomerOrderNumber}",
         order.Status,
         ProductSourceUrl.NormalizeStored(order.SourceUrl),
@@ -550,7 +563,7 @@ public sealed partial class OrderService(
             : null,
         order.Quantity,
         order.CreatedAt)
-    { Pricing = pricing };
+    { Pricing = pricing, EstimatedDelivery = DeliveryEstimate(order.Status) };
 
     private sealed record Allocation(Order Order, string CustomerOrderCode);
 
@@ -566,7 +579,8 @@ public sealed partial class OrderService(
         decimal? SellerPrice,
         Currency? SellerPriceCurrency,
         int Quantity,
-        DateTimeOffset CreatedAt);
+        DateTimeOffset CreatedAt,
+        bool HasCheckout);
 
     private sealed record BackofficeOrderProjection(
         string CustomerOrderCode,

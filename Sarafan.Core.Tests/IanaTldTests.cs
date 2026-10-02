@@ -91,12 +91,12 @@ public sealed class IanaTldTests
 
         using var failureClient = new HttpClient(new Handler((_, _) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway))));
-        Assert.ThrowsAsync<HttpRequestException>(() =>
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
             new IanaTldClient(failureClient, NullLogger<IanaTldClient>.Instance).GetAsync(default));
 
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
-        Assert.CatchAsync<OperationCanceledException>(() => client.GetAsync(cancellation.Token));
+        await Assert.CatchAsync<OperationCanceledException>(() => client.GetAsync(cancellation.Token));
     }
 
     [Test]
@@ -144,12 +144,12 @@ public sealed class IanaTldTests
         var changed = Download("2026091400", 'f');
         var conflict = new IanaTldCatalogService(database, new QueueClient(changed),
             new FixedTime(RetrievedAt), NullLogger<IanaTldCatalogService>.Instance);
-        Assert.ThrowsAsync<InvalidDataException>(() => conflict.SynchronizeAsync(default));
+        await Assert.ThrowsAsync<InvalidDataException>(() => conflict.SynchronizeAsync(default));
 
         var failure = new HttpRequestException("private response");
         var failed = new IanaTldCatalogService(database, new FailedClient(failure),
             new FixedTime(RetrievedAt), NullLogger<IanaTldCatalogService>.Instance);
-        Assert.That(Assert.ThrowsAsync<HttpRequestException>(() => failed.SynchronizeAsync(default)), Is.SameAs(failure));
+        Assert.That((await Assert.ThrowsAsync<HttpRequestException>(() => failed.SynchronizeAsync(default))), Is.SameAs(failure));
         Assert.That((await database.IanaTldCatalog.AsNoTracking().SingleAsync()).ContentSha256,
             Is.EqualTo(new string('0', 64)));
     }
@@ -161,7 +161,7 @@ public sealed class IanaTldTests
         await database.Database.EnsureCreatedAsync();
         var service = new IanaTldCatalogService(database, new QueueClient(Download("2026091400", 'a')),
             new FixedTime(RetrievedAt), NullLogger<IanaTldCatalogService>.Instance);
-        var exception = Assert.ThrowsAsync<ServiceException>(() => service.GetRequiredAsync(default));
+        var exception = await Assert.ThrowsAsync<ServiceException>(() => service.GetRequiredAsync(default));
         using (Assert.EnterMultipleScope())
         {
             Assert.That(exception!.StatusCode, Is.EqualTo(503));

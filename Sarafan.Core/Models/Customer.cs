@@ -15,7 +15,18 @@ public sealed class Customer
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
-    public CustomerProfile Profile { get; set; } = null!;
+    public string? LastName { get; set; }
+    public string? FirstName { get; set; }
+    public string? Patronymic { get; set; }
+    public string? Email { get; set; }
+    public string? PassportSeries { get; set; }
+    public string? PassportNumber { get; set; }
+    public DateOnly? PassportIssueDate { get; set; }
+    public string? PassportIssuedBy { get; set; }
+    public string? Inn { get; set; }
+    public string? PostalCode { get; set; }
+    public string? City { get; set; }
+    public string? Address { get; set; }
     public CustomerPhoto? Photo { get; set; }
     public ICollection<ConsentEvent> ConsentEvents { get; set; } = [];
     public ICollection<RefreshSession> RefreshSessions { get; set; } = [];

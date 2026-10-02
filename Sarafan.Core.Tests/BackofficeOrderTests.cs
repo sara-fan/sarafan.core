@@ -104,7 +104,7 @@ public sealed class BackofficeOrderTests
             Assert.That(body!.Items, Has.Length.EqualTo(5));
             Assert.That(body.Pagination.CurrentPage, Is.EqualTo(2));
             Assert.That(body.Pagination.PageSize, Is.EqualTo(5));
-            Assert.That(body.Pagination.TotalCount, Is.EqualTo(14));
+            Assert.That(body.Pagination.TotalCount, Is.EqualTo(15));
             Assert.That(body.Pagination.TotalPages, Is.EqualTo(3));
             Assert.That(body.Pagination.HasNextPage, Is.True);
             Assert.That(body.Pagination.HasPreviousPage, Is.True);
@@ -148,7 +148,7 @@ public sealed class BackofficeOrderTests
             (Query:"status=300", Count:1, Allowed:new[] { 300 }),
             (Query:"statusGroup=work", Count:10, Allowed:new[] { 0, 100, 200, 300, 310, 320, 330, 340, 360, 380 }),
             (Query:"statusGroup=in_progress", Count:7, Allowed:new[] { 300, 310, 320, 330, 340, 360, 380 }),
-            (Query:"createdFrom=2026-09-13&createdTo=2026-09-13", Count:12, Allowed:Enum.GetValues<OrderStatus>().Select(item => (int)item).ToArray()),
+            (Query:"createdFrom=2026-09-13&createdTo=2026-09-13", Count:13, Allowed:Enum.GetValues<OrderStatus>().Select(item => (int)item).ToArray()),
             (Query:"statusGroup=in_progress&createdFrom=2026-09-13&createdTo=2026-09-13&search=product", Count:7, Allowed:new[] { 300, 310, 320, 330, 340, 360, 380 })
         };
         foreach (var item in cases)
@@ -178,7 +178,7 @@ public sealed class BackofficeOrderTests
                     $"/api/v1/backoffice/orders?pageSize=100&sortBy={sort}&sortOrder={order}");
                 var body = await response.Content.ReadFromJsonAsync<BackofficeOrderPageDto>();
                 Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), $"{sort} {order}");
-                Assert.That(body!.Items, Has.Length.EqualTo(14), $"{sort} {order}");
+                Assert.That(body!.Items, Has.Length.EqualTo(15), $"{sort} {order}");
                 Assert.That(body.Sorting.SortBy, Is.EqualTo(sort));
                 Assert.That(body.Sorting.SortOrder, Is.EqualTo(order));
                 if (sort == "productName") Assert.That(body.Items[^1].ProductName, Is.Null, order);
@@ -247,7 +247,7 @@ public sealed class BackofficeOrderTests
         var outOfRangeBody = await outOfRange.Content.ReadFromJsonAsync<BackofficeOrderPageDto>();
         Assert.That(outOfRangeBody!.Items, Is.Empty);
         Assert.That(outOfRangeBody.Pagination.CurrentPage, Is.EqualTo(99));
-        Assert.That(outOfRangeBody.Pagination.TotalCount, Is.EqualTo(14));
+        Assert.That(outOfRangeBody.Pagination.TotalCount, Is.EqualTo(15));
     }
 
     [Test]
@@ -331,7 +331,7 @@ public sealed class BackofficeOrderTests
         await using var scope = services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = DateTimeOffset.UtcNow;
-        var customer = new Customer { Phone = "+79990009999", Profile = new(), CreatedAt = now, UpdatedAt = now };
+        var customer = new Customer { Phone = "+79990009999", CreatedAt = now, UpdatedAt = now };
         database.Customers.Add(customer);
         await database.SaveChangesAsync();
         return scope.ServiceProvider.GetRequiredService<JwtTokenService>().CreateAccessToken(customer).Token;
@@ -343,8 +343,8 @@ public sealed class BackofficeOrderTests
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var customers = new[]
         {
-            new Customer { Phone = "+79990000001", Profile = new() },
-            new Customer { Phone = "+79990000002", Profile = new() }
+            new Customer { Phone = "+79990000001" },
+            new Customer { Phone = "+79990000002" }
         };
         database.Customers.AddRange(customers);
         await database.SaveChangesAsync();

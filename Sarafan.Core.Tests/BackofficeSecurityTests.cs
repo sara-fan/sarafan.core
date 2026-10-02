@@ -350,9 +350,9 @@ public sealed class BackofficeSecurityTests
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var bootstrap = scope.ServiceProvider.GetRequiredService<BackofficeBootstrapService>();
 
-        Assert.DoesNotThrowAsync(async () => await bootstrap.ProvisionAsync(default));
-        Assert.DoesNotThrowAsync(async () => await bootstrap.ProvisionAsync(default));
-        Assert.DoesNotThrowAsync(async () => await bootstrap.EnsureReleaseGateAsync(default));
+        await Assert.DoesNotThrowAsync(async () => await bootstrap.ProvisionAsync(default));
+        await Assert.DoesNotThrowAsync(async () => await bootstrap.ProvisionAsync(default));
+        await Assert.DoesNotThrowAsync(async () => await bootstrap.EnsureReleaseGateAsync(default));
 
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var hasher = scope.ServiceProvider.GetRequiredService<IBackofficePasswordHasher>();
@@ -366,7 +366,7 @@ public sealed class BackofficeSecurityTests
             Options.Create(new BackofficeBootstrapOptions()),
             TimeProvider.System,
             NullLogger<BackofficeBootstrapService>.Instance);
-        Assert.DoesNotThrowAsync(async () => await disabled.ProvisionAsync(default));
+        await Assert.DoesNotThrowAsync(async () => await disabled.ProvisionAsync(default));
 
         var conflicting = new BackofficeBootstrapService(
             database,
@@ -381,7 +381,7 @@ public sealed class BackofficeSecurityTests
             }),
             TimeProvider.System,
             NullLogger<BackofficeBootstrapService>.Instance);
-        Assert.ThrowsAsync<InvalidOperationException>(async () => await conflicting.ProvisionAsync(default));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await conflicting.ProvisionAsync(default));
 
         var realPaymentIntegration = new BackofficeBootstrapService(
             database,
@@ -389,7 +389,7 @@ public sealed class BackofficeSecurityTests
             Options.Create(new BackofficeBootstrapOptions { RealPaymentIntegrationEnabled = true }),
             TimeProvider.System,
             NullLogger<BackofficeBootstrapService>.Instance);
-        Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await realPaymentIntegration.EnsureReleaseGateAsync(default));
 
         var restrictedUsers = new BackofficeUserService(
@@ -398,7 +398,7 @@ public sealed class BackofficeSecurityTests
             Options.Create(new BackofficeBootstrapOptions { RealPaymentIntegrationEnabled = true }),
             TimeProvider.System,
             NullLogger<BackofficeUserService>.Instance);
-        var restricted = Assert.ThrowsAsync<ServiceException>(() => restrictedUsers.UpdateAsync(
+        var restricted = await Assert.ThrowsAsync<ServiceException>(() => restrictedUsers.UpdateAsync(
             initial.Id,
             new BackofficeUserUpdateRequest
             {
@@ -453,7 +453,7 @@ public sealed class BackofficeSecurityTests
         await database.SaveChangesAsync();
 
         var service = scope.ServiceProvider.GetRequiredService<BackofficeAuthenticationService>();
-        var exception = Assert.ThrowsAsync<ServiceException>(() => service.LoginAsync(
+        var exception = await Assert.ThrowsAsync<ServiceException>(() => service.LoginAsync(
             new BackofficeLoginRequest { Email = email, Password = "Login_pass_13" },
             "test-origin",
             null,
@@ -492,7 +492,7 @@ public sealed class BackofficeSecurityTests
         await database.SaveChangesAsync();
 
         var service = scope.ServiceProvider.GetRequiredService<BackofficeAuthenticationService>();
-        var exception = Assert.ThrowsAsync<ServiceException>(() => service.LoginAsync(
+        var exception = await Assert.ThrowsAsync<ServiceException>(() => service.LoginAsync(
             new BackofficeLoginRequest { Email = email, Password = password },
             "test-origin",
             null,

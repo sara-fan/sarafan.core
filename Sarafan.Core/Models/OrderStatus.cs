@@ -20,7 +20,8 @@ public enum OrderStatus
 
     Received = 400,                                     // aka Completed
 
-    Cancelled = 500
+    Cancelled = 500,
+    CannotDeliver = 600
 }
 
 public static class OrderStatusExtensions
@@ -42,6 +43,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringInRussia => "Доставляем по России",
         OrderStatus.Received => "Получен",
         OrderStatus.Cancelled => "Отменён",
+        OrderStatus.CannotDeliver => "Не можем привезти",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
@@ -59,6 +61,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringInRussia => "delivering_in_russia",
         OrderStatus.Received => "received",
         OrderStatus.Cancelled => "cancelled",
+        OrderStatus.CannotDeliver => "cannot_deliver",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
@@ -75,7 +78,8 @@ public static class OrderStatusExtensions
         OrderStatus.QuoteReady or
         OrderStatus.QuoteExpired or
         OrderStatus.Received or
-        OrderStatus.Cancelled => (int)status,
+        OrderStatus.Cancelled or
+        OrderStatus.CannotDeliver => (int)status,
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
@@ -92,7 +96,8 @@ public static class OrderStatusExtensions
         OrderStatus.UnderReview or
         OrderStatus.QuoteReady or
         OrderStatus.QuoteExpired or
-        OrderStatus.Cancelled => status.GetDisplayName(),
+        OrderStatus.Cancelled or
+        OrderStatus.CannotDeliver => status.GetDisplayName(),
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
@@ -109,13 +114,14 @@ public static class OrderStatusExtensions
         OrderStatus.UnderReview or
         OrderStatus.QuoteReady or
         OrderStatus.QuoteExpired or
-        OrderStatus.Cancelled => status.GetRouteAlias(),
+        OrderStatus.Cancelled or
+        OrderStatus.CannotDeliver => status.GetRouteAlias(),
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
     public static bool IsTerminal(this OrderStatus status) => status switch
     {
-        OrderStatus.Received or OrderStatus.Cancelled => true,
+        OrderStatus.Received or OrderStatus.Cancelled or OrderStatus.CannotDeliver => true,
         OrderStatus.UnderReview or
         OrderStatus.QuoteReady or
         OrderStatus.QuoteExpired or
@@ -140,7 +146,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringToRussia => 78,
         OrderStatus.DeliveredToRussianWarehouse => 86,
         OrderStatus.DeliveringInRussia => 94,
-        OrderStatus.Received or OrderStatus.Cancelled => 100,
+        OrderStatus.Received or OrderStatus.Cancelled or OrderStatus.CannotDeliver => 100,
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 }

@@ -101,7 +101,7 @@ public sealed class StoreServiceTests
 
     private static void Rejected(Func<Task> action, string code, int status = 400)
     {
-        var exception = Assert.ThrowsAsync<ServiceException>(action)!;
+        var exception = Assert.ThrowsAsync<ServiceException>(action).GetAwaiter().GetResult()!;
         Assert.That(exception.Code, Is.EqualTo(code));
         Assert.That(exception.StatusCode, Is.EqualTo(status));
     }

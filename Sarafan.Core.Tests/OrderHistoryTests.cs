@@ -25,7 +25,7 @@ public sealed partial class OrderPricingTests
         db.Add(Tariff(ServiceKind.CustomsPayments, PriceMethod.Fixed, Currency.Rub, amount: 0));
         await db.SaveChangesAsync();
         var ops = await service.HistoryOperationsAsync("12345678-1", Admin, default);
-        Assert.That(ops.Kinds, Has.Length.EqualTo(6));
+        Assert.That(ops.Kinds, Has.Length.EqualTo(9));
         var saved = await service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, Sarafan.Core.RestModels.OrderPricingInputs.Empty), actorId, Shift, default);
         await service.ConfirmPricingAsync("12345678-1", new(saved.UpdatedAt), actorId, Shift, default);
         var page = await History();
@@ -43,7 +43,7 @@ public sealed partial class OrderPricingTests
         Assert.That(initial.ProductAfter, Is.Null);
         var entity = await db.Set<OrderHistoryEvent>().FirstAsync();
         entity.ActorName = "altered";
-        Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
     }
 
     [Test]
@@ -100,8 +100,8 @@ public sealed partial class OrderPricingTests
     [TestCase(1, 25, "timestamp", "desc", null, null, "2026-09-25", "2026-09-24")]
     [TestCase(1, 25, "timestamp", "desc", null, null, "0001-01-01", null)]
     [TestCase(1, 25, "timestamp", "desc", null, null, null, "9999-12-31")]
-    public void HistoryRejectsInvalidQueries(int page, int size, string sort, string direction, int? area, int? actor, string? from, string? to)
-        => Assert.That(Assert.ThrowsAsync<ServiceException>(() => History(page, size, sort, direction, area: area, actor: actor, from: from, to: to))!.Code, Is.EqualTo("invalid_order_list_filter"));
+    public async Task HistoryRejectsInvalidQueries(int page, int size, string sort, string direction, int? area, int? actor, string? from, string? to)
+        => Assert.That((await Assert.ThrowsAsync<ServiceException>(() => History(page, size, sort, direction, area: area, actor: actor, from: from, to: to)))!.Code, Is.EqualTo("invalid_order_list_filter"));
 
     [TestCase("bad")]
     [TestCase("0-01")]
@@ -110,16 +110,16 @@ public sealed partial class OrderPricingTests
     [TestCase("x-1")]
     [TestCase("0-x")]
     [TestCase("0-999")]
-    public void HistoryRejectsMissingAndInvalidKeys(string key)
-        => Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.HistoryDetailAsync("12345678-1", key, Admin, default))!.Code, Is.EqualTo("resource_not_found"));
+    public async Task HistoryRejectsMissingAndInvalidKeys(string key)
+        => Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.HistoryDetailAsync("12345678-1", key, Admin, default)))!.Code, Is.EqualTo("resource_not_found"));
 
     [Test]
-    public void HistoryAuthorizationAndQueryTranslationRequireNoDatabaseConnection()
+    public async Task HistoryAuthorizationAndQueryTranslationRequireNoDatabaseConnection()
     {
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.HistoryOperationsAsync("12345678-1", [], default))!.Code, Is.EqualTo("access_denied"));
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.HistoryAsync("12345678-1", [], 1, 25, "timestamp", "desc", null, null, null, null, null, default))!.Code, Is.EqualTo("access_denied"));
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.HistoryDetailAsync("12345678-1", "3-1", [], default))!.Code, Is.EqualTo("access_denied"));
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => History(search: new string('x', 201)))!.Code, Is.EqualTo("invalid_order_list_filter"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.HistoryOperationsAsync("12345678-1", [], default)))!.Code, Is.EqualTo("access_denied"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.HistoryAsync("12345678-1", [], 1, 25, "timestamp", "desc", null, null, null, null, null, default)))!.Code, Is.EqualTo("access_denied"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.HistoryDetailAsync("12345678-1", "3-1", [], default)))!.Code, Is.EqualTo("access_denied"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => History(search: new string('x', 201))))!.Code, Is.EqualTo("invalid_order_list_filter"));
         using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql("Host=127.0.0.1;Port=1;Database=metadata;Username=unused;Password=unused").Options);
         var disconnected = new OrderService(context, null!, null!, null!, null!, null!, new Clock(), NullLogger<OrderService>.Instance);
         var sql = disconnected.HistoryQuery(1).OrderBy(row => row.At).Take(25).ToQueryString();

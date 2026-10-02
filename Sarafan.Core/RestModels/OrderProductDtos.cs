@@ -18,6 +18,7 @@ public sealed class OrderProductRequest
 
 public sealed class UpdateOrderProductRequest
 {
+    public bool AcceptValueLimitExceeded { get; set; }
     public DateTimeOffset? ExpectedUpdatedAt { get; set; }
     public string? StoreName { get; set; }
     public string? ProductName { get; set; }
@@ -48,13 +49,16 @@ public sealed record OrderProductLimitsDto(int MinimumQuantity, int MaximumQuant
 public sealed record BackofficeOrderCustomerDto(string? LastName, string? FirstName,
     string? Patronymic, string Phone, string? Email, string? PassportSeries,
     string? PassportNumber, DateOnly? PassportIssueDate, string? PassportIssuedBy,
-    string? Inn, string? PostalCode, string? City, string? Address);
+    string? Inn);
 
 public sealed record BackofficeOrderDetailsDto(string OrderNumber, OrderStatus Status,
     string SourceUrl, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     OrderProductDto Product, BackofficeOrderCustomerDto Customer,
     OrderLimitCheckDto LimitCheck, bool CanEditProduct)
 {
+    public OrderCheckoutDeliveryDto? Delivery { get; init; }
+    public string? ReviewReason { get; init; }
+    public DateTimeOffset? ReviewCompletedAt { get; init; }
     public string? ImageUrl { get; init; }
     public OrderDimensionsDto? Dimensions { get; init; }
     public IReadOnlyDictionary<string, string>? Characteristics { get; init; }
