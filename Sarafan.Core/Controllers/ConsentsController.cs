@@ -16,6 +16,8 @@ public sealed class ConsentsController(ConsentService consents, ConsentWithdrawa
     public async Task<ActionResult> Mine(CancellationToken token) => Ok(await consents.CustomerAsync(CurrentCustomerId(), token));
     [Authorize, HttpPost("me/personal-data")]
     public async Task<ActionResult> PersonalData(ConsentDecisionRequest request, CancellationToken token) => Ok(await consents.DecidePersonalDataAsync(CurrentCustomerId(), request, token));
+    [Authorize, HttpPost("me/user-agreement")]
+    public async Task<ActionResult> Agreement(ConsentDecisionRequest request, CancellationToken token) => Ok(await consents.AcceptAgreementAsync(CurrentCustomerId(), request, token));
     [Authorize, HttpPost("me/withdrawal-request")]
     public async Task<ActionResult> RequestWithdrawal(CancellationToken token)
         => Ok(await withdrawalRequests.CreateAsync(CurrentCustomerId(), token));

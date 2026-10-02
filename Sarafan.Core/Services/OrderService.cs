@@ -149,7 +149,7 @@ public sealed partial class OrderService(
             var assignedNewCode = false;
             try
             {
-                var allocation = await consents.WithPersonalDataAsync(customerId, async () =>
+                var allocation = await consents.WithOrderConsentsAsync(customerId, async () =>
                 {
                     var customer = await operations
                         .FindCustomerForUpdateAsync(database, customerId, cancellationToken)
