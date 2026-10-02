@@ -563,7 +563,7 @@ public sealed class ConsentPolicyTests
     }
 
     [Test]
-    public async Task Retention_DisposesExpiredDecisionsWithoutRevivingPermission()
+    public async Task Retention_PreservesExpiredDecisionsWithoutRevivingPermission()
     {
         var pd = await CreateCurrent();
         await _consents.DecidePersonalDataAsync(_customer, Decision(pd), default); await _db.SaveChangesAsync();
@@ -573,17 +573,17 @@ public sealed class ConsentPolicyTests
         older.RetainUntil = _clock.Now.AddDays(1); await _db.SaveChangesAsync();
         await _retention.SweepAsync(default); await _db.SaveChangesAsync();
         Assert.That(await _db.ConsentEvents.CountAsync(x => x.CustomerId == _customer), Is.EqualTo(2));
-        Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses.Single().Status, Is.EqualTo("refused"));
+        Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("refused"));
         _clock.Now = _clock.Now.AddDays(2);
         var next = await _retention.SweepAsync(default); await _db.SaveChangesAsync();
-        Assert.That(next.Events, Is.EqualTo(2));
-        Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses.Single().Status, Is.EqualTo("missing"));
+        Assert.That(next.Events, Is.Zero);
+        Assert.That((await _consents.CustomerAsync(_customer, default)).Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("refused"));
         var customer = await _db.Customers.SingleAsync(x => x.Id == _customer); customer.State = CustomerState.Disabled; await _db.SaveChangesAsync();
         Reject(() => _consents.WithPersonalDataAsync(_customer, () => Task.FromResult(true), default), "customer_not_found");
     }
 
     [Test]
-    public async Task Retention_ContinuesPastAFullPageOfExpiredEvidence()
+    public async Task Retention_PreservesMoreThanAFullPageOfExpiredEvidence()
     {
         var agreement = await CreateCurrent(LegalDocumentKind.UserAgreement);
         for (var i = 0; i < 1000; i++)
@@ -615,9 +615,9 @@ public sealed class ConsentPolicyTests
         };
         _db.ConsentEvents.Add(expired); await _db.SaveChangesAsync();
         var result = await _retention.SweepAsync(default);
-        Assert.That(result.Events, Is.EqualTo(1001));
-        Assert.That(await _db.ConsentEvents.AnyAsync(x => x.Id == expired.Id), Is.False);
-        Assert.That(await _db.ConsentEvents.CountAsync(x => x.CustomerId == _customer), Is.Zero);
+        Assert.That(result.Events, Is.Zero);
+        Assert.That(await _db.ConsentEvents.AnyAsync(x => x.Id == expired.Id), Is.True);
+        Assert.That(await _db.ConsentEvents.CountAsync(x => x.CustomerId == _customer), Is.EqualTo(1000));
     }
 
     [TestCase(0, false)]
@@ -674,5 +674,101 @@ public sealed class ConsentPolicyTests
         Assert.That(ConsentCalendar.Midnight(new(2026, 9, 7)), Is.EqualTo(DateTimeOffset.Parse("2026-09-06T21:00:00Z")));
         Assert.That(ConsentCalendar.LocalDate(DateTimeOffset.Parse("2026-09-06T22:00:00Z")), Is.EqualTo(new DateOnly(2026, 9, 7)));
     }
+    [Test]
+    public async Task AgreementAcceptanceIsExplicitIdempotentAndBoundToCurrentVersion()
+    {
+        var agreement = (await _documents.CurrentAsync(LegalDocumentKind.UserAgreement, default)).Document!;
+        var request = Decision(agreement);
+        var mine = await _consents.AcceptAgreementAsync(_customer, request, default);
+        Assert.That(mine.Statuses.Single(x => x.Kind == LegalDocumentKind.UserAgreement).Status, Is.EqualTo("current"));
+        await _consents.AcceptAgreementAsync(_customer, request, default);
+        Assert.That(await _db.ConsentEvents.CountAsync(x => x.CustomerId == _customer), Is.EqualTo(1));
+        var conflict = Decision(agreement); conflict.IdempotencyKey = request.IdempotencyKey; conflict.ContentHash = new string('0', 64);
+        Reject(() => _consents.AcceptAgreementAsync(_customer, conflict, default), "consent_conflict");
+        foreach (var decision in new[] { "", "refuse", "withdraw" })
+            Reject(() => _consents.AcceptAgreementAsync(_customer, Decision(agreement, decision), default), "invalid_consent_decision");
+        var future = await CreateDocument(LegalDocumentKind.UserAgreement, effectiveDate: ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
+        Reject(() => _consents.AcceptAgreementAsync(_customer, Decision(future), default), "consent_version_changed");
+        _clock.Now = future.EffectiveAt;
+        mine = await _consents.AcceptAgreementAsync(_customer, request, default);
+        Assert.That(mine.Statuses.Single(x => x.Kind == LegalDocumentKind.UserAgreement).Status, Is.EqualTo("renewal-required"));
+        Reject(() => _consents.AcceptAgreementAsync(_customer, Decision(agreement), default), "consent_version_changed");
+        Reject(() => _consents.AcceptAgreementAsync(int.MaxValue, Decision(future), default), "customer_not_found");
+        await _consents.AcceptAgreementAsync(_customer, Decision(future), default);
+        Assert.That(await _db.ConsentEvents.CountAsync(x => x.CustomerId == _customer), Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task OrderGuardRequiresBothCurrentDocumentsAndRechecksAgreementActivation()
+    {
+        var pd = await CreateCurrent();
+        var agreement = (await _documents.CurrentAsync(LegalDocumentKind.UserAgreement, default)).Document!;
+        var ran = false;
+        Task<int> Action() { ran = true; return Task.FromResult(42); }
+        Reject(() => _consents.WithOrderConsentsAsync(_customer, Action, default), "personal_data_consent_required");
+        await _consents.DecidePersonalDataAsync(_customer, Decision(pd), default);
+        Reject(() => _consents.WithOrderConsentsAsync(_customer, Action, default), "user_agreement_required");
+        Assert.That(ran, Is.False);
+        await _consents.AcceptAgreementAsync(_customer, Decision(agreement), default);
+        Assert.That(await _consents.WithOrderConsentsAsync(_customer, Action, default), Is.EqualTo(42));
+        var future = await CreateDocument(LegalDocumentKind.UserAgreement, effectiveDate: ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
+        var mine = await _consents.CustomerAsync(_customer, default);
+        Assert.That(mine.NextChangeAt, Is.EqualTo(future.EffectiveAt));
+        var error = Assert.ThrowsAsync<ServiceException>(async () => await _consents.WithOrderConsentsAsync(_customer,
+            () => { _clock.Now = future.EffectiveAt; return Task.FromResult(1); }, default));
+        Assert.That(error!.Code, Is.EqualTo("consent_version_changed"));
+        Assert.That(error.ConsentKind, Is.EqualTo(LegalDocumentKind.UserAgreement));
+        Reject(() => _consents.WithOrderConsentsAsync(_customer, Action, default), "user_agreement_required");
+        // Agreement renewal is irrelevant to a profile write.
+        Assert.That(await _consents.WithPersonalDataAsync(_customer, Action, default), Is.EqualTo(42));
+    }
+
+    [Test]
+    public async Task CurrentStatusesAreIndependentOfBoundedHistory()
+    {
+        var pd = await CreateCurrent();
+        var agreement = (await _documents.CurrentAsync(LegalDocumentKind.UserAgreement, default)).Document!;
+        await _consents.DecidePersonalDataAsync(_customer, Decision(pd), default);
+        for (var index = 0; index < 201; index++)
+            await _consents.AcceptAgreementAsync(_customer, Decision(agreement), default);
+        var mine = await _consents.CustomerAsync(_customer, default);
+        Assert.That(mine.History, Has.Length.EqualTo(200));
+        Assert.That(mine.History.Select(x => x.Kind), Has.All.EqualTo(LegalDocumentKind.UserAgreement));
+        Assert.That(mine.Statuses.Select(x => x.Status), Has.All.EqualTo("current"));
+        Assert.That(mine.Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).AcceptedVersion, Is.EqualTo(pd.Id));
+    }
+
+    [TestCase("grant")]
+    [TestCase("refuse")]
+    [TestCase("withdraw")]
+    public async Task AllSupportedDecisionsSurviveExpiryForDisabledCustomers(string decision)
+    {
+        var customer = await _db.Customers.SingleAsync(x => x.Id == _customer);
+        customer.State = CustomerState.Disabled;
+        foreach (var kind in new[] { LegalDocumentKind.PersonalDataConsent, LegalDocumentKind.UserAgreement })
+        {
+            var document = (await _documents.CurrentAsync(kind, default)).Document!;
+            _db.ConsentEvents.Add(new()
+            {
+                CustomerId = _customer,
+                SubjectKey = $"customer:{_customer}",
+                Kind = kind,
+                DocumentId = document.Id,
+                ContentHash = document.ContentHash,
+                Decision = decision,
+                Source = "test",
+                IdempotencyKey = Guid.NewGuid(),
+                At = _clock.Now.AddYears(-10),
+                RetainUntil = _clock.Now.AddYears(-1)
+            });
+        }
+        await _db.SaveChangesAsync();
+        var swept = await _retention.SweepAsync(default);
+        Assert.That(swept.Events, Is.Zero);
+        Assert.That(await _db.ConsentEvents.CountAsync(x => x.CustomerId == _customer), Is.EqualTo(2));
+        foreach (var documentId in await _db.ConsentEvents.Where(x => x.CustomerId == _customer).Select(x => x.DocumentId).ToArrayAsync())
+            Assert.That((await _documents.ReadAsync(documentId, false, default)).Id, Is.EqualTo(documentId));
+    }
+
     private sealed class TestClock : TimeProvider { public DateTimeOffset Now { get; set; } public override DateTimeOffset GetUtcNow() => Now; }
 }

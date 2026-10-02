@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -67,6 +68,45 @@ public sealed class ConsentReviewTests
         await database.Database.EnsureDeletedAsync();
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task AgreementActivationAfterPersistenceIsRejected(bool accepting)
+    {
+        await using var setup = Database();
+        var service = Consents(setup);
+        if (!accepting)
+        {
+            await service.DecidePersonalDataAsync(_customer, Decision(LegalDocumentKind.PersonalDataConsent), default);
+            await service.AcceptAgreementAsync(_customer, Decision(LegalDocumentKind.UserAgreement), default);
+        }
+        var next = await CreateDocument(setup, LegalDocumentKind.UserAgreement, ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
+        await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_databaseName, _databaseRoot)
+            .AddInterceptors(new AdvanceClockAfterSave(() => _clock.Now = next.EffectiveAt))
+            .Options);
+        var error = Assert.ThrowsAsync<ServiceException>(async () =>
+        {
+            if (accepting) await Consents(database).AcceptAgreementAsync(_customer, Decision(LegalDocumentKind.UserAgreement), default);
+            else await Consents(database).WithOrderConsentsAsync(_customer, async () =>
+            {
+                var customer = await database.Customers.Include(x => x.Profile).SingleAsync(x => x.Id == _customer);
+                customer.Profile!.FirstName = "Test";
+                return true;
+            }, default);
+        });
+        Assert.That(error!.Code, Is.EqualTo("consent_version_changed"));
+        Assert.That(error.ConsentKind, Is.EqualTo(LegalDocumentKind.UserAgreement));
+    }
+
+    private sealed class AdvanceClockAfterSave(Action advance) : SaveChangesInterceptor
+    {
+        public override ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
+        {
+            advance();
+            return ValueTask.FromResult(result);
+        }
+    }
+
     private AppDbContext Database()
         => new(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(_databaseName, _databaseRoot)
@@ -107,7 +147,7 @@ public sealed class ConsentReviewTests
         await service.DecidePersonalDataAsync(_customer, request, default);
         _clock.Now = ConsentCalendar.Midnight(ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
         await CreateDocument(database, kind);
-        var status = (await service.DecidePersonalDataAsync(_customer, request, default)).Statuses.Single().Status;
+        var status = (await service.DecidePersonalDataAsync(_customer, request, default)).Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status;
         Assert.That(status, Is.EqualTo("renewal-required"));
         Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(1));
     }
@@ -417,39 +457,27 @@ public sealed class ConsentReviewTests
     }
 
 
-    [TestCase(LegalDocumentKind.PersonalDataConsent)]
-    public async Task DisposedEvidenceCannotBeReplayedAndMarkersExpireWithTheirDocument(LegalDocumentKind kind)
+    [Test]
+    public async Task RetainedEvidenceRetriesNeverOverrideLaterDecisions()
     {
         await using var database = Database();
-        var request = Decision(kind);
+        var request = Decision(LegalDocumentKind.PersonalDataConsent);
         var service = Consents(database);
-        {
-            await service.DecidePersonalDataAsync(_customer, request, default);
-            var refusal = Decision(kind); refusal.Decision = "refuse";
-            await service.DecidePersonalDataAsync(_customer, refusal, default);
-        }
+        await service.DecidePersonalDataAsync(_customer, request, default);
+        var refusal = Decision(LegalDocumentKind.PersonalDataConsent); refusal.Decision = "refuse";
+        await service.DecidePersonalDataAsync(_customer, refusal, default);
         _clock.Now = _clock.Now.AddDays(1100);
         var retention = new ConsentRetentionService(database, _clock, NullLogger<ConsentRetentionService>.Instance);
         await retention.SweepAsync(default);
-        Assert.That(await database.ConsentEvents.CountAsync(), Is.Zero);
-        Assert.That(await database.ConsentReplayTombstones.CountAsync(), Is.EqualTo(2));
-        var replay = Assert.ThrowsAsync<ServiceException>(async () =>
-        {
-            await service.DecidePersonalDataAsync(_customer, request, default);
-        });
-        Assert.That(replay!.Code, Is.EqualTo("consent_conflict"));
-        await service.DecidePersonalDataAsync(_customer, Decision(kind), default);
-        Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(1));
-        _clock.Now = ConsentCalendar.Midnight(ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
-        await CreateDocument(database, kind);
-        await retention.SweepAsync(default);
+        var retry = await service.DecidePersonalDataAsync(_customer, request, default);
+        Assert.That(retry.Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("refused"));
+        Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(2));
         Assert.That(await database.ConsentReplayTombstones.CountAsync(), Is.Zero);
-        var stale = Assert.ThrowsAsync<ServiceException>(async () =>
-        {
-            await service.DecidePersonalDataAsync(_customer, request, default);
-        });
-        Assert.That(stale!.Code, Is.EqualTo("consent_version_changed"));
-        Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(1));
+        _clock.Now = ConsentCalendar.Midnight(ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
+        await CreateDocument(database, LegalDocumentKind.PersonalDataConsent);
+        retry = await service.DecidePersonalDataAsync(_customer, request, default);
+        Assert.That(retry.Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("renewal-required"));
+        Assert.That(await database.ConsentEvents.CountAsync(), Is.EqualTo(2));
     }
 
     [Test]

@@ -51,6 +51,25 @@ public sealed class ConsentApiTests
         IdempotencyKey = Guid.NewGuid()
     };
 
+    [Test]
+    public async Task AuthenticatedAgreementRenewalRequiresNoCodeAndReturnsBothStatuses()
+    {
+        var agreement = await Current(LegalDocumentKind.UserAgreement);
+        using var anonymous = await _client.PostAsJsonAsync("/api/v1/consents/me/user-agreement", Decision(agreement));
+        Assert.That(anonymous.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        Authorize(_customerToken);
+        var request = Decision(agreement);
+        using var first = await _client.PostAsJsonAsync("/api/v1/consents/me/user-agreement", request);
+        var mine = await Read<CustomerConsentsDto>(first);
+        Assert.That(mine.Statuses.Select(x => x.Kind), Is.EqualTo(new[] { LegalDocumentKind.PersonalDataConsent, LegalDocumentKind.UserAgreement }));
+        Assert.That(mine.Statuses.Single(x => x.Kind == LegalDocumentKind.UserAgreement).Status, Is.EqualTo("current"));
+        Assert.That(mine.Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("missing"));
+        using var retry = await _client.PostAsJsonAsync("/api/v1/consents/me/user-agreement", request);
+        Assert.That((await Read<CustomerConsentsDto>(retry)).History, Has.Length.EqualTo(1));
+        using var rejected = await _client.PostAsJsonAsync("/api/v1/consents/me/user-agreement", Decision(agreement, "refuse"));
+        Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+    }
+
     [TestCase("GET", "/api/v1/consents/cookies")]
     [TestCase("POST", "/api/v1/consents/cookies")]
     [TestCase("POST", "/api/v1/consents/me/browser")]
@@ -304,7 +323,7 @@ public sealed class ConsentApiTests
         using var gatedPhoto = await _client.PutAsync("/api/v1/customers/me/photo", malformedPhoto);
         Assert.That(gatedPhoto.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
         using var mineBefore = await _client.GetAsync("/api/v1/consents/me");
-        Assert.That((await Read<CustomerConsentsDto>(mineBefore)).Statuses.Single().Status, Is.EqualTo("missing"));
+        Assert.That((await Read<CustomerConsentsDto>(mineBefore)).Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("missing"));
         var stale = Decision(pd); stale.DocumentId = Guid.NewGuid();
         using var conflict = await _client.PostAsJsonAsync("/api/v1/consents/me/personal-data", stale);
         Assert.That(conflict.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
@@ -313,7 +332,7 @@ public sealed class ConsentApiTests
         Assert.That(error.GetProperty("consentKind").GetInt32(), Is.EqualTo((int)LegalDocumentKind.PersonalDataConsent));
         using var grant = await _client.PostAsJsonAsync("/api/v1/consents/me/personal-data", Decision(pd));
         var mine = await Read<CustomerConsentsDto>(grant);
-        Assert.That(mine.Statuses.Single().Status, Is.EqualTo("current"));
+        Assert.That(mine.Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("current"));
         using var write = await _client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = "Тест" });
         Assert.That(write.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         using var requestResponse = await _client.PostAsync("/api/v1/consents/me/withdrawal-request", null);
@@ -324,7 +343,7 @@ public sealed class ConsentApiTests
         using var own = await _client.GetAsync("/api/v1/consents/me");
         var ownConsents = await Read<CustomerConsentsDto>(own);
         Assert.That(ownConsents.WithdrawalRequest, Is.EqualTo(request));
-        Assert.That(ownConsents.Statuses.Single().Status, Is.EqualTo("current"));
+        Assert.That(ownConsents.Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("current"));
         Assert.That(ownConsents.History, Has.None.Property(nameof(ConsentHistoryDto.Decision)).EqualTo("withdraw"));
         Authorize(null);
         using var anonymousQueue = await _client.GetAsync("/api/v1/backoffice/consents/withdrawal-requests");
@@ -394,7 +413,7 @@ public sealed class ConsentApiTests
         Assert.That(second.Processed, Is.False);
         using var mineResponse = await _client.GetAsync("/api/v1/consents/me");
         var consents = await Read<CustomerConsentsDto>(mineResponse);
-        Assert.That(consents.Statuses.Single().Status, Is.EqualTo("current"));
+        Assert.That(consents.Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("current"));
         Assert.That(consents.History.Count(x => x.Kind == LegalDocumentKind.PersonalDataConsent && x.Decision == "grant"), Is.EqualTo(1));
         Assert.That(consents.History, Has.None.Property(nameof(ConsentHistoryDto.Decision)).EqualTo("withdraw"));
         Assert.That(consents.WithdrawalRequest, Is.EqualTo(second));

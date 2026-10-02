@@ -52,6 +52,36 @@ public sealed class OrderCreationTests
     }
 
     [Test]
+    public async Task NewOrderRequiresAgreementRenewalWithinTheExistingSession()
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var agreement = await database.LegalDocuments.Where(x => x.Kind == LegalDocumentKind.UserAgreement)
+            .OrderByDescending(x => x.EffectiveAt).FirstAsync();
+        database.ConsentEvents.RemoveRange(await database.ConsentEvents.Where(x =>
+            x.CustomerId == _session.Customer.Id && x.Kind == LegalDocumentKind.UserAgreement).ToArrayAsync());
+        await database.SaveChangesAsync();
+        var key = Guid.NewGuid();
+        using var rejected = await Create(_client, "https://shop.example.com/item", key);
+        Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        Assert.That((await rejected.Content.ReadFromJsonAsync<SarafanProblemDetails>())!.Code, Is.EqualTo("user_agreement_required"));
+        Assert.That(await database.Orders.CountAsync(), Is.Zero);
+        using var renewal = await _client.PostAsJsonAsync("/api/v1/consents/me/user-agreement", new ConsentDecisionRequest
+        {
+            DocumentId = agreement.Id,
+            ContentHash = agreement.ContentHash,
+            Decision = "grant",
+            IdempotencyKey = Guid.NewGuid()
+        });
+        renewal.EnsureSuccessStatusCode();
+        using var created = await Create(_client, "https://shop.example.com/item", key);
+        created.EnsureSuccessStatusCode();
+        using var replay = await Create(_client, "https://shop.example.com/item", key);
+        replay.EnsureSuccessStatusCode();
+        Assert.That(await database.Orders.CountAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
     public async Task CreateReplayDetailAndListConcealCalculatedExtrasWithoutDiscardingEvidence()
     {
         await using var scope = _app.Services.CreateAsyncScope();
