@@ -87,6 +87,9 @@ builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddSingleton<ICustomerOrderCodeGenerator, CustomerOrderCodeGenerator>();
 builder.Services.AddScoped<ICustomerOrderCodeCollisionDetector, CustomerOrderCodeCollisionDetector>();
 builder.Services.AddScoped<OrderService>();
+builder.Services.AddOptions<OrderReviewOptions>().BindConfiguration("OrderReview")
+    .Validate(value => value.DeliveryMinimumDays > 0 && value.DeliveryMaximumDays >= value.DeliveryMinimumDays && value.DeliveryMaximumDays <= 365, "Invalid delivery estimate range.")
+    .ValidateOnStart();
 builder.Services.AddScoped<StoreService>();
 builder.Services.AddScoped<ServiceCatalogueService>();
 builder.Services.AddScoped<OrderLimitService>();

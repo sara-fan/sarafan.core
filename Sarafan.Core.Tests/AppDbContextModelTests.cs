@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 using Sarafan.Core.Data;
+using Sarafan.Core.Models;
 
 // Metadata checks must also run without the database setup in Sarafan.Core.Tests.
 namespace Sarafan.Core.ModelTests;
@@ -62,6 +63,36 @@ public sealed class AppDbContextModelTests
 
         Assert.That(differ.GetDifferences(expected, actual), Is.Empty,
             "Configuration ownership must not depend on discovery order or DbSet registration.");
+    }
+
+    [Test]
+    public void CustomerOwnsAllPersonalDetailsInOneTableWithOnlyTheAccountPhone()
+    {
+        using var context = CreateContext();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var customer = model.FindEntityType(typeof(Customer))!;
+        var table = StoreObjectIdentifier.Table("customers", null);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(customer.GetTableName(), Is.EqualTo("customers"));
+            Assert.That(model.GetEntityTypes().Any(entity => entity.GetTableName() == "customer_profiles"), Is.False);
+            foreach (var (property, column, length) in new[]
+            {
+                ("LastName", "last_name", 100), ("FirstName", "first_name", 100), ("Patronymic", "patronymic", 100),
+                ("Email", "email", 254), ("PassportSeries", "passport_series", 32), ("PassportNumber", "passport_number", 32),
+                ("PassportIssuedBy", "passport_issued_by", 500), ("Inn", "inn", 16), ("PostalCode", "postal_code", 20),
+                ("City", "city", 150), ("Address", "address", 500)
+            })
+            {
+                Assert.That(customer.FindProperty(property)!.GetColumnName(table), Is.EqualTo(column));
+                Assert.That(customer.FindProperty(property)!.GetMaxLength(), Is.EqualTo(length));
+                Assert.That(customer.FindProperty(property)!.IsNullable, Is.True);
+            }
+            Assert.That(customer.FindProperty("PassportIssueDate")!.GetColumnType(), Is.EqualTo("date"));
+            Assert.That(customer.GetProperties().Where(property => property.Name.Contains("Phone")).Select(property => property.Name), Is.EqualTo(new[] { "Phone" }));
+            Assert.That(customer.FindProperty("BirthDate"), Is.Null);
+            Assert.That(customer.FindProperty("PassportDepartmentCode"), Is.Null);
+        }
     }
 
     private sealed class ReverseConfigurationContext(DbContextOptions<ReverseConfigurationContext> options) : DbContext(options)

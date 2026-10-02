@@ -48,6 +48,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
             value => CloneCharacteristics(value)));
         builder.Property(item => item.Quantity).HasColumnName("quantity");
         builder.Property(item => item.Comment).HasColumnName("comment").HasMaxLength(2000);
+        builder.Property(item => item.CheckoutData).HasColumnName("checkout_data").HasColumnType("jsonb");
         builder.Property(item => item.AppliedExchangeRateHistoryId).HasColumnName("applied_exchange_rate_history_id");
         var idempotencyKey = builder.Property(item => item.CreationIdempotencyKey)
             .HasColumnName("creation_idempotency_key");
@@ -89,7 +90,6 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         {
             table.HasCheckConstraint("ck_orders_customer_order_number", "customer_order_number > 0");
             table.HasCheckConstraint("ck_orders_creation_idempotency_key", "creation_idempotency_key <> '00000000-0000-0000-0000-000000000000'::uuid");
-            table.HasCheckConstraint("ck_orders_status", "status IN (0, 100, 200, 300, 310, 320, 330, 340, 360, 380, 400, 500)");
             table.HasCheckConstraint("ck_orders_source_url", "source_url ~* '^https?://' AND char_length(source_url) <= 2048");
             table.HasCheckConstraint("ck_orders_image_url", "image_url IS NULL OR image_url ~* '^https?://' AND char_length(image_url) <= 2048");
             table.HasCheckConstraint("ck_orders_quantity", "quantity > 0");

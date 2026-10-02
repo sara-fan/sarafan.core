@@ -18,6 +18,7 @@ public sealed class OrderProductRequest
 
 public sealed class UpdateOrderProductRequest
 {
+    public bool AcceptValueLimitExceeded { get; set; }
     public DateTimeOffset? ExpectedUpdatedAt { get; set; }
     public string? StoreName { get; set; }
     public string? ProductName { get; set; }
@@ -55,6 +56,8 @@ public sealed record BackofficeOrderDetailsDto(string OrderNumber, OrderStatus S
     OrderProductDto Product, BackofficeOrderCustomerDto Customer,
     OrderLimitCheckDto LimitCheck, bool CanEditProduct)
 {
+    public string? ReviewReason { get; init; }
+    public DateTimeOffset? ReviewCompletedAt { get; init; }
     public string? ImageUrl { get; init; }
     public OrderDimensionsDto? Dimensions { get; init; }
     public IReadOnlyDictionary<string, string>? Characteristics { get; init; }

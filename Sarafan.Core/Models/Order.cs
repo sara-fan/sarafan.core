@@ -57,6 +57,7 @@ public sealed class Order
     public Dictionary<string, string>? Characteristics { get; private set; }
     public int Quantity { get; private set; }
     public string? Comment { get; private set; }
+    public string? CheckoutData { get; private set; }
     public long? AppliedExchangeRateHistoryId { get; private set; }
     internal Guid CreationIdempotencyKey { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
@@ -81,6 +82,29 @@ public sealed class Order
         var timestamp = NormalizeToPostgresTimestamp(now);
         UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
         if (confirmed) Status = OrderStatus.QuoteReady;
+    }
+
+    internal void RejectReview(DateTimeOffset now)
+    {
+        if (Status != OrderStatus.UnderReview) throw new InvalidOperationException("Only an order under review can be rejected.");
+        UpdatePricing(now, false);
+        Status = OrderStatus.CannotDeliver;
+    }
+
+    internal void ExpireQuote(DateTimeOffset now)
+    {
+        if (Status != OrderStatus.QuoteReady) throw new InvalidOperationException("Only a ready quote can expire.");
+        var timestamp = NormalizeToPostgresTimestamp(now);
+        UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
+        Status = OrderStatus.QuoteExpired;
+    }
+
+    internal void SaveCheckout(string data, DateTimeOffset now)
+    {
+        if (Status != OrderStatus.QuoteReady) throw new InvalidOperationException("Only a ready quote can be checked out.");
+        CheckoutData = data;
+        var timestamp = NormalizeToPostgresTimestamp(now);
+        UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
     }
 
     internal OrderStatus CancelByCustomer(DateTimeOffset now)

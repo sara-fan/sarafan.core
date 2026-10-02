@@ -22,8 +22,11 @@ public sealed partial class OrderService
                 BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManualQuotes);
                 var order = await FindPublicOrder(orderNumber, cancellationToken);
                 var details = StaffDetails(order, roles, await limits.GetPairAsync(cancellationToken));
+                var result = await ReviewResultAsync(order.Id, cancellationToken);
                 return details with
                 {
+                    ReviewReason = result.Reason,
+                    ReviewCompletedAt = result.At,
                     SavedLimitSourceEffectiveDate = await SavedLimitSourceEffectiveDate(order.Id, cancellationToken)
                 };
             }, cancellationToken);
@@ -49,7 +52,12 @@ public sealed partial class OrderService
                     Size = request.Size
                 }, request.Quantity ?? 0, request.Comment);
                 OrderProductRules.Validate(product);
-                var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
+                var pair = await limits.GetPairAsync(cancellationToken);
+                if (product.SellerPrice is not null && pair is null)
+                    throw new ServiceException(503, "order_limit_rates_unavailable");
+                if (product.SellerPrice is { } price && !pair!.Allows(price.Amount, product.Quantity)
+                    && !request.AcceptValueLimitExceeded)
+                    throw new ServiceException(400, "order_value_limit_exceeded");
                 var before = CurrentProduct(order);
                 order.CorrectProduct(product.StoreName, product, timeProvider.GetUtcNow());
                 var actor = await database.BackofficeUsers.AsNoTracking().SingleAsync(row => row.Id == actorId, cancellationToken);
@@ -69,8 +77,8 @@ public sealed partial class OrderService
                     OccurredAt = order.UpdatedAt,
                     Before = JsonSerializer.Serialize(before),
                     After = JsonSerializer.Serialize(product),
-                    UsdRateId = pair.Usd.Id,
-                    EurRateId = pair.Eur.Id
+                    UsdRateId = pair?.Usd.Id,
+                    EurRateId = pair?.Eur.Id
                 };
                 database.Set<OrderProductAuditEvent>().Add(productAudit);
                 AddHistory(order, order.UpdatedAt, OrderHistoryKind.ProductChanged,
@@ -87,15 +95,19 @@ public sealed partial class OrderService
                     database.ChangeTracker.Clear();
                     throw new ServiceException(409, "order_update_conflict");
                 }
-                return StaffDetails(order, roles, pair) with { SavedLimitSourceEffectiveDate = pair.Usd.SourceEffectiveDate };
+                return StaffDetails(order, roles, pair) with { SavedLimitSourceEffectiveDate = pair?.Usd.SourceEffectiveDate };
             }, cancellationToken);
 
     private async Task<Order> FindPublicOrder(string number, CancellationToken cancellationToken)
     {
         var (code, sequence) = ParsePublicOrderNumber(number);
-        return await database.Orders.Include(order => order.Customer).ThenInclude(customer => customer.Profile)
-            .SingleOrDefaultAsync(order => order.Customer.OrderCode == code && order.CustomerOrderNumber == sequence, cancellationToken)
+        var id = await database.Orders.AsNoTracking()
+            .Where(order => order.Customer.OrderCode == code && order.CustomerOrderNumber == sequence)
+            .Select(order => (long?)order.Id).SingleOrDefaultAsync(cancellationToken)
             ?? throw new ServiceException(404, "resource_not_found");
+        await ExpireQuotesCoreAsync(null, cancellationToken, id);
+        return await database.Orders.Include(order => order.Customer)
+            .SingleAsync(order => order.Id == id, cancellationToken);
     }
 
     private static (string Code, long Sequence) ParsePublicOrderNumber(string number)
@@ -110,7 +122,7 @@ public sealed partial class OrderService
 
     private static BackofficeOrderDetailsDto StaffDetails(Order order, string[] roles, OrderLimitRatePair? pair)
     {
-        var profile = order.Customer.Profile;
+        var profile = order.Customer;
         return new($"{order.Customer.OrderCode}-{order.CustomerOrderNumber}", order.Status,
             ProductSourceUrl.NormalizeStored(order.SourceUrl), order.CreatedAt, order.UpdatedAt,
             CurrentProduct(order), new(profile?.LastName, profile?.FirstName, profile?.Patronymic,

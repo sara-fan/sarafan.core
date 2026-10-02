@@ -23,6 +23,7 @@ public sealed class ScheduledJobsTests
             AssertSchedule(options.ExchangeRates, "0 10 0 * * ?", true);
             AssertSchedule(options.ConsentRetention, "0 0 1 * * ?", true);
             AssertSchedule(options.IanaTldUpdate, "0 0 3 5 * ?", false);
+            AssertSchedule(options.QuoteExpiry, "0 * * * * ?", false);
         }
     }
 
@@ -64,6 +65,7 @@ public sealed class ScheduledJobsTests
         var scheduler = await provider.GetRequiredService<ISchedulerFactory>().GetScheduler();
         var hostedOptions = provider.GetRequiredService<IOptions<QuartzHostedServiceOptions>>().Value;
 
+        var expiry = await scheduler.GetJobDetail(new JobKey(nameof(ScheduledJobsOptions.QuoteExpiry)));
         var exchange = await scheduler.GetJobDetail(new JobKey(nameof(ScheduledJobsOptions.ExchangeRates)));
         var retention = await scheduler.GetJobDetail(new JobKey(nameof(ScheduledJobsOptions.ConsentRetention)));
         var tld = await scheduler.GetJobDetail(new JobKey(nameof(ScheduledJobsOptions.IanaTldUpdate)));
@@ -72,6 +74,9 @@ public sealed class ScheduledJobsTests
 
         using (Assert.EnterMultipleScope())
         {
+            Assert.That(expiry?.Durable, Is.True);
+            Assert.That(expiry?.ConcurrentExecutionDisallowed, Is.True);
+            Assert.That(((ICronTrigger?)await scheduler.GetTrigger(new TriggerKey("QuoteExpiry.cron")))?.CronExpressionString, Is.EqualTo("0 * * * * ?"));
             Assert.That(exchange?.Durable, Is.True);
             Assert.That(retention?.Durable, Is.True);
             Assert.That(tld?.Durable, Is.True);

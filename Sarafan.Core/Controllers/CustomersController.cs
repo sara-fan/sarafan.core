@@ -41,7 +41,6 @@ public sealed class CustomersController(
         var customerId = CurrentCustomerId();
         var customer = await database.Customers
             .AsNoTracking()
-            .Include(item => item.Profile)
             .SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
         if (customer is null)
         {
@@ -63,7 +62,6 @@ public sealed class CustomersController(
     {
         var customerId = CurrentCustomerId();
         var customer = await database.Customers
-            .Include(item => item.Profile)
             .SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
         if (customer is null)
         {
@@ -72,8 +70,8 @@ public sealed class CustomersController(
 
         return await consents.WithPersonalDataAsync<ActionResult<CustomerDto>>(customerId, async () =>
         {
-            Apply(customer.Profile, request);
-            customer.State = CustomerProfileState.Evaluate(customer.Profile);
+            Apply(customer, request);
+            customer.State = CustomerProfileState.Evaluate(customer);
             customer.UpdatedAt = timeProvider.GetUtcNow();
             await database.SaveChangesAsync(cancellationToken);
             var hasPhoto = await database.CustomerPhotos
@@ -175,7 +173,7 @@ public sealed class CustomersController(
         return NoContent();
     }
 
-    private static void Apply(CustomerProfile profile, CustomerProfileUpdateRequest request)
+    private static void Apply(Customer profile, CustomerProfileUpdateRequest request)
     {
         profile.LastName = Normalize(request.LastName);
         profile.FirstName = Normalize(request.FirstName);

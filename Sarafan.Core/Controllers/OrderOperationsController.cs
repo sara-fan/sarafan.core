@@ -23,6 +23,7 @@ public sealed class OrderOperationsController(
     public async Task<ActionResult<OrderOpsDto>> Operations(CancellationToken cancellationToken)
         => Ok(OrderOperationsCatalog.CreatePublic(await tlds.GetRequiredAsync(cancellationToken)) with
         {
+            CheckoutDeliveries = OrderCheckoutDeliveryDto.DemoOptions,
             ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken)),
             PricingStates =
             [

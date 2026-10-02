@@ -481,7 +481,7 @@ public sealed class OrderCreationTests
         await using var scope = _app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var orders = scope.ServiceProvider.GetRequiredService<OrderService>();
-        var serviceException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
+        var serviceException = await Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
             _session.Customer.Id,
             "https://shop.example.com/product",
             1,
@@ -534,14 +534,14 @@ public sealed class OrderCreationTests
         await using var scope = _app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var orders = scope.ServiceProvider.GetRequiredService<OrderService>();
-        var missingQuantityException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
+        var missingQuantityException = await Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
             _session.Customer.Id,
             "https://shop.example.com/product",
             null,
             null,
             Guid.NewGuid(),
             default));
-        var longCommentException = Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
+        var longCommentException = await Assert.ThrowsAsync<ServiceException>(() => orders.CreateAsync(
             _session.Customer.Id,
             "https://shop.example.com/product",
             1,

@@ -21,6 +21,14 @@ public sealed class CreateOrderRequest
     public string? Comment { get; set; }
 }
 
+public sealed class RejectOrderReviewRequest
+{
+    public DateTimeOffset? ExpectedUpdatedAt { get; set; }
+    public string? Reason { get; set; }
+}
+
+public sealed record OrderDeliveryEstimateDto(int MinimumDays, int MaximumDays);
+
 public sealed class CancelOrderRequest
 {
     public DateTimeOffset? ExpectedUpdatedAt { get; set; }
@@ -72,6 +80,10 @@ public sealed record OrderDto(
     public bool CanCancel { get; init; }
     public DateTimeOffset? CancelledAt { get; init; }
     public bool ShowReviewFields { get; init; }
+    public string? ReviewReason { get; init; }
+    public DateTimeOffset? ReviewCompletedAt { get; init; }
+    public OrderDeliveryEstimateDto? EstimatedDelivery { get; init; }
+    public OrderCheckoutDto? Checkout { get; init; }
     public required CustomerPricingDto Pricing { get; init; }
 }
 
@@ -86,6 +98,7 @@ public sealed record CustomerOrderListItemDto(
     int Quantity,
     DateTimeOffset CreatedAt)
 {
+    public OrderDeliveryEstimateDto? EstimatedDelivery { get; init; }
     public required CustomerPricingDto Pricing { get; init; }
 }
 
@@ -113,6 +126,7 @@ public sealed record OrderOpsDto(
 {
     public OrderProductLimitsDto? ProductLimits { get; init; }
     public IReadOnlyList<EnumOpsItemDto> PricingStates { get; init; } = [];
+    public IReadOnlyList<OrderCheckoutDeliveryDto> CheckoutDeliveries { get; init; } = [];
 }
 
 public sealed record BackofficeOrderStatusFilterGroupDto(
