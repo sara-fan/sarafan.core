@@ -380,7 +380,7 @@ public sealed class AnonymousApiProtectionTests
         var running = middleware.InvokeAsync(context, new SarafanProblemDetailsFactory());
         await entered.Task;
         disconnect.Cancel();
-        Assert.ThrowsAsync<TaskCanceledException>(async () => await running);
+        await Assert.ThrowsAsync<TaskCanceledException>(async () => await running);
         var next = registry.Acquire(AnonymousApiPolicies.Forecast, "unknown");
         Assert.That(next.Concurrency?.IsAcquired, Is.True);
         Release(next);

@@ -27,7 +27,8 @@ public sealed class OrderStatusTests
         new(OrderStatus.DeliveredToRussianWarehouse, 360, "Получен на складе в России", "delivered_to_russian_warehouse", 300, "Выполняется", "in_progress"),
         new(OrderStatus.DeliveringInRussia, 380, "Доставляем по России", "delivering_in_russia", 300, "Выполняется", "in_progress"),
         new(OrderStatus.Received, 400, "Получен", "received", 400, "Завершён", "completed"),
-        new(OrderStatus.Cancelled, 500, "Отменён", "cancelled", 500, "Отменён", "cancelled")
+        new(OrderStatus.Cancelled, 500, "Отменён", "cancelled", 500, "Отменён", "cancelled"),
+        new(OrderStatus.CannotDeliver, 600, "Не можем привезти", "cannot_deliver", 600, "Не можем привезти", "cannot_deliver")
     ];
 
     [Test]
@@ -46,7 +47,7 @@ public sealed class OrderStatusTests
                 Assert.That(expected.Status.GetUpperStatusValue(), Is.EqualTo(expected.UpperStatusValue));
                 Assert.That(expected.Status.GetUpperStatusDisplayName(), Is.EqualTo(expected.UpperStatusName));
                 Assert.That(expected.Status.GetUpperStatusRouteAlias(), Is.EqualTo(expected.UpperStatusRouteAlias));
-                Assert.That(expected.Status.IsTerminal(), Is.EqualTo(expected.Status is OrderStatus.Received or OrderStatus.Cancelled));
+                Assert.That(expected.Status.IsTerminal(), Is.EqualTo(expected.Status is OrderStatus.Received or OrderStatus.Cancelled or OrderStatus.CannotDeliver));
                 Assert.That(expected.Status.GetProgressPercent(), Is.InRange(0, 100));
             }
         }

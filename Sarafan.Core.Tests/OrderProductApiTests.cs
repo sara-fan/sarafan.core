@@ -20,7 +20,7 @@ using Sarafan.Core.Services;
 namespace Sarafan.Core.Tests;
 
 [NonParallelizable]
-public sealed class OrderProductApiTests
+public sealed partial class OrderProductApiTests
 {
     private HttpClient _customer = null!;
     private HttpClient _staff = null!;
@@ -100,7 +100,7 @@ public sealed class OrderProductApiTests
     {
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var profile = await db.CustomerProfiles.SingleAsync();
+        var profile = await db.Customers.SingleAsync();
         profile.LastName = "Исторический"; profile.FirstName = "Покупатель";
         await db.SaveChangesAsync();
         var key = Guid.NewGuid();
@@ -109,7 +109,7 @@ public sealed class OrderProductApiTests
         var original = (await created.Content.ReadFromJsonAsync<OrderDto>())!;
         var path = $"/api/v1/backoffice/orders/{original.OrderNumber}/history";
         var ops = await _staff.GetFromJsonAsync<OrderHistoryOpsDto>(path + "/ops");
-        Assert.That(ops!.Areas, Has.Length.EqualTo(4));
+        Assert.That(ops!.Areas, Has.Length.EqualTo(5));
         var page = await _staff.GetFromJsonAsync<OrderHistoryPageDto>(path);
         Assert.That(page!.Items, Has.Length.EqualTo(1));
         Assert.That(page.Items[0].Kind, Is.EqualTo(OrderHistoryKind.Created));
@@ -187,7 +187,7 @@ public sealed class OrderProductApiTests
         await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var profile = await db.CustomerProfiles.SingleAsync();
+            var profile = await db.Customers.SingleAsync();
             profile.LastName = "Иванов"; profile.FirstName = "Иван"; profile.Patronymic = "Иванович";
             profile.Email = "test@example.com"; profile.PassportSeries = "1234"; profile.PassportNumber = "123456";
             profile.PassportIssueDate = new(2020, 1, 1); profile.PassportIssuedBy = "Тестовый орган";
@@ -292,6 +292,25 @@ public sealed class OrderProductApiTests
     }
 
     [Test]
+    public async Task StaffRejectionIsExposedToCustomerAndCannotBeRepeated()
+    {
+        using var response = await Create(Guid.NewGuid());
+        var order = (await response.Content.ReadFromJsonAsync<OrderDto>())!;
+        using var rejected = await _staff.PostAsJsonAsync($"/api/v1/backoffice/orders/{order.OrderNumber}/review/reject",
+            new RejectOrderReviewRequest { ExpectedUpdatedAt = order.UpdatedAt, Reason = "  Не доставляется  " });
+        rejected.EnsureSuccessStatusCode();
+        var staff = (await rejected.Content.ReadFromJsonAsync<BackofficeOrderDetailsDto>())!;
+        var customer = (await _customer.GetFromJsonAsync<OrderDto>($"/api/v1/orders/{order.OrderNumber}"))!;
+        Assert.That(staff.Status, Is.EqualTo(OrderStatus.CannotDeliver));
+        Assert.That(customer.ReviewReason, Is.EqualTo("Не доставляется"));
+        Assert.That(customer.ReviewCompletedAt, Is.EqualTo(staff.ReviewCompletedAt));
+        Assert.That(customer.CanCancel, Is.False);
+        using var repeated = await _staff.PostAsJsonAsync($"/api/v1/backoffice/orders/{order.OrderNumber}/review/reject",
+            new RejectOrderReviewRequest { ExpectedUpdatedAt = staff.UpdatedAt, Reason = "Повтор" });
+        await Problem(repeated, HttpStatusCode.Conflict, "order_not_editable");
+    }
+
+    [Test]
     public async Task ReserveLimitAppliesToCreationCorrectionAndMetadata()
     {
         using var response = await Create(Guid.NewGuid(), price: 281.25m, quantity: 4);
@@ -315,13 +334,40 @@ public sealed class OrderProductApiTests
             "Максимальная стоимость заказа при экспресс-перевозке 900€ с учётом резерва 10% на изменение курса"
         }));
         Assert.That((await Details(order.OrderNumber)).Product, Is.EqualTo(details.Product));
+        var acknowledged = Update(details, "Выше лимита", 281.26m, 4);
+        acknowledged.AcceptValueLimitExceeded = true;
+        using var accepted = await Put(order.OrderNumber, acknowledged);
+        accepted.EnsureSuccessStatusCode();
+        Assert.That((await Details(order.OrderNumber)).Product.SellerPrice!.Amount, Is.EqualTo(281.26m));
+        using var creationStillRejects = await Create(Guid.NewGuid(), price: 281.26m, quantity: 4);
+        await Problem(creationStillRejects, HttpStatusCode.BadRequest, "order_value_limit_exceeded");
+    }
+
+    [Test]
+    public async Task UnrecognizedOrderCanStartReviewWithoutNamePriceOrRates()
+    {
+        await using (var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.ExchangeRateHistory.RemoveRange(database.ExchangeRateHistory);
+            await database.SaveChangesAsync();
+        }
+        using var created = await Create(Guid.NewGuid(), includeProduct: false);
+        created.EnsureSuccessStatusCode();
+        var result = (await created.Content.ReadFromJsonAsync<OrderDto>())!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ProductName, Is.Null);
+            Assert.That(result.SellerPrice, Is.Null);
+            Assert.That(result.Status, Is.EqualTo(OrderStatus.UnderReview));
+            Assert.That(result.Pricing.TotalRub, Is.Null);
+            Assert.That(result.CanCancel, Is.True);
+        });
     }
 
     [Test]
     public async Task QuantityMoneyAndUnavailableRatesRejectBeforeAllocatingIdentity()
     {
-        using var missing = await Create(Guid.NewGuid(), includeProduct: false);
-        await Problem(missing, HttpStatusCode.BadRequest, "invalid_order_product_name");
         using var quantity = await Create(Guid.NewGuid(), quantity: 5);
         await Problem(quantity, HttpStatusCode.BadRequest, "order_quantity_limit_exceeded");
         using var excess = await Create(Guid.NewGuid(), price: 281.26m, quantity: 4);
@@ -438,8 +484,8 @@ public sealed class OrderProductApiTests
         }
         await using var finalScope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var service = finalScope.ServiceProvider.GetRequiredService<OrderService>();
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.GetForBackofficeAsync(order.OrderNumber, ["unknown"], default))!.Code, Is.EqualTo("access_denied"));
-        Assert.That(Assert.ThrowsAsync<ServiceException>(() => service.UpdateProductAsync(order.OrderNumber, new(), 1, [], default))!.Code, Is.EqualTo("access_denied"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.GetForBackofficeAsync(order.OrderNumber, ["unknown"], default)))!.Code, Is.EqualTo("access_denied"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.UpdateProductAsync(order.OrderNumber, new(), 1, [], default)))!.Code, Is.EqualTo("access_denied"));
     }
 
     [Test]
@@ -474,7 +520,7 @@ public sealed class OrderProductApiTests
         await using (var scope = app.Services.CreateAsyncScope())
         {
             var service = scope.ServiceProvider.GetRequiredService<OrderService>();
-            var failure = Assert.ThrowsAsync<ServiceException>(() => service.UpdateProductAsync(order.OrderNumber,
+            var failure = await Assert.ThrowsAsync<ServiceException>(() => service.UpdateProductAsync(order.OrderNumber,
                 Update(details, "Конкурирующая правка", 10, 1), 1, [BackofficeRoles.Administrator], default));
             Assert.That(failure!.Code, Is.EqualTo("order_update_conflict"));
         }

@@ -40,7 +40,7 @@ public sealed class ConsentReviewTests
         _clock = new() { Now = DateTimeOffset.UtcNow };
         await using var database = Database();
         await database.Database.EnsureCreatedAsync();
-        database.Customers.Add(new Customer { Phone = Phone, Profile = new() });
+        database.Customers.Add(new Customer { Phone = Phone });
         var actor = new BackofficeUser
         {
             Email = "consent-review@sarafan.test",
@@ -84,18 +84,45 @@ public sealed class ConsentReviewTests
             .UseInMemoryDatabase(_databaseName, _databaseRoot)
             .AddInterceptors(new AdvanceClockAfterSave(() => _clock.Now = next.EffectiveAt))
             .Options);
-        var error = Assert.ThrowsAsync<ServiceException>(async () =>
+        var error = await Assert.ThrowsAsync<ServiceException>(async () =>
         {
             if (accepting) await Consents(database).AcceptAgreementAsync(_customer, Decision(LegalDocumentKind.UserAgreement), default);
             else await Consents(database).WithOrderConsentsAsync(_customer, async () =>
             {
-                var customer = await database.Customers.Include(x => x.Profile).SingleAsync(x => x.Id == _customer);
-                customer.Profile!.FirstName = "Test";
+                var customer = await database.Customers.SingleAsync(x => x.Id == _customer);
+                customer.FirstName = "Test";
                 return true;
             }, default);
         });
         Assert.That(error!.Code, Is.EqualTo("consent_version_changed"));
         Assert.That(error.ConsentKind, Is.EqualTo(LegalDocumentKind.UserAgreement));
+    }
+
+    [Test]
+    public async Task PersonalDataActivationDuringAgreementLoginIsRejected()
+    {
+        _clock.Now = ConsentCalendar.Midnight(ConsentCalendar.LocalDate(_clock.Now).AddDays(1)).AddMinutes(-1);
+        await using var setup = Database();
+        await Consents(setup).DecidePersonalDataAsync(_customer, Decision(LegalDocumentKind.PersonalDataConsent), default);
+        var next = await CreateDocument(setup, LegalDocumentKind.PersonalDataConsent, ConsentCalendar.LocalDate(_clock.Now).AddDays(1));
+        var receipt = await Authentication(setup).RequestCodeAsync(new RequestCodeRequest
+        {
+            Phone = Phone,
+            TermsAccepted = true,
+            TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id
+        }, "consent-boundary-test", default);
+        await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_databaseName, _databaseRoot)
+            .AddInterceptors(new AdvanceClockAfterSave(() => _clock.Now = next.EffectiveAt))
+            .Options);
+        var error = await Assert.ThrowsAsync<ServiceException>(() => Authentication(database).VerifyCodeAsync(new VerifyCodeRequest
+        {
+            Phone = Phone,
+            Code = Phone[^4..],
+            OnboardingToken = receipt
+        }, "consent-boundary-test", null, default));
+        Assert.That(error!.Code, Is.EqualTo("authentication_requirements_changed"));
+        Assert.That(error.RequiredDocumentKinds, Is.EqualTo(new[] { LegalDocumentKind.PersonalDataConsent }));
     }
 
     private sealed class AdvanceClockAfterSave(Action advance) : SaveChangesInterceptor
@@ -168,7 +195,8 @@ public sealed class ConsentReviewTests
                 {
                     Phone = Phone,
                     TermsAccepted = true,
-                    TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id
+                    TermsDocumentId = _documents[LegalDocumentKind.UserAgreement].Id,
+                    PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent)
                 }, "verify-consent-test", default);
                 Assert.That(receipt, Is.Not.Empty);
             }
@@ -197,7 +225,7 @@ public sealed class ConsentReviewTests
 
         await using var database = Database();
         var service = Authentication(database);
-        var error = Assert.ThrowsAsync<ServiceException>(() => service.VerifyCodeAsync(
+        var error = await Assert.ThrowsAsync<ServiceException>(() => service.VerifyCodeAsync(
             request, "verify-consent-test", null, default));
 
         await using (var check = Database())
@@ -225,7 +253,7 @@ public sealed class ConsentReviewTests
         using (Assert.EnterMultipleScope())
         {
             Assert.That(await completed.RefreshSessions.CountAsync(), Is.EqualTo(1));
-            Assert.That(await completed.ConsentEvents.CountAsync(), Is.EqualTo(withReceipt ? 1 : 2));
+            Assert.That(await completed.ConsentEvents.CountAsync(), Is.EqualTo(2));
             Assert.That((await completed.ConsentOnboarding.SingleAsync()).UsedAt, Is.Not.Null);
         }
     }
@@ -313,7 +341,7 @@ public sealed class ConsentReviewTests
         }
 
         await using var authenticationDatabase = Database();
-        var error = Assert.ThrowsAsync<ServiceException>(() => Authentication(authenticationDatabase).VerifyCodeAsync(
+        var error = await Assert.ThrowsAsync<ServiceException>(() => Authentication(authenticationDatabase).VerifyCodeAsync(
             new VerifyCodeRequest
             {
                 Phone = Phone,
@@ -336,7 +364,7 @@ public sealed class ConsentReviewTests
     public async Task AuthenticationRequestReportsCurrentAgreementForStaleDocumentId()
     {
         await using var database = Database();
-        var error = Assert.ThrowsAsync<ServiceException>(() => Authentication(database).RequestCodeAsync(
+        var error = await Assert.ThrowsAsync<ServiceException>(() => Authentication(database).RequestCodeAsync(
             new RequestCodeRequest
             {
                 Phone = Phone,
@@ -366,7 +394,7 @@ public sealed class ConsentReviewTests
             () => Consents(database).ValidateOnboardingReceiptAsync(receipt, default),
             async () => await Consents(database).CompleteOnboardingAsync(await database.Customers.SingleAsync(), receipt, default) })
         {
-            var error = Assert.ThrowsAsync<ServiceException>(async () => await action());
+            var error = await Assert.ThrowsAsync<ServiceException>(async () => await action());
             Assert.That(error!.RequiredDocumentId, Is.EqualTo(replacement.Id));
             Assert.That(error.ConsentKind, Is.EqualTo(LegalDocumentKind.UserAgreement));
         }
@@ -410,7 +438,7 @@ public sealed class ConsentReviewTests
             PersonalDataConsent = Decision(LegalDocumentKind.PersonalDataConsent)
         };
         for (var attempt = 0; attempt < 3; attempt++) await service.RequestCodeAsync(request, "test", default);
-        var error = Assert.ThrowsAsync<ServiceException>(() => service.RequestCodeAsync(request, "test", default));
+        var error = await Assert.ThrowsAsync<ServiceException>(() => service.RequestCodeAsync(request, "test", default));
         Assert.That(error!.StatusCode, Is.EqualTo(429));
         Assert.That(await database.ConsentOnboarding.CountAsync(), Is.EqualTo(3));
     }
@@ -489,7 +517,7 @@ public sealed class ConsentReviewTests
         Assert.That(item.Processed, Is.False);
         var retry = await service.CreateAsync(_customer, default);
         Assert.That(retry, Is.EqualTo(item));
-        var error = Assert.ThrowsAsync<ServiceException>(() => service.ProcessAsync(new()
+        var error = await Assert.ThrowsAsync<ServiceException>(() => service.ProcessAsync(new()
         { CustomerId = _customer, RequestedAt = item.RequestedAt.AddTicks(1) }, default));
         Assert.That(error!.Code, Is.EqualTo("consent_withdrawal_request_not_found"));
         var processed = await service.ProcessAsync(new()
@@ -518,8 +546,8 @@ public sealed class ConsentReviewTests
             else await service.VerifyCodeAsync(new()
             { Phone = "malformed", OnboardingToken = Guid.NewGuid().ToString("N"), Code = "0000" }, "throttle-test", null, default);
         }
-        for (var attempt = 0; attempt < limit; attempt++) Assert.That(Assert.ThrowsAsync<ServiceException>(Attempt)!.Code, Is.EqualTo(expected));
-        Assert.That(Assert.ThrowsAsync<ServiceException>(Attempt)!.Code, Is.EqualTo("rate_limited"));
+        for (var attempt = 0; attempt < limit; attempt++) Assert.That((await Assert.ThrowsAsync<ServiceException>(Attempt))!.Code, Is.EqualTo(expected));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(Attempt))!.Code, Is.EqualTo("rate_limited"));
         Assert.That(await database.ConsentOnboarding.CountAsync(), Is.Zero);
     }
 

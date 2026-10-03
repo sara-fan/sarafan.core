@@ -16,11 +16,13 @@ public sealed class OrderHistoryPageDto : PagedResult<OrderHistoryItemDto>
     public DateOnly? From { get; init; }
     public DateOnly? To { get; init; }
 }
-public sealed record OrderHistoryEvidence(int Version, OrderStatus? StatusBefore, OrderStatus? StatusAfter, string? SourceUrl, string? CancellationReason = null);
+public sealed record OrderHistoryEvidence(int Version, OrderStatus? StatusBefore, OrderStatus? StatusAfter, string? SourceUrl, string? CancellationReason = null, string? ReviewReason = null, OrderCheckoutDto? CheckoutBefore = null, OrderCheckoutDto? CheckoutAfter = null);
 public sealed record OrderHistoryDetailDto(OrderHistoryItemDto Event, int Version, bool MissingCreationDetails,
     OrderProductDto? ProductBefore, OrderProductDto? ProductAfter, OrderStatus? StatusBefore, OrderStatus? StatusAfter,
     string? SourceUrl, OrderPriceCalculationDto? PricingBefore, OrderPriceCalculationDto? PricingAfter,
     DateTimeOffset? ValidUntilBefore, DateTimeOffset? ValidUntilAfter)
 {
     public string? CancellationReason { get; init; }
+    public string? ReviewReason { get; init; }
+    public string? CheckoutDeliveryName { get; init; }
 }

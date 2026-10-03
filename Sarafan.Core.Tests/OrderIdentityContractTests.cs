@@ -149,7 +149,7 @@ public sealed class OrderIdentityContractTests
         await database.SaveChangesAsync();
         database.Entry(customer).Property(item => item.OrderCode).CurrentValue = "99999999";
 
-        var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await database.SaveChangesAsync());
 
         Assert.That(exception!.Message, Is.EqualTo("A customer's assigned order code is immutable."));

@@ -155,7 +155,7 @@ public sealed class OperationLoggingTests
         Assert.That(requests.Select(record => record.Attributes["http.response.status_code"]),
             Is.EqualTo(new object[] { 413, 200, 429 }));
         Assert.That(requests, Has.All.Matches<CapturedLog>(record =>
-            Equals(record.Attributes["http.request.method"], "POST")
+            record is not null && Equals(record.Attributes["http.request.method"], "POST")
             && !record.Message.Contains(Secret, StringComparison.Ordinal)));
         AssertPrivate();
     }
@@ -177,7 +177,7 @@ public sealed class OperationLoggingTests
     [TestCase("cancelled", false, "cancelled")]
     [TestCase("unsolicited", true, "unexpected exception")]
     [TestCase("unexpected", true, "unexpected exception")]
-    public void AsyncFailure_LogsCorrectSeverityAndPreservesException(string kind, bool warning, string output)
+    public async Task AsyncFailure_LogsCorrectSeverityAndPreservesException(string kind, bool warning, string output)
     {
         using var cancellation = new CancellationTokenSource();
         if (kind == "cancelled")
@@ -193,7 +193,7 @@ public sealed class OperationLoggingTests
             _ => new InvalidOperationException(Secret)
         };
 
-        var thrown = Assert.ThrowsAsync(failure.GetType(), () => OperationLogging.RunAsync<bool>(
+        var thrown = await Assert.ThrowsAsync(failure.GetType(), () => OperationLogging.RunAsync<bool>(
             _logger, Operation, () => "none", async () =>
             {
                 await Task.Yield();
@@ -245,7 +245,7 @@ public sealed class OperationLoggingTests
     [Test]
     public void Summaries_AllowOnlyExplicitValuesAndNeverInspectUnknownObjects()
     {
-        var customer = new Customer { Phone = Secret, Profile = new CustomerProfile { FirstName = Secret } };
+        var customer = new Customer { Phone = Secret, FirstName = Secret };
         var dto = CustomerDto.From(customer, true);
         var session = new AuthenticationSessionDto(Secret, DateTimeOffset.UtcNow, dto);
         var backofficeUser = new BackofficeUser
@@ -379,7 +379,7 @@ public sealed class OperationLoggingTests
         var executed = new ActionExecutedContext(context, [], context.Controller) { Exception = failure };
         if (thrown)
         {
-            var actual = Assert.ThrowsAsync<InvalidOperationException>(() => filter.OnActionExecutionAsync(context, () => throw failure));
+            var actual = await Assert.ThrowsAsync<InvalidOperationException>(() => filter.OnActionExecutionAsync(context, () => throw failure));
             Assert.That(actual, Is.SameAs(failure));
         }
         else
@@ -473,7 +473,7 @@ public sealed class OperationLoggingTests
 
         if (failWrite)
         {
-            var actual = Assert.ThrowsAsync<IOException>(async () => await handling);
+            var actual = await Assert.ThrowsAsync<IOException>(async () => await handling);
             Assert.That(actual, Is.SameAs(writeFailure));
             Assert.That(_logs.Records.Where(record => record.Event.Name == SarafanEvents.ProblemEmittedName), Is.Empty);
             Assert.That(_logs.Records.Last().Message, Does.Contain("no result; unexpected exception"));
@@ -581,9 +581,9 @@ public sealed class OperationLoggingTests
         await service.HistoryDetailAsync("87654321-1", $"3-{order.Id}", roles, default);
         await service.PricingOperationsAsync(roles, default);
         await service.GetPricingAsync("87654321-1", roles, default);
-        Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("87654321-1",
+        await Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("87654321-1",
             new(null, OrderPricingInputs.Empty), 987654, [], default));
-        Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync("87654321-1",
+        await Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync("87654321-1",
             new(null), 987654, [], default));
         var entries = _logs.Records.Where(record => record.Event.Id == 1600).ToArray();
         foreach (var method in new[] { nameof(OrderService.ForecastAsync), nameof(OrderService.HistoryOperationsAsync),
@@ -678,8 +678,10 @@ public sealed class OperationLoggingTests
                 Comment = Secret
             });
         productCorrection.EnsureSuccessStatusCode();
-        await ExercisePricingBoundaries(client);
+        await ExercisePricingBoundaries(client, app.Services);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", customerToken);
+        using var checkout = await client.PostAsJsonAsync($"/api/v1/orders/{createdOrder.OrderNumber}/checkout",
+            new OrderCheckoutRequest { Profile = new() { FirstName = Secret } });
         using var cancelOrder = await client.PostAsJsonAsync($"/api/v1/orders/{createdOrder.OrderNumber}/cancel",
             new CancelOrderRequest { ExpectedUpdatedAt = createdOrder.UpdatedAt, Reason = Secret });
         using var get = await client.GetAsync("/api/v1/customers/me");
@@ -832,7 +834,7 @@ public sealed class OperationLoggingTests
         using var disable = await client.DeleteAsync($"/api/v1/backoffice/users/{created.Id}");
         using var missingOrder = await client.GetAsync("/api/v1/backoffice/orders/12345678-1");
         using var missingOrderCorrection = await client.PutAsJsonAsync("/api/v1/backoffice/orders/12345678-1/product", new UpdateOrderProductRequest());
-        await ExercisePricingBoundaries(client);
+        await ExercisePricingBoundaries(client, app.Services);
         Assert.That(missingOrder.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         Assert.That(missingOrderCorrection.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var refresh = await client.PostAsync("/api/v1/backoffice/auth/refresh", null);
@@ -843,7 +845,7 @@ public sealed class OperationLoggingTests
         }
 
         Assert.That(new[] { me, roles, orderOps, orders, operations, users, get, update, updateSelf, refresh },
-            Is.All.Matches<HttpResponseMessage>(response => response.IsSuccessStatusCode));
+            Is.All.Matches<HttpResponseMessage>(response => response is not null && response.IsSuccessStatusCode));
         Assert.That(disable.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
         Assert.That(logout.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
 
@@ -916,8 +918,14 @@ public sealed class OperationLoggingTests
         AssertPrivate();
     }
 
-    private static async Task ExercisePricingBoundaries(HttpClient client)
+    private static async Task ExercisePricingBoundaries(HttpClient client, IServiceProvider services)
     {
+        await using var scope = services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<OrderService>().ExpireQuotesAsync(default);
+        await Assert.ThrowsAsync<ServiceException>(() => scope.ServiceProvider.GetRequiredService<OrderService>()
+            .SaveCheckoutAsync(0, "00000000-999999", new() { Profile = new() }, default));
+        using var reject = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/review/reject", new RejectOrderReviewRequest { Reason = Secret });
+        Assert.That(reject.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var ops = await client.GetAsync("/api/v1/backoffice/orders/pricing/ops");
         ops.EnsureSuccessStatusCode();
         using var read = await client.GetAsync("/api/v1/backoffice/orders/00000000-999999/pricing");

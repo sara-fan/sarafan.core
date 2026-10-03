@@ -47,7 +47,7 @@ public sealed class OrderOperationsTests
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
             Assert.That(body, Is.Not.Null);
-            Assert.That(body!.Statuses, Has.Count.EqualTo(12));
+            Assert.That(body!.Statuses, Has.Count.EqualTo(13));
             Assert.That(body.Currencies, Is.EqualTo(new[]
             {
                 new CurrencyOpsItemDto((int)Currency.Rub, "Российский рубль", "rub", "₽"),
@@ -76,7 +76,8 @@ public sealed class OrderOperationsTests
             new OrderStatusOpsItemDto(360, "Получен на складе в России", "delivered_to_russian_warehouse", 300, "Выполняется", "in_progress", false, 86),
             new OrderStatusOpsItemDto(380, "Доставляем по России", "delivering_in_russia", 300, "Выполняется", "in_progress", false, 94),
             new OrderStatusOpsItemDto(400, "Получен", "received", 400, "Завершён", "completed", true, 100),
-            new OrderStatusOpsItemDto(500, "Отменён", "cancelled", 500, "Отменён", "cancelled", true, 100)
+            new OrderStatusOpsItemDto(500, "Отменён", "cancelled", 500, "Отменён", "cancelled", true, 100),
+            new OrderStatusOpsItemDto(600, "Не можем привезти", "cannot_deliver", 600, "Не можем привезти", "cannot_deliver", true, 100)
         }));
     }
 }

@@ -16,35 +16,22 @@ public sealed partial class OrderPricingTests
     [TestCase(PriceMethod.Manual)]
     [TestCase(PriceMethod.Auto)]
     [TestCase(null)]
-    public async Task UnresolvedCustomsRejectsConfirmationWithoutAnyWrites(PriceMethod? method)
+    public async Task UnresolvedCustomsAllowsConfirmationWithCompleteIncludedTotal(PriceMethod? method)
     {
         if (method is { } value) db.Add(Tariff(ServiceKind.CustomsPayments, value, Currency.Rub));
         await db.SaveChangesAsync();
         var saved = await service.UpdatePricingAsync("12345678-1", new(order.UpdatedAt, OrderPricingInputs.Empty), actorId, Shift, default);
-        var version = order.UpdatedAt;
-        var snapshots = await db.OrderPricingSnapshots.CountAsync();
-        var events = await db.Set<OrderHistoryEvent>().CountAsync();
-        var payload = (await db.OrderPricingSnapshots.SingleAsync()).Payload;
-        Assert.That(saved.CanConfirm, Is.False);
-        Assert.That(saved.Calculation.TotalRub, Is.Not.Null);
-        var error = Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync("12345678-1", new(version), actorId, Shift, default))!;
-        var problem = new SarafanProblemDetailsFactory().Create(new DefaultHttpContext(), error.StatusCode, error.Code, error.Errors);
+        Assert.That(saved.CanConfirm, Is.True);
+        var confirmed = await service.ConfirmPricingAsync("12345678-1", new(saved.UpdatedAt), actorId, Shift, default);
+        var customer = await service.GetAsync(order.CustomerId, "12345678-1", default);
         Assert.Multiple(() =>
         {
-            Assert.That(error.Code, Is.EqualTo("order_customs_unresolved"));
-            Assert.That(problem.Type, Is.EqualTo("https://sarafan.sw.consulting/problems/order-customs-unresolved"));
-            Assert.That(problem.Status, Is.EqualTo(409));
-            Assert.That(problem.Title, Is.EqualTo("Таможенные платежи не определены"));
-            Assert.That(problem.Detail, Does.Contain("Нулевая сумма"));
-            Assert.That(problem.Instance, Does.StartWith("urn:sarafan:problem:"));
-            Assert.That(order.Status, Is.EqualTo(OrderStatus.UnderReview));
-            Assert.That(order.UpdatedAt, Is.EqualTo(version));
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.QuoteReady));
+            Assert.That(customer.Pricing.TotalRub, Is.EqualTo(saved.Calculation.TotalRub));
+            Assert.That(customer.Pricing.CustomsRub, Is.Null);
+            Assert.That(confirmed.Confirmed, Is.True);
         });
-        if (method == PriceMethod.Manual) Assert.That(problem.Errors, Does.ContainKey("manualAmounts"));
-        else Assert.That(problem.Errors, Is.Null);
-        Assert.That(await db.OrderPricingSnapshots.CountAsync(), Is.EqualTo(snapshots));
-        Assert.That(await db.Set<OrderHistoryEvent>().CountAsync(), Is.EqualTo(events));
-        Assert.That((await db.OrderPricingSnapshots.SingleAsync()).Payload, Is.EqualTo(payload));
+        Assert.That(await db.OrderPricingSnapshots.CountAsync(), Is.EqualTo(2));
     }
 
     [TestCase(0, Currency.Rub)]

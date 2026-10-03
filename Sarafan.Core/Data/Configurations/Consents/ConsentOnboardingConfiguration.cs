@@ -46,13 +46,13 @@ internal sealed class ConsentOnboardingConfiguration : IEntityTypeConfiguration<
 
         builder.ToTable(table => table.HasCheckConstraint(
             "ck_consent_onboarding_flow",
-            "(flow = 1 AND target_customer_id IS NOT NULL AND personal_data_document_id IS NULL " +
-            "AND personal_data_hash IS NULL AND personal_data_idempotency_key IS NULL " +
-            "AND terms_accepted AND terms_idempotency_key IS NOT NULL) OR " +
-            "(flow = 2 AND personal_data_document_id IS NOT NULL AND personal_data_hash IS NOT NULL " +
-            "AND personal_data_idempotency_key IS NOT NULL AND " +
+            "((flow = 1 AND target_customer_id IS NOT NULL AND " +
+            "(terms_accepted OR personal_data_document_id IS NOT NULL)) OR " +
+            "(flow = 2 AND personal_data_document_id IS NOT NULL)) AND " +
+            "((personal_data_document_id IS NULL AND personal_data_hash IS NULL AND personal_data_idempotency_key IS NULL) OR " +
+            "(personal_data_document_id IS NOT NULL AND personal_data_hash IS NOT NULL AND personal_data_idempotency_key IS NOT NULL)) AND " +
             "((terms_accepted AND terms_idempotency_key IS NOT NULL) OR " +
-            "(NOT terms_accepted AND terms_idempotency_key IS NULL)))"));
+            "(NOT terms_accepted AND terms_idempotency_key IS NULL))"));
         builder.HasOne<LegalDocument>()
             .WithMany()
             .HasForeignKey(item => item.TermsDocumentId)

@@ -94,7 +94,6 @@ public sealed class AuthenticationContractTests
             Id = 42,
             Phone = "+79991234567",
             TokenVersion = 7,
-            Profile = new CustomerProfile()
         };
 
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(service.CreateAccessToken(customer).Token);
@@ -105,9 +104,10 @@ public sealed class AuthenticationContractTests
     [Test]
     public void ReactivationUsesTheSameProfileCompletenessRuleAsProfileUpdates()
     {
-        Assert.That(CustomerProfileState.Evaluate(new CustomerProfile()), Is.EqualTo(CustomerState.Preliminary));
-        Assert.That(CustomerProfileState.Evaluate(new CustomerProfile
+        Assert.That(CustomerProfileState.Evaluate(new Customer { Phone = "+79990001234" }), Is.EqualTo(CustomerState.Preliminary));
+        Assert.That(CustomerProfileState.Evaluate(new Customer
         {
+            Phone = "+79990001234",
             LastName = "Иванов",
             FirstName = "Иван",
             Email = "ivan@example.test",

@@ -104,7 +104,7 @@ public sealed class StoreApiTests
     {
         using var scope = IntegrationTestEnvironment.Factory.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var customer = new Customer { Phone = "+79990009999", Profile = new(), CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow };
+        var customer = new Customer { Phone = "+79990009999", CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow };
         database.Customers.Add(customer);
         await database.SaveChangesAsync();
         var customerToken = scope.ServiceProvider.GetRequiredService<JwtTokenService>().CreateAccessToken(customer).Token;

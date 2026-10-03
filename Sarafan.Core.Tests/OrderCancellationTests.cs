@@ -82,16 +82,16 @@ public sealed partial class OrderPricingTests
     [Test]
     public async Task CustomerCancellationRejectsStaleVersionsInvalidReasonAndOtherCustomers()
     {
-        var wrongCustomer = Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId + 1,
+        var wrongCustomer = await Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId + 1,
             "12345678-1", new CancelOrderRequest { ExpectedUpdatedAt = order.UpdatedAt }, default));
         Assert.That(wrongCustomer!.Code, Is.EqualTo("resource_not_found"));
-        var missingVersion = Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
+        var missingVersion = await Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
             "12345678-1", new CancelOrderRequest(), default));
         Assert.That(missingVersion!.Errors, Does.ContainKey("expectedUpdatedAt"));
-        var stale = Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
+        var stale = await Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
             "12345678-1", new CancelOrderRequest { ExpectedUpdatedAt = order.UpdatedAt.AddSeconds(-1) }, default));
         Assert.That(stale!.Code, Is.EqualTo("order_update_conflict"));
-        var invalid = Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
+        var invalid = await Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
             "12345678-1", new CancelOrderRequest { ExpectedUpdatedAt = order.UpdatedAt, Reason = new string('x', 2001) }, default));
         Assert.That(invalid!.Errors, Does.ContainKey("reason"));
         Assert.That(order.Status, Is.EqualTo(OrderStatus.UnderReview));
@@ -99,7 +99,7 @@ public sealed partial class OrderPricingTests
 
         db.Entry(order).Property(item => item.Status).CurrentValue = OrderStatus.Paid;
         await db.SaveChangesAsync();
-        var paid = Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
+        var paid = await Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
             "12345678-1", new CancelOrderRequest { ExpectedUpdatedAt = order.UpdatedAt }, default));
         Assert.That(paid!.Code, Is.EqualTo("order_not_cancellable"));
     }
@@ -111,7 +111,7 @@ public sealed partial class OrderPricingTests
         order.UpdatePricing(Now.AddSeconds(1), true);
         await db.SaveChangesAsync();
 
-        var conflict = Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
+        var conflict = await Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId,
             "12345678-1", new CancelOrderRequest { ExpectedUpdatedAt = versionBeforeStaffChange }, default));
         Assert.That(conflict!.Code, Is.EqualTo("order_update_conflict"));
         Assert.That(order.Status, Is.EqualTo(OrderStatus.QuoteReady));
@@ -181,7 +181,7 @@ public sealed partial class OrderPricingTests
         }
         else
         {
-            var failure = Assert.ThrowsAsync<ServiceException>(() =>
+            var failure = await Assert.ThrowsAsync<ServiceException>(() =>
                 subject.CancelAsync(customerId, "12345678-1", cancel, default));
             Assert.That(failure!.Code, Is.EqualTo("order_update_conflict"));
         }
