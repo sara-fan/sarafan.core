@@ -18,7 +18,6 @@ public sealed class OrderProductRequest
 
 public sealed class UpdateOrderProductRequest
 {
-    public bool AcceptValueLimitExceeded { get; set; }
     public DateTimeOffset? ExpectedUpdatedAt { get; set; }
     public string? StoreName { get; set; }
     public string? ProductName { get; set; }

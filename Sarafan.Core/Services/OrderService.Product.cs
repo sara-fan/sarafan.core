@@ -52,12 +52,7 @@ public sealed partial class OrderService
                     Size = request.Size
                 }, request.Quantity ?? 0, request.Comment);
                 OrderProductRules.ValidateCorrection(product);
-                var pair = await limits.GetPairAsync(cancellationToken);
-                if (product.SellerPrice is not null && pair is null)
-                    throw new ServiceException(503, "order_limit_rates_unavailable");
-                if (product.SellerPrice is { } price && !pair!.Allows(price.Amount, product.Quantity)
-                    && !request.AcceptValueLimitExceeded)
-                    throw new ServiceException(400, "order_value_limit_exceeded");
+                var pair = OrderLimitService.Validate(product, await limits.GetPairAsync(cancellationToken));
                 var before = CurrentProduct(order);
                 order.CorrectProduct(product.StoreName, product, timeProvider.GetUtcNow());
                 var actor = await database.BackofficeUsers.AsNoTracking().SingleAsync(row => row.Id == actorId, cancellationToken);

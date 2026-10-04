@@ -334,11 +334,21 @@ public sealed partial class OrderProductApiTests
             "Максимальная стоимость заказа при экспресс-перевозке 900€ с учётом резерва 10% на изменение курса"
         }));
         Assert.That((await Details(order.OrderNumber)).Product, Is.EqualTo(details.Product));
-        var acknowledged = Update(details, "Выше лимита", 281.26m, 4);
-        acknowledged.AcceptValueLimitExceeded = true;
-        using var accepted = await Put(order.OrderNumber, acknowledged);
-        accepted.EnsureSuccessStatusCode();
-        Assert.That((await Details(order.OrderNumber)).Product.SellerPrice!.Amount, Is.EqualTo(281.26m));
+        using var obsoleteOverride = await _staff.PutAsJsonAsync($"/api/v1/backoffice/orders/{order.OrderNumber}/product", new
+        {
+            expectedUpdatedAt = details.UpdatedAt,
+            productName = "Выше лимита",
+            sellerPrice = new OrderSellerPriceDto(281.26m, Currency.Usd),
+            quantity = 4,
+            acceptValueLimitExceeded = true
+        });
+        await Problem(obsoleteOverride, HttpStatusCode.BadRequest, "order_value_limit_exceeded");
+        var unchanged = await Details(order.OrderNumber);
+        Assert.Multiple(() =>
+        {
+            Assert.That(unchanged.Product, Is.EqualTo(details.Product));
+            Assert.That(unchanged.UpdatedAt, Is.EqualTo(details.UpdatedAt));
+        });
         using var creationStillRejects = await Create(Guid.NewGuid(), price: 281.26m, quantity: 4);
         await Problem(creationStillRejects, HttpStatusCode.BadRequest, "order_value_limit_exceeded");
     }
