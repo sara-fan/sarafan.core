@@ -51,34 +51,69 @@ public sealed class OrderCreationTests
         _app.Dispose();
     }
 
-    [Test]
-    public async Task NewOrderRequiresAgreementRenewalWithinTheExistingSession()
+    [TestCase(LegalDocumentKind.UserAgreement)]
+    [TestCase(LegalDocumentKind.PersonalDataConsent)]
+    public async Task NewOrderRequiresRenewalOnlyAfterTheDocumentBecomesEffective(LegalDocumentKind kind)
     {
         await using var scope = _app.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var agreement = await database.LegalDocuments.Where(x => x.Kind == LegalDocumentKind.UserAgreement)
-            .OrderByDescending(x => x.EffectiveAt).FirstAsync();
-        database.ConsentEvents.RemoveRange(await database.ConsentEvents.Where(x =>
-            x.CustomerId == _session.Customer.Id && x.Kind == LegalDocumentKind.UserAgreement).ToArrayAsync());
-        await database.SaveChangesAsync();
-        var key = Guid.NewGuid();
-        using var rejected = await Create(_client, "https://shop.example.com/item", key);
-        Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
-        Assert.That((await rejected.Content.ReadFromJsonAsync<SarafanProblemDetails>())!.Code, Is.EqualTo("user_agreement_required"));
-        Assert.That(await database.Orders.CountAsync(), Is.Zero);
-        using var renewal = await _client.PostAsJsonAsync("/api/v1/consents/me/user-agreement", new ConsentDecisionRequest
+        var document = await scope.ServiceProvider.GetRequiredService<LegalDocumentService>().CreateAsync(new()
         {
-            DocumentId = agreement.Id,
-            ContentHash = agreement.ContentHash,
+            Kind = kind,
+            Title = "Новая редакция",
+            DisplayVersion = "test-v2",
+            FileName = "new.md",
+            Source = Encoding.UTF8.GetBytes("# Новая редакция\n\nНовые условия."),
+            EffectiveDate = ConsentCalendar.LocalDate(DateTimeOffset.UtcNow).AddDays(1)
+        }, await database.BackofficeUsers.MinAsync(x => x.Id), default);
+        using var beforeActivation = await Create(_client, "https://shop.example.com/item", Guid.NewGuid());
+        Assert.That(beforeActivation.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        using var app = IsolatedApp(clock: new FixedClock(document.EffectiveAt.AddMinutes(1)));
+        using var client = CreateClient(app);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _session.AccessToken);
+        var key = Guid.NewGuid();
+        using var rejected = await Create(client, "https://shop.example.com/item", key);
+        Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        Assert.That((await rejected.Content.ReadFromJsonAsync<SarafanProblemDetails>())!.Code,
+            Is.EqualTo(kind == LegalDocumentKind.UserAgreement ? "user_agreement_required" : "personal_data_consent_required"));
+        Assert.That(await database.Orders.CountAsync(), Is.EqualTo(1));
+        var endpoint = kind == LegalDocumentKind.UserAgreement ? "user-agreement" : "personal-data";
+        using var renewal = await client.PostAsJsonAsync($"/api/v1/consents/me/{endpoint}", new ConsentDecisionRequest
+        {
+            DocumentId = document.Id,
+            ContentHash = document.ContentHash,
             Decision = "grant",
             IdempotencyKey = Guid.NewGuid()
         });
         renewal.EnsureSuccessStatusCode();
-        using var created = await Create(_client, "https://shop.example.com/item", key);
-        created.EnsureSuccessStatusCode();
-        using var replay = await Create(_client, "https://shop.example.com/item", key);
+        using var created = await Create(client, "https://shop.example.com/item", key);
+        Assert.That(created.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        using var replay = await Create(client, "https://shop.example.com/item", key);
         replay.EnsureSuccessStatusCode();
-        Assert.That(await database.Orders.CountAsync(), Is.EqualTo(1));
+        Assert.That(await database.Orders.CountAsync(), Is.EqualTo(2));
+        Assert.That(await database.ConsentEvents.CountAsync(x => x.CustomerId == _session.Customer.Id
+            && x.DocumentId == document.Id), Is.EqualTo(1));
+        using var loginClient = CreateClient(app);
+        using var resolution = await loginClient.PostAsJsonAsync("/api/v1/auth/phone/resolve", new PhoneResolveRequest(_session.Customer.Phone));
+        resolution.EnsureSuccessStatusCode();
+        var nextLogin = (await resolution.Content.ReadFromJsonAsync<PhoneResolveDto>())!;
+        Assert.That(nextLogin.NextStep, Is.EqualTo(AuthenticationFlowStep.Code));
+        Assert.That(nextLogin.RequiredDocumentKinds, Is.Empty);
+    }
+
+    [TestCase(LegalDocumentKind.UserAgreement)]
+    [TestCase(LegalDocumentKind.PersonalDataConsent)]
+    public async Task NewOrderBlocksWhenARequiredDocumentIsUnavailable(LegalDocumentKind missingKind)
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        database.LegalDocuments.RemoveRange(await database.LegalDocuments.Where(x => x.Kind == missingKind).ToArrayAsync());
+        await database.SaveChangesAsync();
+        using var response = await Create(_client, "https://shop.example.com/item", Guid.NewGuid());
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        Assert.That((await response.Content.ReadFromJsonAsync<SarafanProblemDetails>())!.Code,
+            Is.EqualTo("consent_document_unavailable"));
+        Assert.That(await database.Orders.CountAsync(), Is.Zero);
     }
 
     [Test]
@@ -655,11 +690,16 @@ public sealed class OrderCreationTests
         return await client.SendAsync(request);
     }
 
-    private static WebApplicationFactory<Program> IsolatedApp(CollisionHarness? collisions = null)
+    private static WebApplicationFactory<Program> IsolatedApp(CollisionHarness? collisions = null, TimeProvider? clock = null)
         => IntegrationTestEnvironment.Factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<VerificationAttemptStore>();
             services.AddSingleton<VerificationAttemptStore>();
+            if (clock is not null)
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton(clock);
+            }
             if (collisions is not null)
             {
                 services.AddDbContext<AppDbContext>(options => options.AddInterceptors(collisions));
@@ -680,6 +720,11 @@ public sealed class OrderCreationTests
             user.IsDemo = false;
         }
         await database.SaveChangesAsync();
+    }
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private sealed class CollisionHarness : SaveChangesInterceptor, ICustomerOrderCodeCollisionDetector
