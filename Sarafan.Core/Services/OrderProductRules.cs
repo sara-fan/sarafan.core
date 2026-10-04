@@ -30,6 +30,13 @@ internal static class OrderProductRules
         if (product.Comment?.Length > 2000) throw new ServiceException(400, "invalid_order_comment");
     }
 
+    internal static void ValidateCorrection(OrderProductDto product)
+    {
+        if (string.IsNullOrWhiteSpace(product.ProductName)) throw new ServiceException(400, "invalid_order_product_name");
+        if (product.SellerPrice is null) throw new ServiceException(400, "invalid_order_seller_price");
+        Validate(product);
+    }
+
     internal static void ValidatePriceAndQuantity(OrderSellerPriceDto? price, int quantity)
     {
         if (quantity <= 0) throw new ServiceException(400, "invalid_order_quantity");

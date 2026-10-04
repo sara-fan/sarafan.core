@@ -31,7 +31,7 @@ public sealed partial class OrderService
                     var now = timeProvider.GetUtcNow();
                     var snapshot = await LatestPricingAsync(order.Id, token);
                     if (order.Status != OrderStatus.QuoteReady || snapshot?.ValidUntil is null || snapshot.ValidUntil <= now)
-                        throw new ServiceException(409, "order_not_editable");
+                        throw new ServiceException(409, "order_checkout_unavailable");
                     if (request.ExpectedUpdatedAt != order.UpdatedAt) throw new ServiceException(409, "order_update_conflict");
                     var before = ReadCheckout(order);
                     var saved = ValidateCheckout(request, order.Customer, now, before);

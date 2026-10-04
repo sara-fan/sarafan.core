@@ -2,6 +2,8 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
+using System.Globalization;
+
 namespace Sarafan.Core.Models;
 
 public enum OrderStatus
@@ -44,7 +46,7 @@ public static class OrderStatusExtensions
         OrderStatus.Received => "Получен",
         OrderStatus.Cancelled => "Отменён",
         OrderStatus.CannotDeliver => "Не можем привезти",
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        _ => "Статус " + ((int)status).ToString(CultureInfo.InvariantCulture)
     };
 
     public static string GetRouteAlias(this OrderStatus status) => status switch
@@ -62,7 +64,7 @@ public static class OrderStatusExtensions
         OrderStatus.Received => "received",
         OrderStatus.Cancelled => "cancelled",
         OrderStatus.CannotDeliver => "cannot_deliver",
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        _ => "status_" + ((int)status).ToString(CultureInfo.InvariantCulture)
     };
 
     public static int GetUpperStatusValue(this OrderStatus status) => status switch
@@ -80,7 +82,7 @@ public static class OrderStatusExtensions
         OrderStatus.Received or
         OrderStatus.Cancelled or
         OrderStatus.CannotDeliver => (int)status,
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        _ => (int)status
     };
 
     public static string GetUpperStatusDisplayName(this OrderStatus status) => status switch
@@ -98,7 +100,7 @@ public static class OrderStatusExtensions
         OrderStatus.QuoteExpired or
         OrderStatus.Cancelled or
         OrderStatus.CannotDeliver => status.GetDisplayName(),
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        _ => status.GetDisplayName()
     };
 
     public static string GetUpperStatusRouteAlias(this OrderStatus status) => status switch
@@ -116,7 +118,7 @@ public static class OrderStatusExtensions
         OrderStatus.QuoteExpired or
         OrderStatus.Cancelled or
         OrderStatus.CannotDeliver => status.GetRouteAlias(),
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        _ => status.GetRouteAlias()
     };
 
     public static bool IsTerminal(this OrderStatus status) => status switch
@@ -132,7 +134,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringToRussia or
         OrderStatus.DeliveredToRussianWarehouse or
         OrderStatus.DeliveringInRussia => false,
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        _ => false
     };
 
     public static int GetProgressPercent(this OrderStatus status) => status switch
@@ -147,7 +149,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveredToRussianWarehouse => 86,
         OrderStatus.DeliveringInRussia => 94,
         OrderStatus.Received or OrderStatus.Cancelled or OrderStatus.CannotDeliver => 100,
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        _ => 0
     };
 }
 

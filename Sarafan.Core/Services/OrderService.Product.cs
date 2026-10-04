@@ -38,9 +38,9 @@ public sealed partial class OrderService
                 (nameof(actorId), actorId), (nameof(cancellationToken), cancellationToken)), async () =>
             {
                 BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.EditOrderProduct);
+                var order = await FindPublicOrder(orderNumber, cancellationToken);
                 await using var transaction = await AppDatabaseOperations.For(database).BeginTransactionAsync(database, cancellationToken);
                 await AppDatabaseOperations.For(database).LockServiceCatalogueMutationsAsync(database, cancellationToken);
-                var order = await FindPublicOrder(orderNumber, cancellationToken);
                 if (order.Status != OrderStatus.UnderReview) throw new ServiceException(409, "order_not_editable");
                 if (request.ExpectedUpdatedAt != order.UpdatedAt) throw new ServiceException(409, "order_update_conflict");
                 var product = OrderProductRules.Normalize(new OrderProductRequest
@@ -51,7 +51,7 @@ public sealed partial class OrderService
                     Color = request.Color,
                     Size = request.Size
                 }, request.Quantity ?? 0, request.Comment);
-                OrderProductRules.Validate(product);
+                OrderProductRules.ValidateCorrection(product);
                 var pair = await limits.GetPairAsync(cancellationToken);
                 if (product.SellerPrice is not null && pair is null)
                     throw new ServiceException(503, "order_limit_rates_unavailable");

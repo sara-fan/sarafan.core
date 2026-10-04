@@ -28,10 +28,11 @@ internal static class ListDisplaySearch
         return query.Where(Expression.Lambda<Func<T, bool>>(predicate, row));
     }
 
-    internal static Expression<Func<T, string>> Label<T, TEnum>(Expression<Func<T, TEnum>> field, Func<TEnum, string> label)
+    internal static Expression<Func<T, string>> Label<T, TEnum>(Expression<Func<T, TEnum>> field, Func<TEnum, string> label, Expression<Func<T, string>>? fallback = null)
         where TEnum : struct, Enum
     {
-        Expression result = Expression.Constant("—");
+        Expression result = fallback is null ? Expression.Constant("—")
+            : new Substitute(fallback.Parameters[0], field.Parameters[0]).Visit(fallback.Body)!;
         foreach (var value in Enum.GetValues<TEnum>())
             result = Expression.Condition(Expression.Equal(field.Body, Expression.Constant(value)), Expression.Constant(label(value)), result);
         return Expression.Lambda<Func<T, string>>(result, field.Parameters);
@@ -40,7 +41,7 @@ internal static class ListDisplaySearch
     internal static IQueryable<Order> Orders(IQueryable<Order> query, string search)
         => Apply(query, search,
             row => row.Customer.OrderCode + "-" + row.CustomerOrderNumber.ToString(),
-            Label<Order, OrderStatus>(row => row.Status, value => value.GetDisplayName()),
+            Label<Order, OrderStatus>(row => row.Status, value => value.GetDisplayName(), row => "Статус " + ((int)row.Status).ToString()),
             row => row.ProductName == null || row.ProductName == "" ? "Товар не указан" : row.ProductName,
             row => row.StoreName == null || row.StoreName == "" ? "Магазин не указан" : row.StoreName,
             Money(), row => row.Quantity.ToString(),

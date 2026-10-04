@@ -147,7 +147,7 @@ public sealed partial class OrderPricingTests
         var expired = new OrderService(db, null!, null!, null!, null!, null!, new OffsetClock(Now.AddDays(2)), NullLogger<OrderService>.Instance);
         Assert.That((await Assert.ThrowsAsync<ServiceException>(() => expired.SaveCheckoutAsync(999, "12345678-1", request, default)))!.StatusCode, Is.EqualTo(404));
         await expired.ExpireQuotesAsync(default);
-        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default)))!.Code, Is.EqualTo("order_not_editable"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default)))!.Code, Is.EqualTo("order_checkout_unavailable"));
     }
     [Test]
     public async Task CheckoutConcurrencyFailureLeavesProfileSnapshotAndHistoryUnchanged()
@@ -279,7 +279,7 @@ public sealed partial class OrderPricingTests
         await db.SaveChangesAsync();
         request.ExpectedUpdatedAt = saved.UpdatedAt; request.Delivery = "courier";
         var error = await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default));
-        Assert.That(error!.Code, Is.EqualTo("order_not_editable"));
+        Assert.That(error!.Code, Is.EqualTo("order_checkout_unavailable"));
         Assert.That((await checkout.GetAsync(order.CustomerId, "12345678-1", default)).Checkout, Is.EqualTo(saved.Checkout));
         Assert.That(await db.Set<OrderHistoryEvent>().CountAsync(row => row.Kind == OrderHistoryKind.CheckoutSaved), Is.EqualTo(1));
     }

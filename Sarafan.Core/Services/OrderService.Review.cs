@@ -18,9 +18,9 @@ public sealed partial class OrderService
         => PricingRun(nameof(RejectReviewAsync), () => "number/request/actor=[redacted]", async () =>
         {
             BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManageOrderPricing);
-            await using var transaction = await AppDatabaseOperations.For(database).BeginTransactionAsync(database, token);
             var order = await FindPublicOrder(number, token);
-            if (order.Status != OrderStatus.UnderReview) throw new ServiceException(409, "order_not_editable");
+            await using var transaction = await AppDatabaseOperations.For(database).BeginTransactionAsync(database, token);
+            if (order.Status != OrderStatus.UnderReview) throw new ServiceException(409, "order_review_unavailable");
             if (request.ExpectedUpdatedAt != order.UpdatedAt) throw new ServiceException(409, "order_update_conflict");
             var reason = request.Reason?.Trim();
             if (string.IsNullOrWhiteSpace(reason) || reason.Length > 2000)
@@ -50,7 +50,13 @@ public sealed partial class OrderService
         var result = await database.Set<OrderHistoryEvent>().AsNoTracking()
             .Where(row => row.OrderId == orderId && (row.Kind == OrderHistoryKind.QuoteConfirmed || row.Kind == OrderHistoryKind.ReviewRejected))
             .OrderByDescending(row => row.Id).Select(row => new { row.At, row.Payload }).FirstOrDefaultAsync(token);
-        return result is null ? (null, null) : (result.At, JsonSerializer.Deserialize<OrderHistoryEvidence>(result.Payload, PricingJson)?.ReviewReason);
+        if (result is not null)
+            return (result.At, JsonSerializer.Deserialize<OrderHistoryEvidence>(result.Payload, PricingJson)?.ReviewReason);
+        var completedAt = await database.OrderPricingSnapshots.AsNoTracking()
+            .Where(row => row.OrderId == orderId && row.ValidUntil != null)
+            .OrderByDescending(row => row.At).ThenByDescending(row => row.Id)
+            .Select(row => (DateTimeOffset?)row.At).FirstOrDefaultAsync(token);
+        return (completedAt, null);
     }
 
     private OrderDeliveryEstimateDto? DeliveryEstimate(OrderStatus status)

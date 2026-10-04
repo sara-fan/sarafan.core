@@ -45,7 +45,7 @@ public sealed partial class OrderPricingTests
         var cancelled = await Assert.ThrowsAsync<ServiceException>(() => service.CancelAsync(order.CustomerId, "12345678-1", new() { ExpectedUpdatedAt = order.UpdatedAt }, default));
         Assert.That(cancelled!.Code, Is.EqualTo("order_not_cancellable"));
         var confirmation = await Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync("12345678-1", new(order.UpdatedAt), actorId, Shift, default));
-        Assert.That(confirmation!.Code, Is.EqualTo("order_not_editable"));
+        Assert.That(confirmation!.Code, Is.EqualTo("order_review_unavailable"));
     }
 
     [TestCase(null)]
@@ -74,7 +74,7 @@ public sealed partial class OrderPricingTests
         request.Reason = "Причина";
         Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.RejectReviewAsync("12345678-1", request, int.MaxValue, Shift, default)))!.Code, Is.EqualTo("backoffice_user_not_found"));
         order.UpdatePricing(Now, true); await db.SaveChangesAsync();
-        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.RejectReviewAsync("12345678-1", request, actorId, Shift, default)))!.Code, Is.EqualTo("order_not_editable"));
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => service.RejectReviewAsync("12345678-1", request, actorId, Shift, default)))!.Code, Is.EqualTo("order_review_unavailable"));
         Assert.That(await db.Set<OrderHistoryEvent>().CountAsync(), Is.Zero);
     }
 

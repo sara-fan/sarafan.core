@@ -307,7 +307,7 @@ public sealed partial class OrderProductApiTests
         Assert.That(customer.CanCancel, Is.False);
         using var repeated = await _staff.PostAsJsonAsync($"/api/v1/backoffice/orders/{order.OrderNumber}/review/reject",
             new RejectOrderReviewRequest { ExpectedUpdatedAt = staff.UpdatedAt, Reason = "Повтор" });
-        await Problem(repeated, HttpStatusCode.Conflict, "order_not_editable");
+        await Problem(repeated, HttpStatusCode.Conflict, "order_review_unavailable");
     }
 
     [Test]
@@ -540,6 +540,46 @@ public sealed partial class OrderProductApiTests
                 throw new DbUpdateConcurrencyException();
             return ValueTask.FromResult(result);
         }
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("  ")]
+    public async Task StaffCorrectionsRequireNameWithoutChangingProductOrHistory(string? name)
+    {
+        using var created = await Create(Guid.NewGuid());
+        var original = (await created.Content.ReadFromJsonAsync<OrderDto>())!;
+        var before = await Details(original.OrderNumber);
+        var request = Update(before, "Название", 10m, 1);
+        request.ProductName = name;
+        using var rejected = await Put(original.OrderNumber, request);
+        await Problem(rejected, HttpStatusCode.BadRequest, "invalid_order_product_name");
+        var after = await Details(original.OrderNumber);
+        Assert.That(after.Product, Is.EqualTo(before.Product));
+        Assert.That(after.UpdatedAt, Is.EqualTo(before.UpdatedAt));
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.That(await database.Set<OrderProductAuditEvent>().CountAsync(row => row.Kind == OrderProductAuditKind.StaffCorrected), Is.Zero);
+        Assert.That(await database.Set<OrderHistoryEvent>().CountAsync(row => row.Kind == OrderHistoryKind.ProductChanged), Is.Zero);
+    }
+
+    [Test]
+    public async Task StaffCorrectionsRequirePriceWithoutChangingProductOrHistory()
+    {
+        using var created = await Create(Guid.NewGuid());
+        var original = (await created.Content.ReadFromJsonAsync<OrderDto>())!;
+        var before = await Details(original.OrderNumber);
+        var request = Update(before, "Исправлено", 10m, 1);
+        request.SellerPrice = null;
+        using var rejected = await Put(original.OrderNumber, request);
+        await Problem(rejected, HttpStatusCode.BadRequest, "invalid_order_seller_price");
+        var after = await Details(original.OrderNumber);
+        Assert.That(after.Product, Is.EqualTo(before.Product));
+        Assert.That(after.UpdatedAt, Is.EqualTo(before.UpdatedAt));
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.That(await database.Set<OrderProductAuditEvent>().CountAsync(row => row.Kind == OrderProductAuditKind.StaffCorrected), Is.Zero);
+        Assert.That(await database.Set<OrderHistoryEvent>().CountAsync(row => row.Kind == OrderHistoryKind.ProductChanged), Is.Zero);
     }
 
     private Task<BackofficeOrderDetailsDto> Details(string number)

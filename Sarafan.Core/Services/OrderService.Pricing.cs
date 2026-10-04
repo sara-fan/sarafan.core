@@ -55,11 +55,11 @@ public sealed partial class OrderService
         OrderPricingInputs? inputs, bool confirm, int actorId, string[] roles, CancellationToken token)
     {
         BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManageOrderPricing);
+        var order = await FindPublicOrder(number, token);
         var operations = AppDatabaseOperations.For(database);
         await using var transaction = await operations.BeginTransactionAsync(database, token);
         await operations.LockServiceCatalogueMutationsAsync(database, token);
-        var order = await FindPublicOrder(number, token);
-        if (order.Status != OrderStatus.UnderReview) throw new ServiceException(409, "order_not_editable");
+        if (order.Status != OrderStatus.UnderReview) throw new ServiceException(409, "order_review_unavailable");
         if (expectedUpdatedAt != order.UpdatedAt) throw new ServiceException(409, "order_update_conflict");
         var utc = timeProvider.GetUtcNow().ToUniversalTime();
         var now = new DateTimeOffset(utc.Ticks - utc.Ticks % 10, TimeSpan.Zero);

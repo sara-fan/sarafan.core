@@ -569,7 +569,7 @@ public sealed partial class OrderPricingTests
         Assert.That((await db.OrderPricingSnapshots.OrderByDescending(item => item.Id).FirstAsync()).ActorName, Is.EqualTo("Иванов Иван"));
         Assert.That(order.Status, Is.EqualTo(OrderStatus.QuoteReady));
         var ex = await Assert.ThrowsAsync<ServiceException>(() => service.UpdatePricingAsync("12345678-1", new(confirmed.UpdatedAt, OrderPricingInputs.Empty), actorId, Admin, default));
-        Assert.That(ex!.Code, Is.EqualTo("order_not_editable"));
+        Assert.That(ex!.Code, Is.EqualTo("order_review_unavailable"));
     }
 
     [Test]
