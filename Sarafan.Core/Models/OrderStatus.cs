@@ -2,6 +2,8 @@
 // All rights reserved.
 // This file is a part of the Sarafan application
 
+using System.Globalization;
+
 namespace Sarafan.Core.Models;
 
 public enum OrderStatus
@@ -20,7 +22,8 @@ public enum OrderStatus
 
     Received = 400,                                     // aka Completed
 
-    Cancelled = 500
+    Cancelled = 500,
+    CannotDeliver = 600
 }
 
 public static class OrderStatusExtensions
@@ -42,7 +45,8 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringInRussia => "Доставляем по России",
         OrderStatus.Received => "Получен",
         OrderStatus.Cancelled => "Отменён",
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        OrderStatus.CannotDeliver => "Не можем привезти",
+        _ => "Статус " + ((int)status).ToString(CultureInfo.InvariantCulture)
     };
 
     public static string GetRouteAlias(this OrderStatus status) => status switch
@@ -59,7 +63,8 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringInRussia => "delivering_in_russia",
         OrderStatus.Received => "received",
         OrderStatus.Cancelled => "cancelled",
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        OrderStatus.CannotDeliver => "cannot_deliver",
+        _ => "status_" + ((int)status).ToString(CultureInfo.InvariantCulture)
     };
 
     public static int GetUpperStatusValue(this OrderStatus status) => status switch
@@ -75,8 +80,9 @@ public static class OrderStatusExtensions
         OrderStatus.QuoteReady or
         OrderStatus.QuoteExpired or
         OrderStatus.Received or
-        OrderStatus.Cancelled => (int)status,
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        OrderStatus.Cancelled or
+        OrderStatus.CannotDeliver => (int)status,
+        _ => (int)status
     };
 
     public static string GetUpperStatusDisplayName(this OrderStatus status) => status switch
@@ -92,8 +98,9 @@ public static class OrderStatusExtensions
         OrderStatus.UnderReview or
         OrderStatus.QuoteReady or
         OrderStatus.QuoteExpired or
-        OrderStatus.Cancelled => status.GetDisplayName(),
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        OrderStatus.Cancelled or
+        OrderStatus.CannotDeliver => status.GetDisplayName(),
+        _ => status.GetDisplayName()
     };
 
     public static string GetUpperStatusRouteAlias(this OrderStatus status) => status switch
@@ -109,13 +116,14 @@ public static class OrderStatusExtensions
         OrderStatus.UnderReview or
         OrderStatus.QuoteReady or
         OrderStatus.QuoteExpired or
-        OrderStatus.Cancelled => status.GetRouteAlias(),
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        OrderStatus.Cancelled or
+        OrderStatus.CannotDeliver => status.GetRouteAlias(),
+        _ => status.GetRouteAlias()
     };
 
     public static bool IsTerminal(this OrderStatus status) => status switch
     {
-        OrderStatus.Received or OrderStatus.Cancelled => true,
+        OrderStatus.Received or OrderStatus.Cancelled or OrderStatus.CannotDeliver => true,
         OrderStatus.UnderReview or
         OrderStatus.QuoteReady or
         OrderStatus.QuoteExpired or
@@ -126,7 +134,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringToRussia or
         OrderStatus.DeliveredToRussianWarehouse or
         OrderStatus.DeliveringInRussia => false,
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        _ => false
     };
 
     public static int GetProgressPercent(this OrderStatus status) => status switch
@@ -140,8 +148,8 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringToRussia => 78,
         OrderStatus.DeliveredToRussianWarehouse => 86,
         OrderStatus.DeliveringInRussia => 94,
-        OrderStatus.Received or OrderStatus.Cancelled => 100,
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        OrderStatus.Received or OrderStatus.Cancelled or OrderStatus.CannotDeliver => 100,
+        _ => 0
     };
 }
 

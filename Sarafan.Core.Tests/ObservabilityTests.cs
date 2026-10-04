@@ -488,7 +488,7 @@ public sealed class ObservabilityTests
     }
 
     [Test]
-    public void RequestMiddleware_ReportsUnhandledFailureAsServerError()
+    public async Task RequestMiddleware_ReportsUnhandledFailureAsServerError()
     {
         var logger = new CaptureLogger<RequestLoggingMiddleware>();
         var middleware = new RequestLoggingMiddleware(
@@ -496,7 +496,7 @@ public sealed class ObservabilityTests
             logger);
         var context = new DefaultHttpContext();
 
-        Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(context));
 
         using (Assert.EnterMultipleScope())
         {

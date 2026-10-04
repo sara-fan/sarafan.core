@@ -23,6 +23,7 @@ public sealed partial class OrderService
     private async Task<OrderDto> CancelCoreAsync(int customerId, string orderNumber, CancelOrderRequest request,
         CancellationToken token)
     {
+        await ExpireQuotesCoreAsync(customerId, token);
         var (code, sequence) = ParsePublicOrderNumber(orderNumber);
         var operations = AppDatabaseOperations.For(database);
         await using var transaction = await operations.BeginTransactionAsync(database, token);
@@ -42,8 +43,8 @@ public sealed partial class OrderService
             throw InvalidCancelField("reason", "Причина отмены не должна превышать 2000 символов.");
         if (reason?.Length == 0) reason = null;
 
-        var profile = await database.CustomerProfiles.AsNoTracking()
-            .SingleOrDefaultAsync(item => item.CustomerId == customerId, token);
+        var profile = await database.Customers.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == customerId, token);
         var actorName = string.Join(" ", new[] { profile?.LastName, profile?.FirstName, profile?.Patronymic }
             .Where(part => !string.IsNullOrWhiteSpace(part)));
         var previousStatus = order.CancelByCustomer(timeProvider.GetUtcNow());

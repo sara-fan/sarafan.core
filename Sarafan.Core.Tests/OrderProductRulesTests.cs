@@ -63,9 +63,9 @@ public sealed class OrderProductRulesTests
     [Test]
     public void RejectsMissingMoneyWrongCurrencyAndEveryTextBoundary()
     {
-        Reject(Product with { ProductName = null }, "invalid_order_product_name");
+        Assert.DoesNotThrow(() => OrderProductRules.Validate(Product with { ProductName = null }));
         Reject(Product with { ProductName = new string('я', 501) }, "invalid_order_product_name");
-        Reject(Product with { SellerPrice = null }, "invalid_order_seller_price");
+        Assert.DoesNotThrow(() => OrderProductRules.Validate(Product with { SellerPrice = null }));
         foreach (var amount in new[] { 0m, -1m, 0.001m, 100000000m, decimal.MaxValue })
             Reject(Product with { SellerPrice = new(amount, Currency.Usd) }, "invalid_order_seller_price");
         foreach (var currency in new[] { Currency.Rub, Currency.Eur, (Currency)999 })
@@ -131,7 +131,7 @@ public sealed class OrderProductRulesTests
         Assert.That(metadata.ValueLimit.MaximumTotalUsd, Is.EqualTo(1200m));
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
-        Assert.CatchAsync<OperationCanceledException>(() => service.GetPairAsync(cancelled.Token));
+        await Assert.CatchAsync<OperationCanceledException>(() => service.GetPairAsync(cancelled.Token));
     }
 
     [Test]

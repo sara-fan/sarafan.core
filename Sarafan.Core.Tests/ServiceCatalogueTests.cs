@@ -234,7 +234,7 @@ public sealed class ServiceCatalogueTests
 
     private static async Task RejectedAsync(Func<Task> action, string code, int status)
     {
-        var error = Assert.ThrowsAsync<ServiceException>(async () => await action())!;
+        var error = (await Assert.ThrowsAsync<ServiceException>(async () => await action()))!;
         using (Assert.EnterMultipleScope())
         {
             Assert.That(error.Code, Is.EqualTo(code));

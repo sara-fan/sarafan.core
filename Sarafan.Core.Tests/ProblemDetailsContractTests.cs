@@ -71,7 +71,7 @@ public sealed class ProblemDetailsContractTests
             Assert.That(problem.Errors?.Keys, Does.Contain("phone"));
             Assert.That(problem.Errors?["phone"], Does.Contain("Введите номер телефона."));
             Assert.That(problem.Errors?.SelectMany(item => item.Value),
-                Is.All.Matches<string>(value => Regex.IsMatch(value, "[А-Яа-яЁё]")));
+                Is.All.Matches<string>(value => value is not null && Regex.IsMatch(value, "[А-Яа-яЁё]")));
         }
     }
 

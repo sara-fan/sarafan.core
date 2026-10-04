@@ -110,6 +110,15 @@ public sealed class ListDisplaySearchTests
     }
 
     [Test]
+    public async Task UnknownOrderStatusIsSearchableByItsDisplayedFallback()
+    {
+        db.Entry(order).Property(row => row.Status).CurrentValue = (OrderStatus)999;
+        await db.SaveChangesAsync();
+        Assert.That(await ListDisplaySearch.Orders(db.Orders, "СТАТУС 999").CountAsync(), Is.EqualTo(1));
+        Assert.That(await ListDisplaySearch.Orders(db.Orders, "На проверке").CountAsync(), Is.Zero);
+    }
+
+    [Test]
     public async Task HistoryFiltersAllRowsBeforePagingWithoutReadingEvidence()
     {
         for (var i = 0; i < 105; i++) db.Add(new OrderHistoryEvent

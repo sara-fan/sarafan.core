@@ -8,7 +8,7 @@ namespace Sarafan.Core.Services;
 
 public static class CustomerProfileState
 {
-    public static CustomerState Evaluate(CustomerProfile profile) =>
+    public static CustomerState Evaluate(Customer profile) =>
         !string.IsNullOrWhiteSpace(profile.LastName)
         && !string.IsNullOrWhiteSpace(profile.FirstName)
         && !string.IsNullOrWhiteSpace(profile.Email)

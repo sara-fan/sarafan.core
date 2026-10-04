@@ -46,7 +46,7 @@ public sealed class ServiceCatalogueApiTests
             Assert.That(new[] { opsResponse.StatusCode, listResponse.StatusCode, auditResponse.StatusCode },
                 Is.All.EqualTo(HttpStatusCode.OK), role);
             Assert.That(new[] { opsResponse, listResponse, auditResponse },
-                Is.All.Matches<HttpResponseMessage>(response => response.Headers.CacheControl!.NoStore));
+                Is.All.Matches<HttpResponseMessage>(response => response is not null && response.Headers.CacheControl!.NoStore));
             var ops = (await opsResponse.Content.ReadFromJsonAsync<ServiceCatalogueOpsDto>())!;
             Assert.That(ops.Currencies.Select(item => item.Value), Is.EqualTo(new[] { 643, 840 }));
             Assert.That(ops.Currencies.Select(item => item.Symbol), Is.EqualTo(new[] { "₽", "$" }));
@@ -195,7 +195,6 @@ public sealed class ServiceCatalogueApiTests
         var customer = new Customer
         {
             Phone = "+79990007777",
-            Profile = new CustomerProfile(),
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };

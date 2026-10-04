@@ -34,7 +34,7 @@ public sealed class ConsentApiTests
         var admin = await db.BackofficeUsers.Include(x => x.UserRoles).FirstAsync(x => x.IsActive && x.UserRoles.Any(r => r.RoleCode == BackofficeRoles.Administrator));
         _admin = admin.Id;
         _adminToken = scope.ServiceProvider.GetRequiredService<BackofficeJwtTokenService>().CreateAccessToken(admin).Token;
-        var customer = new Customer { Phone = "+7777" + Random.Shared.Next(1000000, 9999999), Profile = new() };
+        var customer = new Customer { Phone = "+7777" + Random.Shared.Next(1000000, 9999999) };
         db.Customers.Add(customer); await db.SaveChangesAsync(); _customer = customer.Id;
         _customerToken = scope.ServiceProvider.GetRequiredService<JwtTokenService>().CreateAccessToken(customer).Token;
 

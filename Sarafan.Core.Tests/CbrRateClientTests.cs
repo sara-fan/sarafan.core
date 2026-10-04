@@ -90,10 +90,10 @@ public sealed class CbrRateClientTests
     [TestCase(200, "not xml", typeof(XmlException))]
     [TestCase(200, "<!DOCTYPE x [<!ENTITY a SYSTEM 'file:///private'>]><x>&a;</x>", typeof(XmlException))]
     [TestCase(200, "<Envelope/>", typeof(InvalidDataException))]
-    public void RejectsHttpXmlAndSoapFailures(int status, string xml, Type error)
+    public async Task RejectsHttpXmlAndSoapFailures(int status, string xml, Type error)
     {
         using var http = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage((HttpStatusCode)status) { Content = new StringContent(xml) })));
-        Assert.ThrowsAsync(error, () => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
+        await Assert.ThrowsAsync(error, () => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
     }
 
     [Test]
@@ -111,22 +111,22 @@ public sealed class CbrRateClientTests
         var pending = client.GetAsync(Requested, cancellation.Token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await cancellation.CancelAsync();
-        Assert.CatchAsync<OperationCanceledException>(async () => await pending);
-        Assert.CatchAsync<OperationCanceledException>(() => client.GetAsync(Requested, cancellation.Token));
+        await Assert.CatchAsync<OperationCanceledException>(async () => await pending);
+        await Assert.CatchAsync<OperationCanceledException>(() => client.GetAsync(Requested, cancellation.Token));
         using var largeHttp = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         { Content = new StringContent("<x>" + new string('x', 1_048_577) + "</x>") })));
-        Assert.ThrowsAsync<XmlException>(() => new CbrRateClient(largeHttp, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
+        await Assert.ThrowsAsync<XmlException>(() => new CbrRateClient(largeHttp, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
     }
 
     [Test]
-    public void BufferedDownloadEnforcesHttpByteLimitBeforeXmlParsing()
+    public async Task BufferedDownloadEnforcesHttpByteLimitBeforeXmlParsing()
     {
         using var http = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(Soap() + new string(' ', 1_048_577))
         })))
         { MaxResponseContentBufferSize = 1_048_576 };
-        Assert.ThrowsAsync<HttpRequestException>(() => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
+        await Assert.ThrowsAsync<HttpRequestException>(() => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
     }
 
     [TestCase(true, true)]
@@ -150,11 +150,11 @@ public sealed class CbrRateClientTests
     }
 
     [Test]
-    public void LegacyUsdReaderReportsMissingUsdAsDataFailure()
+    public async Task LegacyUsdReaderReportsMissingUsdAsDataFailure()
     {
         using var http = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         { Content = new StringContent(Soap(Row.Replace("840", "978").Replace("USD ", "EUR"))) })));
-        Assert.ThrowsAsync<InvalidDataException>(() => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
+        await Assert.ThrowsAsync<InvalidDataException>(() => new CbrRateClient(http, NullLogger<CbrRateClient>.Instance).GetAsync(Requested, default));
     }
 
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler

@@ -51,10 +51,11 @@ public sealed class OrderLimitService(AppDbContext database, TimeProvider timePr
     internal static OrderProductLimitsDto Limits(OrderLimitRatePair? pair)
         => new(1, 4, 1, 200, 500, 200, 200, 2000, Currency.Usd, 99999999.99m, 2, ToDto(pair));
 
-    internal static OrderLimitRatePair Validate(OrderProductDto product, OrderLimitRatePair? pair)
+    internal static OrderLimitRatePair? Validate(OrderProductDto product, OrderLimitRatePair? pair)
     {
+        if (product.SellerPrice is null) return pair;
         if (pair is null) throw new ServiceException(503, "order_limit_rates_unavailable");
-        if (!pair.Allows(product.SellerPrice!.Amount, product.Quantity))
+        if (!pair.Allows(product.SellerPrice?.Amount ?? 0, product.Quantity))
             throw new ServiceException(400, "order_value_limit_exceeded");
         return pair;
     }

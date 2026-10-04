@@ -25,6 +25,7 @@ internal static class ScheduledJobs
 
         services.AddQuartz(quartz =>
         {
+            AddJob<QuoteExpiryJob>(quartz, nameof(ScheduledJobsOptions.QuoteExpiry), schedules.QuoteExpiry);
             AddJob<ExchangeRateJob>(quartz, nameof(ScheduledJobsOptions.ExchangeRates), schedules.ExchangeRates);
             AddJob<ConsentRetentionJob>(quartz, nameof(ScheduledJobsOptions.ConsentRetention), schedules.ConsentRetention);
             AddJob<IanaTldUpdateJob>(quartz, nameof(ScheduledJobsOptions.IanaTldUpdate), schedules.IanaTldUpdate);
@@ -126,4 +127,11 @@ public sealed class IanaTldUpdateJob(
             SarafanEvents.IanaTldUpdateFailed(logger, exception);
         }
     }
+}
+
+[DisallowConcurrentExecution]
+public sealed class QuoteExpiryJob(OrderService orders) : IJob
+{
+    public async ValueTask Execute(IJobExecutionContext context, CancellationToken cancellationToken)
+        => await orders.ExpireQuotesAsync(cancellationToken);
 }

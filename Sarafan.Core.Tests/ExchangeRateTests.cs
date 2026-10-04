@@ -62,10 +62,10 @@ public sealed class ExchangeRateTests
         await Service(database, Rate with { SourceEffectiveDate = new DateOnly(2026, 9, 6) }).SynchronizeAsync(default);
         await Service(database, Rate with { SourceEffectiveDate = new DateOnly(2026, 9, 4) }).SynchronizeAsync(default);
         var failure = new HttpRequestException("secret SOAP body");
-        Assert.That(Assert.ThrowsAsync<HttpRequestException>(() => Service(database, failure: failure, logger: logger).SynchronizeAsync(default)), Is.SameAs(failure));
+        Assert.That((await Assert.ThrowsAsync<HttpRequestException>(() => Service(database, failure: failure, logger: logger).SynchronizeAsync(default))), Is.SameAs(failure));
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
-        Assert.CatchAsync<OperationCanceledException>(() => Service(database).SynchronizeAsync(cancellation.Token));
+        await Assert.CatchAsync<OperationCanceledException>(() => Service(database).SynchronizeAsync(cancellation.Token));
         Assert.That(await database.ExchangeRateHistory.CountAsync(), Is.EqualTo(3));
         Assert.That((await Service(database).GetLatestAsync(default))!.SourceEffectiveDate, Is.EqualTo(new DateOnly(2026, 9, 6)));
         Assert.That(logger.Records.Any(record => record.Event.Id == 1600 && record.Level == LogLevel.Debug), Is.True);

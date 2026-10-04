@@ -27,7 +27,8 @@ public sealed class OrderStatusTests
         new(OrderStatus.DeliveredToRussianWarehouse, 360, "Получен на складе в России", "delivered_to_russian_warehouse", 300, "Выполняется", "in_progress"),
         new(OrderStatus.DeliveringInRussia, 380, "Доставляем по России", "delivering_in_russia", 300, "Выполняется", "in_progress"),
         new(OrderStatus.Received, 400, "Получен", "received", 400, "Завершён", "completed"),
-        new(OrderStatus.Cancelled, 500, "Отменён", "cancelled", 500, "Отменён", "cancelled")
+        new(OrderStatus.Cancelled, 500, "Отменён", "cancelled", 500, "Отменён", "cancelled"),
+        new(OrderStatus.CannotDeliver, 600, "Не можем привезти", "cannot_deliver", 600, "Не можем привезти", "cannot_deliver")
     ];
 
     [Test]
@@ -46,7 +47,7 @@ public sealed class OrderStatusTests
                 Assert.That(expected.Status.GetUpperStatusValue(), Is.EqualTo(expected.UpperStatusValue));
                 Assert.That(expected.Status.GetUpperStatusDisplayName(), Is.EqualTo(expected.UpperStatusName));
                 Assert.That(expected.Status.GetUpperStatusRouteAlias(), Is.EqualTo(expected.UpperStatusRouteAlias));
-                Assert.That(expected.Status.IsTerminal(), Is.EqualTo(expected.Status is OrderStatus.Received or OrderStatus.Cancelled));
+                Assert.That(expected.Status.IsTerminal(), Is.EqualTo(expected.Status is OrderStatus.Received or OrderStatus.Cancelled or OrderStatus.CannotDeliver));
                 Assert.That(expected.Status.GetProgressPercent(), Is.InRange(0, 100));
             }
         }
@@ -56,21 +57,25 @@ public sealed class OrderStatusTests
             Is.EqualTo(new[] { 300, 310, 320, 330, 340, 360, 380 }));
     }
 
+    [TestCase(-1)]
+    [TestCase(int.MinValue)]
+    [TestCase(int.MaxValue)]
     [TestCase(350)]
     [TestCase(370)]
     [TestCase(390)]
-    public void UndefinedStatus_HasNoMetadata(int value)
+    public void UndefinedStatus_HasNeutralPresentationAndNoActions(int value)
     {
         var status = (OrderStatus)value;
 
         Assert.That(Enum.IsDefined(status), Is.False);
-        Assert.Throws<ArgumentOutOfRangeException>(() => status.GetDisplayName());
-        Assert.Throws<ArgumentOutOfRangeException>(() => status.GetRouteAlias());
-        Assert.Throws<ArgumentOutOfRangeException>(() => status.GetUpperStatusValue());
-        Assert.Throws<ArgumentOutOfRangeException>(() => status.GetUpperStatusDisplayName());
-        Assert.Throws<ArgumentOutOfRangeException>(() => status.GetUpperStatusRouteAlias());
-        Assert.Throws<ArgumentOutOfRangeException>(() => status.IsTerminal());
-        Assert.Throws<ArgumentOutOfRangeException>(() => status.GetProgressPercent());
+        Assert.That(status.GetDisplayName(), Is.EqualTo($"Статус {value}"));
+        Assert.That(status.GetRouteAlias(), Is.EqualTo($"status_{value}"));
+        Assert.That(status.GetUpperStatusValue(), Is.EqualTo(value));
+        Assert.That(status.GetUpperStatusDisplayName(), Is.EqualTo(status.GetDisplayName()));
+        Assert.That(status.GetUpperStatusRouteAlias(), Is.EqualTo(status.GetRouteAlias()));
+        Assert.That(status.IsTerminal(), Is.False);
+        Assert.That(status.GetProgressPercent(), Is.Zero);
+        Assert.That(status.CanCustomerCancel(), Is.False);
     }
 
     [Test]

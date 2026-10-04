@@ -26,7 +26,7 @@ public sealed record CustomerDto(
         customer.CreatedAt,
         customer.UpdatedAt,
         hasPhoto,
-        CustomerProfileDto.From(customer.Profile, customer.Phone));
+        CustomerProfileDto.From(customer));
 }
 
 public sealed record CustomerOpsDto(IReadOnlyList<EnumOpsItemDto> States);
@@ -46,8 +46,8 @@ public sealed record CustomerProfileDto(
     string? City,
     string? Address)
 {
-    public static CustomerProfileDto From(CustomerProfile profile, string phone) => new(
-        phone,
+    public static CustomerProfileDto From(Customer profile) => new(
+        profile.Phone,
         profile.LastName,
         profile.FirstName,
         profile.Patronymic,
