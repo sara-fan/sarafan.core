@@ -1,15 +1,18 @@
 # Versioned customer consent
 
 Governing requirements: FR-LEGAL-017, FR-LEGAL-020 and FR-LEGAL-021 at
-sara-fan/sarafan@abd85c7977e0dc9c6797185e66f041baab605a50, with the owner's
-approved clarifications in [implementation issue #11](https://github.com/sara-fan/sarafan/issues/11)
+[current LEGAL specification](https://github.com/sara-fan/sarafan/blob/main/docs/features/012-legal-documents-and-support/spec.md)
+and [AUTH FR-AUTH-013](https://github.com/sara-fan/sarafan/blob/main/docs/features/004-authentication/spec.md). Historical reconciliation is tracked in [implementation issue #11](https://github.com/sara-fan/sarafan/issues/11)
 and [Russian specification clarification #36](https://github.com/kuznetsovrm/sarafan/issues/36).
 
 ## Current acceptance and renewal
 
 Legal kinds remain PersonalDataConsent=1 and UserAgreement=2; 0, 3 and 4 are reserved.
 Registration/login acceptance of the currently effective agreement satisfies order creation.
-A session remains usable for reads when a newer document becomes effective.
+A session remains usable when a newer document becomes effective. Before the next order,
+the customer explicitly accepts any missing/outdated required version in the active session,
+without another phone/SMS confirmation and without losing the entered draft.
+A future publication does not require acceptance before its effective boundary.
 
 GET /api/v1/consents/me returns a status for each supported kind, the newest 200
 history records, and the earliest future effective boundary for either kind.
@@ -26,12 +29,13 @@ without adding evidence, even if their document is now outdated. Reusing a key w
 different content returns 409 consent_conflict; stale new confirmations return
 409 consent_version_changed.
 
-New-order writes require both current grants in the consent transaction.
-Missing/outdated agreement acceptance returns 409 user_agreement_required;
-personal-data absence returns 409 personal_data_consent_required. Missing effective
-documents return 409 consent_document_unavailable. Profile/photo writes require only
-personal-data consent, including the pre-binding multipart guard. Reads, logout and photo
-deletion retain their existing access rules.
+New-order writes require both current grants in the consent transaction,
+including revalidation after persistence before commit. Missing/outdated agreement
+acceptance returns 409 user_agreement_required; personal-data absence returns
+409 personal_data_consent_required. Missing effective required documents return
+409 consent_document_unavailable. Profile/photo writes keep the personal-data-only gate,
+including the pre-binding multipart guard. Checkout also keeps both current grants.
+Reads, logout and photo deletion retain their existing access rules.
 
 ## Evidence retention
 
