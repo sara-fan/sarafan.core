@@ -16,6 +16,19 @@ namespace Sarafan.Core.Tests;
 
 public sealed partial class OrderProductApiTests
 {
+    private static CustomerProfileUpdateRequest CheckoutProfile() => new()
+    {
+        FirstName = "Пётр",
+        LastName = "Петров",
+        Email = "test@example.com",
+        Patronymic = null,
+        PassportSeries = "1234",
+        PassportNumber = "123456",
+        PassportIssueDate = new(2010, 2, 3),
+        PassportIssuedBy = "МВД",
+        Inn = "123456789012"
+    };
+
     private async Task<OrderDto> ReadyForCheckout()
     {
         using var response = await Create(Guid.NewGuid()); response.EnsureSuccessStatusCode();
@@ -42,7 +55,7 @@ public sealed partial class OrderProductApiTests
         {
             ExpectedUpdatedAt = order.UpdatedAt,
             Delivery = "courier",
-            Profile = new() { FirstName = "Пётр", LastName = "Петров", Email = null, Inn = "123456789012" }
+            Profile = CheckoutProfile()
         };
         using var anonymous = IntegrationTestEnvironment.Factory.CreateClient();
         using var unauthorized = await anonymous.PostAsJsonAsync(path, request);
@@ -168,7 +181,7 @@ public sealed partial class OrderProductApiTests
             Delivery = "courier",
             ExpectedDeliveryAddress = new(customer.Profile.PostalCode, customer.Profile.City, customer.Profile.Address),
             DeliveryAddress = new("", "Казань", "Новый адрес"),
-            Profile = new() { FirstName = "Пётр", LastName = "Петров" }
+            Profile = CheckoutProfile()
         };
         var path = "/api/v1/orders/" + order.OrderNumber + "/checkout";
         using var invalid = await _customer.PostAsJsonAsync(path, request);
@@ -186,9 +199,8 @@ public sealed partial class OrderProductApiTests
         Assert.That(updated.Profile.FirstName, Is.EqualTo("Пётр"));
     }
 
-    [TestCase("courier")]
-    [TestCase("pickup")]
-    public async Task StaffOrderDeliveryUsesCheckoutSnapshotInsteadOfCurrentProfileAddress(string routeAlias)
+    [Test]
+    public async Task StaffOrderDeliveryUsesCheckoutSnapshotInsteadOfCurrentProfileAddress()
     {
         var order = await ReadyForCheckout();
         var firstAddress = new CustomerDeliveryAddress("123456", "Москва", "Адрес при оформлении");
@@ -199,9 +211,9 @@ public sealed partial class OrderProductApiTests
         var request = new OrderCheckoutRequest
         {
             ExpectedUpdatedAt = order.UpdatedAt,
-            Delivery = routeAlias,
-            ExpectedDeliveryAddress = routeAlias == "courier" ? firstAddress : null,
-            Profile = new() { FirstName = "Иван", LastName = "Иванов", PassportNumber = "123456", PassportIssueDate = new(2010, 2, 3) }
+            Delivery = "courier",
+            ExpectedDeliveryAddress = firstAddress,
+            Profile = CheckoutProfile()
         };
         using var checkoutResponse = await _customer.PostAsJsonAsync("/api/v1/orders/" + order.OrderNumber + "/checkout", request);
         checkoutResponse.EnsureSuccessStatusCode();
@@ -240,6 +252,67 @@ public sealed partial class OrderProductApiTests
             await database.SaveChangesAsync();
         }
         Assert.That((await Details(order.OrderNumber)).Delivery, Is.EqualTo(legacy.Delivery));
+    }
+
+    [Test]
+    public async Task CheckoutReadIsAuthenticatedAndDoesNotPersistOrRecalculate()
+    {
+        var order = await ReadyForCheckout();
+        var path = "/api/v1/orders/" + order.OrderNumber + "/checkout";
+        using var anonymous = IntegrationTestEnvironment.Factory.CreateClient();
+        using var denied = await anonymous.GetAsync(path);
+        Assert.That(denied.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        using var response = await _customer.GetAsync(path);
+        response.EnsureSuccessStatusCode();
+        Assert.That(response.Headers.CacheControl!.NoStore, Is.True);
+        var read = (await response.Content.ReadFromJsonAsync<OrderDto>())!;
+        Assert.That(read.Pricing.DomesticDeliveryRub, Is.EqualTo(10));
+        Assert.That(read.Pricing.TotalRub, Is.EqualTo(order.Pricing.TotalRub));
+        Assert.That(read.UpdatedAt, Is.EqualTo(order.UpdatedAt));
+        Assert.That(read.Checkout, Is.Null);
+        var ordinary = (await _customer.GetFromJsonAsync<OrderDto>("/api/v1/orders/" + order.OrderNumber))!;
+        Assert.That(ordinary.Pricing.DomesticDeliveryRub, Is.Null);
+        var profile = (await _customer.GetFromJsonAsync<CustomerDto>("/api/v1/customers/me"))!;
+        Assert.That(profile.Profile.Address, Is.Null);
+        await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.That(await database.Set<OrderHistoryEvent>().CountAsync(row => row.Kind == OrderHistoryKind.CheckoutSaved), Is.Zero);
+        using var missing = await _customer.GetAsync("/api/v1/orders/99999999-1/checkout");
+        await Problem(missing, HttpStatusCode.NotFound, "resource_not_found");
+        using var opsResponse = await _customer.GetAsync("/api/v1/orders/ops");
+        using var opsBody = JsonDocument.Parse(await opsResponse.Content.ReadAsStringAsync());
+        var choices = opsBody.RootElement.GetProperty("checkoutDeliveries");
+        Assert.That(choices.GetArrayLength(), Is.EqualTo(1));
+        Assert.That(choices[0].GetProperty("routeAlias").GetString(), Is.EqualTo("courier"));
+    }
+
+    [Test]
+    public async Task CheckoutEndpointRejectsIncompleteFieldsAndPickupWithoutWrites()
+    {
+        var order = await ReadyForCheckout();
+        var path = "/api/v1/orders/" + order.OrderNumber + "/checkout";
+        var request = new OrderCheckoutRequest
+        {
+            ExpectedUpdatedAt = order.UpdatedAt,
+            Delivery = "courier",
+            ExpectedDeliveryAddress = new(null, null, null),
+            DeliveryAddress = new("123456", "Москва", "Адрес"),
+            Profile = new() { FirstName = "Иван", LastName = "Иванов" }
+        };
+        using var response = await _customer.PostAsJsonAsync(path, request);
+        await Problem(response, HttpStatusCode.BadRequest, "validation_failed");
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var errors = body.RootElement.GetProperty("errors");
+        foreach (var field in new[] { "email", "passportSeries", "passportNumber", "passportIssuedBy", "passportIssueDate", "inn" })
+            Assert.That(errors.TryGetProperty("profile." + field, out _), Is.True);
+        request.Profile = CheckoutProfile();
+        request.Delivery = "pickup";
+        using var pickup = await _customer.PostAsJsonAsync(path, request);
+        await Problem(pickup, HttpStatusCode.BadRequest, "validation_failed");
+        var unchanged = (await _customer.GetFromJsonAsync<OrderDto>("/api/v1/orders/" + order.OrderNumber))!;
+        Assert.That(unchanged.Checkout, Is.Null);
+        Assert.That(unchanged.UpdatedAt, Is.EqualTo(order.UpdatedAt));
+        Assert.That((await _customer.GetFromJsonAsync<CustomerDto>("/api/v1/customers/me"))!.Profile.Address, Is.Null);
     }
 
 }

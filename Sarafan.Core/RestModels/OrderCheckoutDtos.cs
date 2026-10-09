@@ -17,7 +17,7 @@ public sealed record OrderCheckoutDto(CustomerProfileDto Profile, OrderCheckoutD
 public sealed record OrderCheckoutDeliveryDto(string RouteAlias, string Name, string Destination);
 public sealed record OrderCheckoutDeliveryOptionDto(string RouteAlias, string Name, string DestinationSource, string? Destination)
 {
-    public static IReadOnlyList<OrderCheckoutDeliveryOptionDto> DemoOptions { get; } = Array.AsReadOnly<OrderCheckoutDeliveryOptionDto>(
-    [new("courier", "Курьерская доставка", "customer-profile", null),
-     new("pickup", "Тестовый пункт выдачи", "test-pickup", "Тестовый ПВЗ: Москва, Тестовая улица, 2")]);
+    public static IReadOnlyList<OrderCheckoutDeliveryOptionDto> PilotOptions { get; } = Array.AsReadOnly<OrderCheckoutDeliveryOptionDto>(
+    [new("courier", "Курьерская доставка", "customer-profile", null)]);
+
 }
