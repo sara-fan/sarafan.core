@@ -13,6 +13,10 @@ namespace Sarafan.Core.Services;
 
 public sealed partial class OrderService
 {
+    public Task<OrderDto> GetCheckoutAsync(int customerId, string number, CancellationToken token)
+        => PricingRun(nameof(GetCheckoutAsync), () => "customer/order=[redacted]",
+            () => GetCoreAsync(customerId, number, token, checkoutPricing: true), token);
+
     public Task<OrderDto> SaveCheckoutAsync(int customerId, string number, OrderCheckoutRequest request, CancellationToken token)
         => PricingRun(nameof(SaveCheckoutAsync), () => "customer/order/checkout=[redacted]", async () =>
         {
@@ -93,11 +97,18 @@ public sealed partial class OrderService
             foreach (var member in result.MemberNames) Invalid("profile." + char.ToLowerInvariant(member[0]) + member[1..], result.ErrorMessage!);
         if (normalized.LastName is null) Invalid("profile.lastName", "Укажите фамилию получателя.");
         if (normalized.FirstName is null) Invalid("profile.firstName", "Укажите имя получателя.");
+        if (normalized.Email is null) Invalid("profile.email", "Укажите email.");
+        if (normalized.PassportSeries is null) Invalid("profile.passportSeries", "Укажите серию паспорта.");
+        if (normalized.PassportNumber is null) Invalid("profile.passportNumber", "Укажите номер паспорта.");
+        if (normalized.PassportIssuedBy is null) Invalid("profile.passportIssuedBy", "Укажите, кем выдан паспорт.");
+        if (normalized.PassportIssueDate is null) Invalid("profile.passportIssueDate", "Укажите дату выдачи паспорта.");
+        if (normalized.Inn is null) Invalid("profile.inn", "Укажите ИНН.");
         var today = ConsentCalendar.LocalDate(now);
         if (normalized.PassportIssueDate > today) Invalid("profile.passportIssueDate", "Дата выдачи не может быть в будущем.");
-        var option = OrderCheckoutDeliveryOptionDto.DemoOptions.SingleOrDefault(row => row.RouteAlias == request.Delivery);
+        var option = OrderCheckoutDeliveryOptionDto.PilotOptions.SingleOrDefault(row => row.RouteAlias == request.Delivery);
         var keepDelivery = option is not null && before?.Delivery.RouteAlias == request.Delivery
-            && (request.Delivery != "courier" || (request.ExpectedDeliveryAddress is null && request.DeliveryAddress is null));
+            && (request.Delivery != "courier" || (request.ExpectedDeliveryAddress is null && request.DeliveryAddress is null
+                && new CustomerDeliveryAddress(before!.Profile.PostalCode, before.Profile.City, before.Profile.Address).Validate().Count == 0));
         var delivery = keepDelivery ? before!.Delivery : null;
         var profileAddress = CustomerDeliveryAddress.From(customer).Normalize();
         var address = request.Delivery == "courier" ? request.DeliveryAddress?.Normalize() ?? profileAddress : profileAddress;

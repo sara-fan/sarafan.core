@@ -654,6 +654,7 @@ public sealed class OperationLoggingTests
         var createdOrder = (await createOrder.Content.ReadFromJsonAsync<OrderDto>())!;
         using var listOrders = await client.GetAsync("/api/v1/orders");
         using var getOrder = await client.GetAsync($"/api/v1/orders/{createdOrder.OrderNumber}");
+        using var getCheckout = await client.GetAsync($"/api/v1/orders/{createdOrder.OrderNumber}/checkout");
         var customerToken = session.AccessToken;
         using var backofficeLogin = await client.PostAsJsonAsync("/api/v1/backoffice/auth/login", new BackofficeLoginRequest
         {
@@ -710,6 +711,7 @@ public sealed class OperationLoggingTests
         Assert.That(cancelOrder.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
         Assert.That(listOrders.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(getOrder.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(getCheckout.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(backofficeOrderOps.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(backofficeOrders.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));

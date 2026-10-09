@@ -30,6 +30,11 @@ public sealed class OrdersController(
         CancellationToken cancellationToken)
         => Ok(await orders.GetAsync(CurrentCustomerId(), orderNumber, cancellationToken));
 
+    [HttpGet("{orderNumber}/checkout")]
+    [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<OrderDto>> GetCheckout(string orderNumber, CancellationToken cancellationToken)
+        => Ok(await orders.GetCheckoutAsync(CurrentCustomerId(), orderNumber, cancellationToken));
+
     [HttpPost("{orderNumber}/checkout")]
     [ServiceFilter(typeof(PersonalDataConsentFilter))]
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]

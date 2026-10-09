@@ -36,7 +36,9 @@ public sealed partial class OrderPricingTests
     private OrderCheckoutRequest CheckoutRequest() => new()
     {
         ExpectedUpdatedAt = order.UpdatedAt,
-        Delivery = "pickup",
+        Delivery = "courier",
+        ExpectedDeliveryAddress = CustomerDeliveryAddress.From(order.Customer),
+        DeliveryAddress = CustomerDeliveryAddress.From(order.Customer).Validate().Count == 0 ? null : new("123456", "Москва", "Адрес"),
         Profile = new()
         {
             FirstName = " Иван ",
@@ -54,7 +56,7 @@ public sealed partial class OrderPricingTests
     public async Task CheckoutAtomicallySavesCustomerDetailsAndOrderDeliveryWithoutChangingQuote()
     {
         var checkout = await CheckoutService();
-        order.Customer.City = "Москва"; order.Customer.Address = "Старый адрес";
+        order.Customer.PostalCode = "123456"; order.Customer.City = "Москва"; order.Customer.Address = "Старый адрес";
         await db.SaveChangesAsync();
         var before = await service.GetAsync(order.CustomerId, "12345678-1", default);
         var snapshot = (await db.OrderPricingSnapshots.OrderByDescending(row => row.Id).FirstAsync()).Payload;
@@ -64,8 +66,8 @@ public sealed partial class OrderPricingTests
             Assert.That(result.Checkout!.Profile.Phone, Is.EqualTo("+79990001234"));
             Assert.That(result.Checkout!.Profile.FirstName, Is.EqualTo("Иван"));
             Assert.That(result.Checkout!.Profile.Email, Is.EqualTo("test@example.com"));
-            Assert.That(result.Checkout.Delivery.RouteAlias, Is.EqualTo("pickup"));
-            Assert.That(result.Checkout.Delivery.Destination, Does.Contain("Тестовый ПВЗ"));
+            Assert.That(result.Checkout.Delivery.RouteAlias, Is.EqualTo("courier"));
+            Assert.That(result.Checkout.Delivery.Destination, Is.EqualTo("123456, Москва, Старый адрес"));
             Assert.That(result.Pricing.TotalRub, Is.EqualTo(before.Pricing.TotalRub));
             Assert.That(result.Pricing.DomesticDeliveryRub, Is.EqualTo(55));
             Assert.That(result.UpdatedAt, Is.GreaterThan(before.UpdatedAt));
@@ -123,13 +125,13 @@ public sealed partial class OrderPricingTests
                 Is.EqualTo(kind == LegalDocumentKind.UserAgreement ? "user_agreement_required" : "personal_data_consent_required"));
             Assert.That(order.CheckoutData, Is.Null); grant.Decision = "grant"; await db.SaveChangesAsync();
         }
-        request.Profile!.Email = null; request.Profile.Patronymic = null;
+        request.Profile!.Patronymic = null;
         var result = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
-        Assert.That(result.Checkout!.Profile.Email, Is.Null);
+        Assert.That(result.Checkout!.Profile.Patronymic, Is.Null);
         request.Profile.FirstName = "Пётр";
-        request.ExpectedUpdatedAt = result.UpdatedAt; request.Delivery = "other";
+        request.ExpectedUpdatedAt = result.UpdatedAt; request.ExpectedDeliveryAddress = null; request.DeliveryAddress = null; request.Delivery = "other";
         Assert.That((await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default)))!.Code, Is.EqualTo("validation_failed"));
-        request.Delivery = "pickup";
+        request.Delivery = "courier";
         var changed = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
         var events = await db.Set<OrderHistoryEvent>().Where(row => row.Kind == OrderHistoryKind.CheckoutSaved).OrderBy(row => row.Id).ToArrayAsync();
         Assert.That(events, Has.Length.EqualTo(2));
@@ -187,7 +189,7 @@ public sealed partial class OrderPricingTests
         var checkout = await CheckoutService();
         order.Customer.PostalCode = "123456"; order.Customer.City = "Москва"; order.Customer.Address = "Улица, 1";
         await db.SaveChangesAsync();
-        var request = CheckoutRequest(); request.Delivery = "courier";
+        var request = CheckoutRequest(); request.Delivery = "courier"; request.DeliveryAddress = null;
         request.ExpectedDeliveryAddress = CustomerDeliveryAddress.From(order.Customer);
         var saved = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
         Assert.That(saved.Checkout!.Delivery.Destination, Is.EqualTo("123456, Москва, Улица, 1"));
@@ -208,7 +210,7 @@ public sealed partial class OrderPricingTests
     {
         var checkout = await CheckoutService();
         order.Customer.PostalCode = "123456"; order.Customer.City = "Москва"; order.Customer.Address = "Улица, 1";
-        var request = CheckoutRequest(); request.Delivery = "courier";
+        var request = CheckoutRequest(); request.Delivery = "courier"; request.DeliveryAddress = null;
         request.ExpectedDeliveryAddress = CustomerDeliveryAddress.From(order.Customer);
         if (scenario == "postalCode") order.Customer.PostalCode = null;
         if (scenario == "city") order.Customer.City = " ";
@@ -230,41 +232,33 @@ public sealed partial class OrderPricingTests
         var legacy = saved.Checkout! with { Delivery = new("courier", "Курьерская доставка", "Тестовый адрес: Москва, Тестовая улица, 1") };
         order.SaveCheckout(JsonSerializer.Serialize(legacy, WebJson), Now);
         await db.SaveChangesAsync();
-        var request = CheckoutRequest(); request.Delivery = "courier";
+        var request = CheckoutRequest(); request.Delivery = "courier"; request.DeliveryAddress = null; request.ExpectedDeliveryAddress = null;
         var result = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
         Assert.That(result.Checkout!.Delivery, Is.EqualTo(legacy.Delivery));
     }
 
     [Test]
-    public async Task DeliveryCanSwitchAndCourierAddressCanBeReplacedBeforePayment()
+    public async Task HistoricalPickupRemainsReadableAndCanBeReplacedByCourierOnly()
     {
         var checkout = await CheckoutService();
-        var request = CheckoutRequest();
-        var pickup = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
-        order.Customer.PostalCode = "123456"; order.Customer.City = "Москва"; order.Customer.Address = "Улица, 1";
+        var saved = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", CheckoutRequest(), default);
+        var legacy = saved.Checkout! with { Delivery = new("pickup", "Тестовый пункт выдачи", "Исторический ПВЗ") };
+        order.SaveCheckout(JsonSerializer.Serialize(legacy, WebJson), Now);
         await db.SaveChangesAsync();
-        request.ExpectedUpdatedAt = pickup.UpdatedAt; request.Delivery = "courier";
-        request.ExpectedDeliveryAddress = CustomerDeliveryAddress.From(order.Customer);
+        Assert.That((await checkout.GetAsync(order.CustomerId, "12345678-1", default)).Checkout, Is.EqualTo(legacy));
+        var request = CheckoutRequest();
         var courier = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
-        Assert.That(courier.Checkout!.Delivery.Destination, Is.EqualTo("123456, Москва, Улица, 1"));
-        order.Customer.Address = "Улица, 2"; await db.SaveChangesAsync();
+        Assert.That(courier.Checkout!.Delivery.RouteAlias, Is.EqualTo("courier"));
         request.ExpectedUpdatedAt = courier.UpdatedAt;
-        var stale = await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default));
-        Assert.That(stale!.Errors, Does.ContainKey("delivery"));
+        request.Delivery = "pickup";
+        var rejected = await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default));
+        Assert.That(rejected!.Errors, Does.ContainKey("delivery"));
         Assert.That((await checkout.GetAsync(order.CustomerId, "12345678-1", default)).Checkout, Is.EqualTo(courier.Checkout));
-        request.ExpectedDeliveryAddress = CustomerDeliveryAddress.From(order.Customer);
-        var replaced = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
-        Assert.That(replaced.Checkout!.Delivery.Destination, Is.EqualTo("123456, Москва, Улица, 2"));
-        Assert.That(replaced.Checkout.Profile.Address, Is.EqualTo("Улица, 2"));
-        request.ExpectedUpdatedAt = replaced.UpdatedAt; request.Delivery = "pickup"; request.ExpectedDeliveryAddress = null;
-        var again = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
-        Assert.That(again.Checkout!.Delivery.RouteAlias, Is.EqualTo("pickup"));
-        Assert.That(again.Pricing.TotalRub, Is.EqualTo(pickup.Pricing.TotalRub));
         var events = await db.Set<OrderHistoryEvent>().Where(row => row.Kind == OrderHistoryKind.CheckoutSaved).OrderBy(row => row.Id).ToArrayAsync();
-        Assert.That(events, Has.Length.EqualTo(4));
-        var evidence = JsonSerializer.Deserialize<OrderHistoryEvidence>(events[2].Payload, WebJson)!;
-        Assert.That(evidence.CheckoutBefore, Is.EqualTo(courier.Checkout));
-        Assert.That(evidence.CheckoutAfter, Is.EqualTo(replaced.Checkout));
+        Assert.That(events, Has.Length.EqualTo(2));
+        var evidence = JsonSerializer.Deserialize<OrderHistoryEvidence>(events[1].Payload, WebJson)!;
+        Assert.That(evidence.CheckoutBefore, Is.EqualTo(legacy));
+        Assert.That(evidence.CheckoutAfter, Is.EqualTo(courier.Checkout));
     }
 
     [TestCase(OrderStatus.Paid)]
@@ -287,7 +281,7 @@ public sealed partial class OrderPricingTests
     public async Task InlineCourierAddressSavesWithRecipientAndSnapshotAndCanReplaceSavedDelivery()
     {
         var checkout = await CheckoutService();
-        var request = CheckoutRequest(); request.Delivery = "courier";
+        var request = CheckoutRequest(); request.Delivery = "courier"; request.DeliveryAddress = null;
         request.ExpectedDeliveryAddress = new("", " ", null);
         request.DeliveryAddress = new(" 654321 ", " Казань ", " Новый адрес ");
         var saved = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
@@ -313,7 +307,7 @@ public sealed partial class OrderPricingTests
     public async Task InvalidInlineAddressReturnsFieldErrorsWithoutSavingAnything(string field, int maximum)
     {
         var checkout = await CheckoutService();
-        var request = CheckoutRequest(); request.Delivery = "courier";
+        var request = CheckoutRequest(); request.Delivery = "courier"; request.DeliveryAddress = null;
         request.ExpectedDeliveryAddress = CustomerDeliveryAddress.From(order.Customer);
         foreach (var value in new[] { " ", new string('a', maximum + 1) })
         {
@@ -338,7 +332,7 @@ public sealed partial class OrderPricingTests
     public async Task InlineAddressRequiresUnchangedProfileBeforeSaving(bool omitExpectation)
     {
         var checkout = await CheckoutService();
-        var request = CheckoutRequest(); request.Delivery = "courier";
+        var request = CheckoutRequest(); request.Delivery = "courier"; request.DeliveryAddress = null;
         request.ExpectedDeliveryAddress = omitExpectation ? null : CustomerDeliveryAddress.From(order.Customer);
         request.DeliveryAddress = new("123456", "Москва", "Черновик");
         order.Customer.Address = "Правка в другой вкладке";
@@ -351,15 +345,78 @@ public sealed partial class OrderPricingTests
     }
 
     [Test]
-    public async Task PickupIgnoresInlineCourierDraftWithoutChangingProfileAddress()
+    public async Task PickupIsRejectedWithoutChangingProfileSnapshotOrHistory()
     {
         var checkout = await CheckoutService();
         var request = CheckoutRequest();
-        request.DeliveryAddress = new("123456", "Москва", "Черновик");
-        var saved = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
+        request.Delivery = "pickup";
+        var rejected = await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default));
+        Assert.That(rejected!.Errors, Does.ContainKey("delivery"));
         Assert.That(order.Customer.Address, Is.Null);
-        Assert.That(saved.Checkout!.Profile.Address, Is.Null);
-        Assert.That(saved.Checkout.Delivery.RouteAlias, Is.EqualTo("pickup"));
+        Assert.That(order.CheckoutData, Is.Null);
+        Assert.That(await db.Set<OrderHistoryEvent>().CountAsync(row => row.Kind == OrderHistoryKind.CheckoutSaved), Is.Zero);
+    }
+
+    [TestCase("Email", "email")]
+    [TestCase("PassportSeries", "passportSeries")]
+    [TestCase("PassportNumber", "passportNumber")]
+    [TestCase("PassportIssuedBy", "passportIssuedBy")]
+    [TestCase("PassportIssueDate", "passportIssueDate")]
+    [TestCase("Inn", "inn")]
+    public async Task CheckoutRequiresAllCustomsFieldsWithoutWrites(string property, string field)
+    {
+        var checkout = await CheckoutService();
+        foreach (var empty in property == "PassportIssueDate" ? new object?[] { null } : new object?[] { null, " " })
+        {
+            var request = CheckoutRequest();
+            typeof(CustomerProfileUpdateRequest).GetProperty(property)!.SetValue(request.Profile, empty);
+            var rejected = await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default));
+            Assert.That(rejected!.Errors, Does.ContainKey("profile." + field));
+            Assert.That(order.Customer.FirstName, Is.Null);
+            Assert.That(order.Customer.Address, Is.Null);
+            Assert.That(order.CheckoutData, Is.Null);
+            Assert.That(await db.Set<OrderHistoryEvent>().CountAsync(row => row.Kind == OrderHistoryKind.CheckoutSaved), Is.Zero);
+        }
+    }
+
+    [Test]
+    public async Task CheckoutReadRevealsSavedDeliveryWithoutSavingAddressOrRecalculating()
+    {
+        var checkout = await CheckoutService();
+        var version = order.UpdatedAt;
+        var snapshot = (await db.OrderPricingSnapshots.OrderByDescending(row => row.Id).FirstAsync()).Payload;
+        var before = await checkout.GetAsync(order.CustomerId, "12345678-1", default);
+        var result = await checkout.GetCheckoutAsync(order.CustomerId, "12345678-1", default);
+        Assert.That(before.Pricing.DomesticDeliveryRub, Is.Null);
+        Assert.That(result.Pricing.DomesticDeliveryRub, Is.EqualTo(55));
+        Assert.That(result.Pricing.TotalRub, Is.EqualTo(before.Pricing.TotalRub));
+        Assert.That(result.UpdatedAt, Is.EqualTo(version));
+        Assert.That(result.Checkout, Is.Null);
+        Assert.That(order.Customer.Address, Is.Null);
+        Assert.That((await db.OrderPricingSnapshots.OrderByDescending(row => row.Id).FirstAsync()).Payload, Is.EqualTo(snapshot));
+        Assert.That(await db.Set<OrderHistoryEvent>().CountAsync(row => row.Kind == OrderHistoryKind.CheckoutSaved), Is.Zero);
+        Assert.That((await Assert.ThrowsAsync<ServiceException>(() => checkout.GetCheckoutAsync(999, "12345678-1", default)))!.StatusCode, Is.EqualTo(404));
+    }
+
+    [Test]
+    public async Task IncompleteHistoricalCourierAddressCannotBypassNewCheckoutRequirements()
+    {
+        var checkout = await CheckoutService();
+        var saved = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", CheckoutRequest(), default);
+        var legacy = saved.Checkout! with { Profile = saved.Checkout.Profile with { PostalCode = null } };
+        order.SaveCheckout(JsonSerializer.Serialize(legacy, WebJson), Now);
+        order.Customer.PostalCode = null;
+        await db.SaveChangesAsync();
+        var request = CheckoutRequest();
+        request.ExpectedDeliveryAddress = null;
+        request.DeliveryAddress = null;
+        var rejected = await Assert.ThrowsAsync<ServiceException>(() => checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default));
+        Assert.That(rejected!.Errors, Does.ContainKey("delivery"));
+        Assert.That((await checkout.GetCheckoutAsync(order.CustomerId, "12345678-1", default)).Checkout, Is.EqualTo(legacy));
+        request.ExpectedDeliveryAddress = CustomerDeliveryAddress.From(order.Customer);
+        request.DeliveryAddress = new("654321", "Москва", "Полный адрес");
+        var repaired = await checkout.SaveCheckoutAsync(order.CustomerId, "12345678-1", request, default);
+        Assert.That(repaired.Checkout!.Profile.PostalCode, Is.EqualTo("654321"));
     }
 
 }

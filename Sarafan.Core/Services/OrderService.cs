@@ -393,7 +393,8 @@ public sealed partial class OrderService(
     private async Task<OrderDto> GetCoreAsync(
         int customerId,
         string orderNumber,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool checkoutPricing = false)
     {
         await ExpireQuotesCoreAsync(customerId, cancellationToken);
         var (code, sequence) = ParsePublicOrderNumber(orderNumber);
@@ -418,7 +419,7 @@ public sealed partial class OrderService(
             : null;
         var result = await ReviewResultAsync(order.Id, cancellationToken);
         return ToDto(order, order.Customer.OrderCode!,
-            await CustomerPricingAsync(order.Id, timeProvider.GetUtcNow(), cancellationToken, order.CheckoutData is not null), cancelledAt)
+            await CustomerPricingAsync(order.Id, timeProvider.GetUtcNow(), cancellationToken, checkoutPricing || order.CheckoutData is not null), cancelledAt)
             with
         { ReviewReason = result.Reason, ReviewCompletedAt = result.At };
     }
