@@ -558,6 +558,57 @@ public sealed class OperationLoggingTests
         Assert.That(string.Join(" ", _logs.Records.Select(record => record.Message)), Does.Not.Contain("2026-09"));
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task CheckoutBoundariesNameAndRedactInputsAndDescribeCancellation(bool cancelled)
+    {
+        await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new OrderService(database, null!, null!, null!, null!, null!, TimeProvider.System,
+            _factory.CreateLogger<OrderService>());
+        using var cancellation = new CancellationTokenSource();
+        if (cancelled) cancellation.Cancel();
+        const int customerId = 987654;
+        const string number = "87654321-246810";
+        var request = new OrderCheckoutRequest
+        {
+            Profile = new()
+            {
+                FirstName = Secret,
+                LastName = Secret,
+                Email = Secret + "@example.test",
+                PassportSeries = Secret,
+                PassportNumber = Secret,
+                PassportIssuedBy = Secret,
+                Inn = Secret
+            },
+            Delivery = Secret,
+            ExpectedDeliveryAddress = new(Secret, Secret, Secret),
+            DeliveryAddress = new(Secret, Secret, Secret)
+        };
+        var readFailure = await Assert.CatchAsync<Exception>(() => service.GetCheckoutAsync(customerId, number, cancellation.Token));
+        var saveFailure = await Assert.CatchAsync<Exception>(() => service.SaveCheckoutAsync(customerId, number, request, cancellation.Token));
+        var expectedFailure = cancelled ? typeof(OperationCanceledException) : typeof(ServiceException);
+        Assert.That(readFailure, Is.InstanceOf(expectedFailure));
+        Assert.That(saveFailure, Is.InstanceOf(expectedFailure));
+        foreach (var method in new[] { nameof(OrderService.GetCheckoutAsync), nameof(OrderService.SaveCheckoutAsync) })
+        {
+            var operation = $"{typeof(OrderService).FullName}.{method}";
+            AssertBoundary(operation);
+            var entry = _logs.Records.Single(record => record.Event.Id == 1600 && Equals(record.Attributes["code.function.name"], operation));
+            var summary = entry.Attributes["sarafan.operation.inputs"]!.ToString()!;
+            foreach (var parameter in typeof(OrderService).GetMethod(method)!.GetParameters())
+                Assert.That(summary, Does.Contain(parameter.Name + "="), method);
+            var expectedRequest = method == nameof(OrderService.SaveCheckoutAsync) ? "; request=[redacted]" : "";
+            Assert.That(summary, Is.EqualTo($"customerId=[redacted]; number=[redacted]{expectedRequest}; token=cancellation requested={cancelled}"));
+        }
+        var logged = string.Join(' ', _logs.Records.Select(record => record.Message)
+            .Concat(_logs.Records.SelectMany(record => record.Attributes.Values).Select(value => value?.ToString())));
+        Assert.That(logged, Does.Not.Contain(customerId.ToString()).And.Not.Contain(number));
+        Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
+        AssertPrivate();
+    }
+
     [Test]
     public async Task ForecastAndHistoryBoundariesDescribeShapesWithoutPrivateValues()
     {
