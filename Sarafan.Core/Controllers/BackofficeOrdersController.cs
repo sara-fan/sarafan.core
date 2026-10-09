@@ -52,6 +52,11 @@ public sealed class BackofficeOrdersController(
     public async Task<ActionResult<OrderPricingDto>> ConfirmPricing(string orderNumber, ConfirmOrderPricingRequest request, CancellationToken token)
         => Ok(await orders.ConfirmPricingAsync(orderNumber, request, CurrentBackofficeUserId(), User.FindAll("role").Select(claim => claim.Value).ToArray(), token));
 
+    [HttpPost("{orderNumber}/customs/paid")]
+    [Authorize(Policy = BackofficePolicies.MarkCustomsPaid)]
+    public async Task<ActionResult<BackofficeOrderDetailsDto>> MarkCustomsPaid(string orderNumber, MarkCustomsPaidRequest request, CancellationToken token)
+        => Ok(await orders.MarkCustomsPaidAsync(orderNumber, request, CurrentBackofficeUserId(), User.FindAll("role").Select(claim => claim.Value).ToArray(), token));
+
     [HttpPost("{orderNumber}/review/reject")]
     [Authorize(Policy = BackofficePolicies.ManageOrderPricing)]
     public async Task<ActionResult<BackofficeOrderDetailsDto>> RejectReview(string orderNumber, RejectOrderReviewRequest request, CancellationToken token)

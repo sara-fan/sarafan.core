@@ -109,7 +109,7 @@ public sealed partial class OrderProductApiTests
         var original = (await created.Content.ReadFromJsonAsync<OrderDto>())!;
         var path = $"/api/v1/backoffice/orders/{original.OrderNumber}/history";
         var ops = await _staff.GetFromJsonAsync<OrderHistoryOpsDto>(path + "/ops");
-        Assert.That(ops!.Areas, Has.Length.EqualTo(5));
+        Assert.That(ops!.Areas, Has.Length.EqualTo(6));
         var page = await _staff.GetFromJsonAsync<OrderHistoryPageDto>(path);
         Assert.That(page!.Items, Has.Length.EqualTo(1));
         Assert.That(page.Items[0].Kind, Is.EqualTo(OrderHistoryKind.Created));

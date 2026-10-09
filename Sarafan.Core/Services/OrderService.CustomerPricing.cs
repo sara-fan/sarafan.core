@@ -42,11 +42,11 @@ public sealed partial class OrderService
             Errors = new Dictionary<string, string[]> { [field] = [detail] }
         };
 
-    private async Task<CustomerPricingDto> CustomerPricingAsync(long orderId, DateTimeOffset now,
+    private async Task<CustomerPricingDto> CustomerPricingAsync(Order order, DateTimeOffset now,
         CancellationToken token, bool deliverySelected = false)
-        => CustomerPricing(await LatestPricingAsync(orderId, token), now, deliverySelected);
+        => CustomerPricing(await LatestPricingAsync(order.Id, token), now, deliverySelected, order.CustomsPaid);
 
-    private static CustomerPricingDto CustomerPricing(OrderPricingSnapshot? snapshot, DateTimeOffset now, bool deliverySelected = false)
+    private static CustomerPricingDto CustomerPricing(OrderPricingSnapshot? snapshot, DateTimeOffset now, bool deliverySelected = false, bool customsPaid = false)
     {
         if (snapshot is null)
             return new(CustomerPricingState.Forecast, null, null, null, now, null, null);
@@ -54,7 +54,8 @@ public sealed partial class OrderService
         var state = snapshot.ValidUntil is null ? CustomerPricingState.Forecast
             : now >= snapshot.ValidUntil ? CustomerPricingState.Expired : CustomerPricingState.Confirmed;
         return new(state, calculation.TotalRub, calculation.CalculatedAt, snapshot.ValidUntil, now,
-            deliverySelected ? ExcludedRub(calculation, ServiceKind.DomesticDelivery) : null, snapshot.ValidUntil is null ? null : ExcludedRub(calculation, ServiceKind.CustomsPayments));
+            deliverySelected ? ExcludedRub(calculation, ServiceKind.DomesticDelivery) : null, snapshot.ValidUntil is null ? null : ExcludedRub(calculation, ServiceKind.CustomsPayments))
+        { CustomsPaid = customsPaid };
     }
 
     private static decimal? ExcludedRub(OrderPriceCalculationDto calculation, ServiceKind service)

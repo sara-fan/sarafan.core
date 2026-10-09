@@ -4,10 +4,10 @@
 
 namespace Sarafan.Core.Models;
 
-public enum OrderHistoryKind { Created = 0, ProductChanged = 100, Parsed = 200, PriceCalculated = 300, QuoteConfirmed = 400, CustomerCancelled = 500, ReviewRejected = 600, QuoteExpired = 700, CheckoutSaved = 800 }
+public enum OrderHistoryKind { Created = 0, ProductChanged = 100, Parsed = 200, PriceCalculated = 300, QuoteConfirmed = 400, CustomerCancelled = 500, ReviewRejected = 600, QuoteExpired = 700, CheckoutSaved = 800, CustomsPaid = 900 }
 public enum OrderHistoryActor { Customer = 0, Staff = 100, System = 200 }
 [Flags]
-public enum OrderHistoryArea { Creation = 1, Product = 2, Pricing = 4, Status = 8, Checkout = 16 }
+public enum OrderHistoryArea { Creation = 1, Product = 2, Pricing = 4, Status = 8, Checkout = 16, Customs = 32 }
 
 public static class OrderHistoryKindExtensions
 {
@@ -22,6 +22,7 @@ public static class OrderHistoryKindExtensions
         OrderHistoryKind.ReviewRejected => "Не можем привезти",
         OrderHistoryKind.QuoteExpired => "Расчёт истёк",
         OrderHistoryKind.CheckoutSaved => "Оформление заказа",
+        OrderHistoryKind.CustomsPaid => "Таможенная пошлина оплачена",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
     };
 }
@@ -35,6 +36,7 @@ public static class OrderHistoryAreaExtensions
         OrderHistoryArea.Pricing => "Стоимость",
         OrderHistoryArea.Status => "Статус",
         OrderHistoryArea.Checkout => "Получатель и доставка",
+        OrderHistoryArea.Customs => "Таможенные платежи",
         _ => throw new ArgumentOutOfRangeException(nameof(area), area, null)
     };
 }

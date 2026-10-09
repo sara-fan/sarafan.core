@@ -636,8 +636,9 @@ public sealed class OperationLoggingTests
             new(null, OrderPricingInputs.Empty), 987654, [], default));
         await Assert.ThrowsAsync<ServiceException>(() => service.ConfirmPricingAsync("87654321-1",
             new(null), 987654, [], default));
+        await Assert.ThrowsAsync<ServiceException>(() => service.MarkCustomsPaidAsync("87654321-1", new(null), 987654, [], default));
         var entries = _logs.Records.Where(record => record.Event.Id == 1600).ToArray();
-        foreach (var method in new[] { nameof(OrderService.ForecastAsync), nameof(OrderService.HistoryOperationsAsync),
+        foreach (var method in new[] { nameof(OrderService.MarkCustomsPaidAsync), nameof(OrderService.ForecastAsync), nameof(OrderService.HistoryOperationsAsync),
             nameof(OrderService.HistoryAsync), nameof(OrderService.HistoryDetailAsync), nameof(OrderService.PricingOperationsAsync),
             nameof(OrderService.GetPricingAsync), nameof(OrderService.UpdatePricingAsync), nameof(OrderService.ConfirmPricingAsync) })
         {
@@ -984,6 +985,8 @@ public sealed class OperationLoggingTests
         await scope.ServiceProvider.GetRequiredService<OrderService>().ExpireQuotesAsync(default);
         await Assert.ThrowsAsync<ServiceException>(() => scope.ServiceProvider.GetRequiredService<OrderService>()
             .SaveCheckoutAsync(0, "00000000-999999", new() { Profile = new() }, default));
+        using var duty = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/customs/paid", new MarkCustomsPaidRequest(null));
+        Assert.That(duty.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var reject = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/review/reject", new RejectOrderReviewRequest { Reason = Secret });
         Assert.That(reject.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var ops = await client.GetAsync("/api/v1/backoffice/orders/pricing/ops");

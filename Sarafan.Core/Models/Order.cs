@@ -58,6 +58,7 @@ public sealed class Order
     public int Quantity { get; private set; }
     public string? Comment { get; private set; }
     public string? CheckoutData { get; private set; }
+    public bool CustomsPaid { get; private set; }
     public long? AppliedExchangeRateHistoryId { get; private set; }
     internal Guid CreationIdempotencyKey { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
@@ -103,6 +104,13 @@ public sealed class Order
     {
         if (Status != OrderStatus.QuoteReady) throw new InvalidOperationException("Only a ready quote can be checked out.");
         CheckoutData = data;
+        var timestamp = NormalizeToPostgresTimestamp(now);
+        UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
+    }
+
+    internal void MarkCustomsPaid(DateTimeOffset now)
+    {
+        CustomsPaid = true;
         var timestamp = NormalizeToPostgresTimestamp(now);
         UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
     }

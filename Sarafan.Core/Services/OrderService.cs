@@ -218,7 +218,7 @@ public sealed partial class OrderService(
                 }, cancellationToken);
 
                 return ToDto(allocation.Order, allocation.CustomerOrderCode,
-                    await CustomerPricingAsync(allocation.Order.Id, timeProvider.GetUtcNow(), cancellationToken));
+                    await CustomerPricingAsync(allocation.Order, timeProvider.GetUtcNow(), cancellationToken));
             }
             catch (DbUpdateException exception) when (
                 assignedNewCode && collisionDetector.IsCollision(exception))
@@ -419,7 +419,7 @@ public sealed partial class OrderService(
             : null;
         var result = await ReviewResultAsync(order.Id, cancellationToken);
         return ToDto(order, order.Customer.OrderCode!,
-            await CustomerPricingAsync(order.Id, timeProvider.GetUtcNow(), cancellationToken, checkoutPricing || order.CheckoutData is not null), cancelledAt)
+            await CustomerPricingAsync(order, timeProvider.GetUtcNow(), cancellationToken, checkoutPricing || order.CheckoutData is not null), cancelledAt)
             with
         { ReviewReason = result.Reason, ReviewCompletedAt = result.At };
     }
@@ -447,13 +447,14 @@ public sealed partial class OrderService(
                 item.SellerPriceCurrency,
                 item.Quantity,
                 item.CreatedAt,
-                item.CheckoutData != null))
+                item.CheckoutData != null,
+                item.CustomsPaid))
             .ToArrayAsync(cancellationToken);
 
         var snapshots = await LatestCustomerPricingAsync(rows.Select(row => row.Id).ToArray(), cancellationToken);
         var now = timeProvider.GetUtcNow();
         return rows.Select(row => ToCustomerDto(row,
-            CustomerPricing(snapshots.GetValueOrDefault(row.Id), now, row.HasCheckout))).ToArray();
+            CustomerPricing(snapshots.GetValueOrDefault(row.Id), now, row.HasCheckout, row.CustomsPaid))).ToArray();
     }
 
     private static int NormalizeQuantity(int? quantity)
@@ -581,7 +582,8 @@ public sealed partial class OrderService(
         Currency? SellerPriceCurrency,
         int Quantity,
         DateTimeOffset CreatedAt,
-        bool HasCheckout);
+        bool HasCheckout,
+        bool CustomsPaid);
 
     private sealed record BackofficeOrderProjection(
         string CustomerOrderCode,

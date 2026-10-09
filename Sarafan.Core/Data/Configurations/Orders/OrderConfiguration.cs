@@ -49,6 +49,7 @@ internal sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(item => item.Quantity).HasColumnName("quantity");
         builder.Property(item => item.Comment).HasColumnName("comment").HasMaxLength(2000);
         builder.Property(item => item.CheckoutData).HasColumnName("checkout_data").HasColumnType("jsonb");
+        builder.Property(item => item.CustomsPaid).HasColumnName("customs_paid").HasDefaultValue(false);
         builder.Property(item => item.AppliedExchangeRateHistoryId).HasColumnName("applied_exchange_rate_history_id");
         var idempotencyKey = builder.Property(item => item.CreationIdempotencyKey)
             .HasColumnName("creation_idempotency_key");

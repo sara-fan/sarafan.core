@@ -44,8 +44,9 @@ public sealed partial class OrderService
                  new(500, OrderHistoryKind.CustomerCancelled.GetDisplayName(), "customer-cancelled"),
                  new(600, OrderHistoryKind.ReviewRejected.GetDisplayName(), "review-rejected"),
                  new(700, OrderHistoryKind.QuoteExpired.GetDisplayName(), "quote-expired"),
-                 new(800, OrderHistoryKind.CheckoutSaved.GetDisplayName(), "checkout-saved")],
-                [new(1, ((OrderHistoryArea)1).GetDisplayName(), "creation"), new(2, ((OrderHistoryArea)2).GetDisplayName(), "product"), new(4, ((OrderHistoryArea)4).GetDisplayName(), "pricing"), new(8, ((OrderHistoryArea)8).GetDisplayName(), "status"), new(16, OrderHistoryArea.Checkout.GetDisplayName(), "checkout")],
+                 new(800, OrderHistoryKind.CheckoutSaved.GetDisplayName(), "checkout-saved"),
+                 new(900, OrderHistoryKind.CustomsPaid.GetDisplayName(), "customs-paid")],
+                [new(1, ((OrderHistoryArea)1).GetDisplayName(), "creation"), new(2, ((OrderHistoryArea)2).GetDisplayName(), "product"), new(4, ((OrderHistoryArea)4).GetDisplayName(), "pricing"), new(8, ((OrderHistoryArea)8).GetDisplayName(), "status"), new(16, OrderHistoryArea.Checkout.GetDisplayName(), "checkout"), new(32, OrderHistoryArea.Customs.GetDisplayName(), "customs")],
                 [new(0, "Покупатель", "customer"), new(100, "Сотрудник", "staff"), new(200, "Система", "system")]);
         }, token);
 
@@ -228,6 +229,12 @@ public sealed partial class OrderService
                 evidence.StatusBefore, evidence.StatusAfter, evidence.SourceUrl,
                 before is null ? null : ReadCalculation(before), price is null ? null : ReadCalculation(price),
                 before?.ValidUntil, price?.ValidUntil)
-            { CancellationReason = evidence.CancellationReason, ReviewReason = evidence.ReviewReason, CheckoutDeliveryName = evidence.CheckoutAfter?.Delivery.Name };
+            {
+                CancellationReason = evidence.CancellationReason,
+                ReviewReason = evidence.ReviewReason,
+                CheckoutDeliveryName = evidence.CheckoutAfter?.Delivery.Name,
+                CustomsPaidBefore = evidence.CustomsPaidBefore,
+                CustomsPaidAfter = evidence.CustomsPaidAfter
+            };
         }, token);
 }

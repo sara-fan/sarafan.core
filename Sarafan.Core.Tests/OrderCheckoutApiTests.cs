@@ -29,7 +29,7 @@ public sealed partial class OrderProductApiTests
         Inn = "123456789012"
     };
 
-    private async Task<OrderDto> ReadyForCheckout()
+    private async Task<OrderDto> ReadyForCheckout(decimal? customsAmount = null)
     {
         using var response = await Create(Guid.NewGuid()); response.EnsureSuccessStatusCode();
         var result = (await response.Content.ReadFromJsonAsync<OrderDto>())!;
@@ -39,6 +39,9 @@ public sealed partial class OrderProductApiTests
         var now = DateTimeOffset.UtcNow;
         foreach (var kind in new[] { ServiceKind.UsWarehouseExpenses, ServiceKind.InternationalDelivery, ServiceKind.ServiceCommission, ServiceKind.DomesticDelivery })
             db.ServiceCatalogueEntries.Add(new(kind, PriceMethod.Fixed, null, null, null, 10m, Currency.Rub, null, null, now));
+        await db.SaveChangesAsync();
+        if (customsAmount is { } amount)
+            db.ServiceCatalogueEntries.Add(new(ServiceKind.CustomsPayments, PriceMethod.Fixed, null, null, null, amount, Currency.Rub, null, null, now));
         await db.SaveChangesAsync();
         var calculation = await OrderPriceCalculator.CalculateAsync(db, row, now, OrderPricingInputs.Empty, null, default);
         row.UpdatePricing(now, true);
