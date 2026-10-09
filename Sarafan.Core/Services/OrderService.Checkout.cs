@@ -7,6 +7,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Sarafan.Core.Authentication;
 using Sarafan.Core.Models;
+using Sarafan.Core.Observability;
 using Sarafan.Core.RestModels;
 
 namespace Sarafan.Core.Services;
@@ -14,11 +15,14 @@ namespace Sarafan.Core.Services;
 public sealed partial class OrderService
 {
     public Task<OrderDto> GetCheckoutAsync(int customerId, string number, CancellationToken token)
-        => PricingRun(nameof(GetCheckoutAsync), () => "customer/order=[redacted]",
+        => PricingRun(nameof(GetCheckoutAsync),
+            () => LogValueSummary.Inputs((nameof(customerId), customerId), (nameof(number), number), (nameof(token), token)),
             () => GetCoreAsync(customerId, number, token, checkoutPricing: true), token);
 
     public Task<OrderDto> SaveCheckoutAsync(int customerId, string number, OrderCheckoutRequest request, CancellationToken token)
-        => PricingRun(nameof(SaveCheckoutAsync), () => "customer/order/checkout=[redacted]", async () =>
+        => PricingRun(nameof(SaveCheckoutAsync),
+            () => LogValueSummary.Inputs((nameof(customerId), customerId), (nameof(number), number),
+                (nameof(request), request), (nameof(token), token)), async () =>
         {
             var (code, sequence) = ParsePublicOrderNumber(number);
             var owned = database.Orders.Where(row => row.CustomerId == customerId
