@@ -82,6 +82,42 @@ public sealed partial class OrderPricingTests
         => new(db, null!, null!, null!, null!, new OrderLimitService(db, new OffsetClock(at), NullLogger<OrderLimitService>.Instance),
             new OffsetClock(at), NullLogger<OrderService>.Instance, reviewOptions: Options.Create(new OrderReviewOptions { DeliveryMinimumDays = 10, DeliveryMaximumDays = 15 }));
 
+    [TestCase(OrderStatus.UnderReview, false)]
+    [TestCase(OrderStatus.QuoteReady, true)]
+    [TestCase(OrderStatus.QuoteExpired, true)]
+    [TestCase(OrderStatus.Paid, true)]
+    [TestCase(OrderStatus.PurchasingItem, true)]
+    [TestCase(OrderStatus.DeliveringToUsWarehouse, true)]
+    [TestCase(OrderStatus.DeliveredToUsWarehouse, true)]
+    [TestCase(OrderStatus.DeliveringToRussia, true)]
+    [TestCase(OrderStatus.DeliveredToRussianWarehouse, true)]
+    [TestCase(OrderStatus.DeliveringInRussia, true)]
+    [TestCase(OrderStatus.Received, false)]
+    [TestCase(OrderStatus.Cancelled, false)]
+    [TestCase(OrderStatus.CannotDeliver, false)]
+    [TestCase((OrderStatus)(-1), false)]
+    [TestCase((OrderStatus)305, false)]
+    [TestCase((OrderStatus)350, false)]
+    [TestCase((OrderStatus)370, false)]
+    [TestCase((OrderStatus)999, false)]
+    public async Task CustomerDeliveryEstimateFollowsActiveOrderStates(OrderStatus status, bool expectedEstimate)
+    {
+        db.Entry(order).Property(row => row.Status).CurrentValue = status;
+        await db.SaveChangesAsync();
+        var customerService = At(Now);
+        var details = await customerService.GetAsync(order.CustomerId, "12345678-1", default);
+        var listItem = (await customerService.ListAsync(order.CustomerId, default)).Single();
+        var expected = expectedEstimate ? new OrderDeliveryEstimateDto(10, 15) : null;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(details.Status, Is.EqualTo(status));
+            Assert.That(listItem.Status, Is.EqualTo(status));
+            Assert.That(details.EstimatedDelivery, Is.EqualTo(expected));
+            Assert.That(listItem.EstimatedDelivery, Is.EqualTo(expected));
+        });
+    }
+
     [Test]
     public async Task QuoteExpiryUsesExactDeadlinePersistsOneEventAndRetainsFinancialEvidence()
     {
