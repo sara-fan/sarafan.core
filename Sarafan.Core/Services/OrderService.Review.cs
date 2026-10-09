@@ -61,6 +61,7 @@ public sealed partial class OrderService
 
     private OrderDeliveryEstimateDto? DeliveryEstimate(OrderStatus status)
         => status is OrderStatus.QuoteReady or OrderStatus.QuoteExpired
+            || status.GetUpperStatusValue() == (int)OrderStatus.Paid
             ? new(reviewOptions?.Value.DeliveryMinimumDays ?? 14, reviewOptions?.Value.DeliveryMaximumDays ?? 21) : null;
 
     public Task ExpireQuotesAsync(CancellationToken token)
