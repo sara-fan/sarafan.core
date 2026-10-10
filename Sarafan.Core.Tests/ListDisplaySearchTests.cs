@@ -144,6 +144,40 @@ public sealed class ListDisplaySearchTests
         Assert.That(await ListDisplaySearch.History(rows, "2026-09").CountAsync(), Is.Zero);
     }
 
+    [TestCase(OrderHistoryArea.Customs, 1)]
+    [TestCase(OrderHistoryArea.Pricing | OrderHistoryArea.Customs, 1)]
+    [TestCase(OrderHistoryArea.Pricing, 0)]
+    public async Task HistorySearchMatchesCustomsAreaOnlyWhenPresent(OrderHistoryArea areas, int count)
+    {
+        db.Add(new OrderHistoryEvent
+        {
+            OrderId = order.Id,
+            At = At,
+            Kind = OrderHistoryKind.ProductChanged,
+            Areas = areas,
+            ActorType = OrderHistoryActor.Staff,
+            ActorId = actor.Id,
+            ActorName = "Ёлкин Иван",
+            Payload = "{}"
+        });
+        await db.SaveChangesAsync();
+        var service = new OrderService(db, null!, null!, null!, null!, null!, TimeProvider.System, NullLogger<OrderService>.Instance);
+        var rows = service.HistoryQuery(order.Id);
+        foreach (var term in new[] { "Таможенные платежи", "ТАМОЖЕННЫЕ", "таможенные\u00a0платежи" })
+            Assert.That(await ListDisplaySearch.History(rows, term).CountAsync(), Is.EqualTo(count), term);
+    }
+
+    [Test]
+    public void PostgreSqlHistorySearchIncludesCustomsWithoutConnecting()
+    {
+        using var metadata = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=127.0.0.1;Port=1;Database=metadata;Username=unused").Options);
+        var service = new OrderService(metadata, null!, null!, null!, null!, null!, TimeProvider.System, NullLogger<OrderService>.Instance);
+        var sql = ListDisplaySearch.History(service.HistoryQuery(order.Id), "Таможенные платежи")
+            .OrderBy(row => row.At).ThenBy(row => row.Id).Skip(10).Take(10).ToQueryString();
+        Assert.That(sql, Does.Contain("Таможенные платежи, ").And.Contain("& 32").And.Contain("LIMIT").And.Contain("OFFSET"));
+    }
+
     [TestCase(PriceMethod.Fixed)]
     [TestCase(PriceMethod.Percent)]
     [TestCase(PriceMethod.Manual)]

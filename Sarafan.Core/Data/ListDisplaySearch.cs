@@ -92,6 +92,7 @@ internal static class ListDisplaySearch
         var pricing = OrderHistoryArea.Pricing.GetDisplayName() + ", ";
         var status = OrderHistoryArea.Status.GetDisplayName() + ", ";
         var checkout = OrderHistoryArea.Checkout.GetDisplayName() + ", ";
+        var customs = OrderHistoryArea.Customs.GetDisplayName() + ", ";
         return Apply(query, search,
             row => AppDbContext.SearchDate(AppDbContext.SearchLocalTime("Europe/Moscow", row.At), "DD.MM.YYYY, HH24:MI") + " МСК",
             Label<OrderService.HistoryRow, OrderHistoryKind>(row => row.Kind, value => value.GetDisplayName()),
@@ -100,7 +101,8 @@ internal static class ListDisplaySearch
                 + ((row.Areas & OrderHistoryArea.Product) != 0 ? product : "")
                 + ((row.Areas & OrderHistoryArea.Pricing) != 0 ? pricing : "")
                 + ((row.Areas & OrderHistoryArea.Status) != 0 ? status : "")
-                + ((row.Areas & OrderHistoryArea.Checkout) != 0 ? checkout : "")).TrimEnd(',', ' '));
+                + ((row.Areas & OrderHistoryArea.Checkout) != 0 ? checkout : "")
+                + ((row.Areas & OrderHistoryArea.Customs) != 0 ? customs : "")).TrimEnd(',', ' '));
     }
 
     private sealed class Substitute(ParameterExpression parameter, Expression value) : ExpressionVisitor
