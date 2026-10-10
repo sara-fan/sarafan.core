@@ -13,3 +13,7 @@ Customer cancellation adds kind=500 (customer-cancelled) in the status area. Its
 Pricing GET/PUT/confirm responses no longer contain history. Deploy Core and back-office contract changes together. Financial evidence is read from saved snapshots, independent of live tariff/rate availability. No data rewrite or backfill is needed; the new table is included in the redefined 20260926084356_0_3_0_ServiceCatalogue_2 migration, which is not automatically reapplied to databases where that identity is already recorded.
 
 Search follows the [staff list search contract](staff-list-search.md). Expanded evidence is excluded and is never loaded to evaluate search.
+
+### Main payment confirmation
+
+OrderPaid=1000 (`order-paid`, «Заказ оплачен») uses Status area=8 and evidence version=3, with QuoteReady=100 or QuoteExpired=200 before and Paid=300 after. It has a server timestamp and staff actor-name snapshot. Reuse status-change rendering; it contains no bank/QR data, customs evidence or new pricing snapshot. Older versions and customs kind 900/area 32/version 5 remain readable.

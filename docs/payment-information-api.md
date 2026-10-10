@@ -1,7 +1,7 @@
 # Payment information bundles
 
 Pilot PAY FR-026/027/029; reconciliation item 1 of [issue #17](https://github.com/sara-fan/sarafan/issues/17).
-The customer payment screen and the remaining payment reconciliation items are separate.
+The customer payment flow and manual confirmation below reconcile items 2–5.
 
 ## Lifecycle and authorization
 
@@ -46,7 +46,7 @@ Conflicts (409 payment_bundle_update_conflict) require an authoritative refresh.
 Published update attempts return payment_bundle_frozen; enabled deletion returns payment_bundle_enabled.
 Missing/empty concurrency tokens return invalid_payment_bundle_version (400).
 Field validation uses the standard validation_failed Problem Details with canonical field keys.
-QR content never appears in list/detail JSON.
+QR content never appears in list/detail JSON. Service-boundary logging names parameters and cancellation state through the shared safe-summary allowlist and identifies result kinds without payment fields, QR metadata/content, filter values, IDs, versions or staff values.
 
 List parameters: page (1–1000000), pageSize (10/25/50/100), sortBy, sortOrder (asc/desc),
 search (trimmed, at most 200 characters), state (draft/enabled/disabled or omitted).
@@ -84,3 +84,19 @@ Generate migration 0_3_7_Payments through dotnet ef migrations add. Rollback or 
 For this implementation, verification uses EF InMemory and mocked UI tests.
 Verification does not run live PostgreSQL tests, migration execution or migration checks.
 These tests prove application rules and HTTP/UI contracts, without claiming PostgreSQL locking or rollback verification.
+
+## Customer payment and manual confirmation
+
+Issue #17 items 2–5 use authenticated owner-only `GET /api/v1/orders/{orderNumber}/payment`.
+The no-store envelope is `{order, mainPaymentRub, canPay, paymentInformation}`; order retains its existing contract.
+The main payment is the saved confirmed total plus known domestic delivery. Unknown delivery remains null in pricing and contributes no charge; known zero remains zero. Customs is separate.
+Payment requires QuoteReady, saved checkout, an unexpired confirmed calculation and a complete enabled bundle. The final eligibility check after bundle loading gates both canPay and paymentInformation. Otherwise canPay is false and paymentInformation is null, including when the quote expires during the read.
+
+All four staff roles may POST `/api/v1/backoffice/orders/{orderNumber}/payment/paid` with `{expectedUpdatedAt}`.
+Core enforces authorization at controller and service boundaries. A saved checkout and complete confirmed calculation are required; QuoteReady and QuoteExpired are eligible. Expired quotes require external reconciliation by staff. Bundle availability does not control manual confirmation.
+The atomic mutation advances UpdatedAt, sets Paid and appends one OrderPaid=1000, Status=8, version-3 staff event with actor-name snapshot and server timestamp. Customs evidence and saved pricing remain independent and unchanged.
+Main/customs confirmation logging uses the shared safe-summary catalogue with named parameters, request kinds and cancellation state; order numbers, request versions, staff IDs and roles remain redacted.
+Staff details expose nullable mainPaymentRub and canMarkOrderPaid. Version mismatches return `409 order_update_conflict`; ineligible/repeated confirmation returns `409 order_payment_unavailable`. Refresh explicitly before retry.
+
+Customer UI revalidates before following the bank HTTPS link in the same tab. Changes to amount, order version or bundle require another click; bank return never confirms payment. QR previews and links disappear at the server-relative expiry boundary and on identity/route changes. No payment data is stored in browser persistence or logs.
+Verification uses InMemory Core and mocked UI tests only. This flow adds no migration; existing 0_3_7_Payments remains unchanged.

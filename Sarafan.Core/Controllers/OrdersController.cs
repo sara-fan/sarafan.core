@@ -15,6 +15,7 @@ namespace Sarafan.Core.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class OrdersController(
     OrderService orders,
+    OrderPaymentService payments,
     SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
 {
     [HttpGet]
@@ -29,6 +30,10 @@ public sealed class OrdersController(
         string orderNumber,
         CancellationToken cancellationToken)
         => Ok(await orders.GetAsync(CurrentCustomerId(), orderNumber, cancellationToken));
+
+    [HttpGet("{orderNumber}/payment")]
+    public async Task<ActionResult<OrderPaymentDto>> Payment(string orderNumber, CancellationToken cancellationToken)
+        => Ok(await payments.GetAsync(CurrentCustomerId(), orderNumber, cancellationToken));
 
     [HttpGet("{orderNumber}/checkout")]
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]

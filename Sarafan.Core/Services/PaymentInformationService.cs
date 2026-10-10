@@ -25,12 +25,15 @@ public sealed partial class PaymentInformationService(AppDbContext database, Tim
     private static void RequireManage(string[] roles) => BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManagePaymentInformation);
     public PaymentBundleOpsDto Operations(string[] roles)
         => OperationLogging.Run(logger, typeof(PaymentInformationService).FullName + "." + nameof(Operations),
-            () => LogValueSummary.Inputs(("roles", roles)),
+            () => LogValueSummary.Inputs((nameof(roles), roles)),
             () => { RequireManage(roles); return PaymentInformationRules.Operations(); });
 
     public Task<PaymentBundlePageDto> ListAsync(string[] roles, int page, int pageSize, string sortBy,
         string sortOrder, string? search, string? state, CancellationToken token)
-        => Run(nameof(ListAsync), async () =>
+        => Run(nameof(ListAsync),
+            () => LogValueSummary.Inputs((nameof(roles), roles), (nameof(page), page), (nameof(pageSize), pageSize),
+                (nameof(sortBy), sortBy), (nameof(sortOrder), sortOrder), (nameof(search), search), (nameof(state), state), (nameof(token), token)),
+            async () =>
         {
             RequireManage(roles);
             search = search?.Trim();
@@ -87,7 +90,8 @@ public sealed partial class PaymentInformationService(AppDbContext database, Tim
     }
 
     public Task<PaymentBundleDto> GetAsync(long id, string[] roles, CancellationToken token)
-        => Run(nameof(GetAsync), async () =>
+        => Run(nameof(GetAsync),
+            () => LogValueSummary.Inputs((nameof(id), id), (nameof(roles), roles), (nameof(token), token)), async () =>
         {
             RequireManage(roles);
             var value = await database.PaymentInformationBundles.AsNoTracking().Where(row => row.Id == id)
@@ -101,14 +105,25 @@ public sealed partial class PaymentInformationService(AppDbContext database, Tim
     };
 
     public Task<CurrentPaymentInformationDto> CurrentAsync(CancellationToken token)
-        => Run(nameof(CurrentAsync), async () => new CurrentPaymentInformationDto(
-            await database.PaymentInformationBundles.AsNoTracking().Where(row => row.Enabled)
-                .Select(row => new PublicPaymentInformationDto(row.Id, new(row.RecipientType, row.RecipientName,
-                    row.Inn, row.Kpp, row.SettlementAccount, row.BankName, row.Bik, row.CorrespondentAccount, row.PaymentLink),
-                    "/api/v1/payment-information/current/qr?v=" + row.QrSha256)).SingleOrDefaultAsync(token)), token);
+        => Run(nameof(CurrentAsync), () => LogValueSummary.Inputs((nameof(token), token)), async () =>
+        {
+            var current = await database.PaymentInformationBundles.AsNoTracking().Where(row => row.Enabled)
+                .Select(row => new
+                {
+                    Information = new PublicPaymentInformationDto(row.Id, new(row.RecipientType, row.RecipientName,
+                        row.Inn, row.Kpp, row.SettlementAccount, row.BankName, row.Bik, row.CorrespondentAccount, row.PaymentLink),
+                        "/api/v1/payment-information/current/qr?v=" + row.QrSha256),
+                    HasQr = row.QrSha256 != null && row.QrContent != null && row.QrContent.Length > 0
+                        && (row.QrContentType == "image/png" || row.QrContentType == "image/jpeg" || row.QrContentType == "image/webp")
+                }).SingleOrDefaultAsync(token);
+            return new CurrentPaymentInformationDto(current is not null
+                && PaymentInformationRules.Errors(current.Information.Information, true, current.HasQr).Count == 0
+                ? current.Information : null);
+        }, token);
 
     public Task<StoreLogoDto> QrAsync(long? id, string? digest, string[]? roles, CancellationToken token)
-        => Run(nameof(QrAsync), async () =>
+        => Run(nameof(QrAsync),
+            () => LogValueSummary.Inputs((nameof(id), id), (nameof(digest), digest), (nameof(roles), roles), (nameof(token), token)), async () =>
         {
             if (id.HasValue) RequireManage(roles ?? []);
             var image = await database.PaymentInformationBundles.AsNoTracking()
@@ -121,7 +136,6 @@ public sealed partial class PaymentInformationService(AppDbContext database, Tim
             return image;
         }, token);
 
-    private Task<T> Run<T>(string name, Func<Task<T>> action, CancellationToken token)
-        => OperationLogging.RunAsync(logger, typeof(PaymentInformationService).FullName + "." + name,
-            () => "paymentInformation=[redacted]", action, token);
+    private Task<T> Run<T>(string name, Func<string> inputs, Func<Task<T>> action, CancellationToken token)
+        => OperationLogging.RunAsync(logger, typeof(PaymentInformationService).FullName + "." + name, inputs, action, token);
 }

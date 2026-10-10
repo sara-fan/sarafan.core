@@ -18,7 +18,7 @@ using Sarafan.Core.StoreTests;
 namespace Sarafan.Core.Tests;
 
 [TestFixture, NonParallelizable]
-public sealed class PaymentInformationApiTests
+public sealed partial class PaymentInformationApiTests
 {
     private const string Root = "/api/v1/backoffice/payment-information-bundles";
     private const string Current = "/api/v1/payment-information/current";

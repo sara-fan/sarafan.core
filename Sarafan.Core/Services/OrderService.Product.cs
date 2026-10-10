@@ -22,11 +22,14 @@ public sealed partial class OrderService
                 BackofficeAuthorization.RequireAllowed(roles, BackofficeAction.ManualQuotes);
                 var order = await FindPublicOrder(orderNumber, cancellationToken);
                 var details = StaffDetails(order, roles, await limits.GetPairAsync(cancellationToken));
+                var snapshot = await LatestPricingAsync(order.Id, cancellationToken);
                 var result = await ReviewResultAsync(order.Id, cancellationToken);
                 return details with
                 {
                     CustomsPaid = order.CustomsPaid,
-                    CanMarkCustomsPaid = CanMarkCustomsPaid(order, await LatestPricingAsync(order.Id, cancellationToken), roles),
+                    CanMarkCustomsPaid = CanMarkCustomsPaid(order, snapshot, roles),
+                    CanMarkOrderPaid = CanMarkOrderPaid(order, snapshot, roles),
+                    MainPaymentRub = MainPayment(order, snapshot),
                     ReviewReason = result.Reason,
                     ReviewCompletedAt = result.At,
                     SavedLimitSourceEffectiveDate = await SavedLimitSourceEffectiveDate(order.Id, cancellationToken)

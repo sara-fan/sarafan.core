@@ -5,6 +5,7 @@
 using Microsoft.EntityFrameworkCore;
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
+using Sarafan.Core.Observability;
 using Sarafan.Core.RestModels;
 
 namespace Sarafan.Core.Services;
@@ -12,7 +13,9 @@ namespace Sarafan.Core.Services;
 public sealed partial class PaymentInformationService
 {
     public Task<PaymentBundleDto> CreateAsync(PaymentInformationWriteRequest request, int actorId, string[] roles, CancellationToken token)
-        => Mutate(nameof(CreateAsync), actorId, roles, async now =>
+        => Mutate(nameof(CreateAsync),
+            () => LogValueSummary.Inputs((nameof(request), request), (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)),
+            actorId, roles, async now =>
         {
             var fields = PaymentInformationRules.Prepare(request);
             var row = new PaymentInformationBundle(fields, actorId, now, await ReadQr(request.Qr, token));
@@ -21,7 +24,9 @@ public sealed partial class PaymentInformationService
         }, token);
 
     public Task<PaymentBundleDto> UpdateAsync(long id, PaymentInformationWriteRequest request, int actorId, string[] roles, CancellationToken token)
-        => Mutate(nameof(UpdateAsync), actorId, roles, async now =>
+        => Mutate(nameof(UpdateAsync),
+            () => LogValueSummary.Inputs((nameof(id), id), (nameof(request), request), (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)),
+            actorId, roles, async now =>
         {
             var row = await Find(id, request.Version, token);
             if (row.Published) throw new ServiceException(409, "payment_bundle_frozen");
@@ -30,7 +35,9 @@ public sealed partial class PaymentInformationService
         }, token);
 
     public Task<PaymentBundleDto> CopyAsync(long id, Guid? version, int actorId, string[] roles, CancellationToken token)
-        => Mutate(nameof(CopyAsync), actorId, roles, async now =>
+        => Mutate(nameof(CopyAsync),
+            () => LogValueSummary.Inputs((nameof(id), id), (nameof(version), version), (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)),
+            actorId, roles, async now =>
         {
             var original = await Find(id, version, token);
             if (!original.Published) throw new ServiceException(409, "payment_bundle_copy_unavailable");
@@ -40,7 +47,9 @@ public sealed partial class PaymentInformationService
         }, token);
 
     public Task<PaymentBundleDto> EnableAsync(long id, EnablePaymentBundleRequest request, int actorId, string[] roles, CancellationToken token)
-        => Mutate(nameof(EnableAsync), actorId, roles, async now =>
+        => Mutate(nameof(EnableAsync),
+            () => LogValueSummary.Inputs((nameof(id), id), (nameof(request), request), (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)),
+            actorId, roles, async now =>
         {
             var row = await Find(id, request.Version, token);
             var active = await database.PaymentInformationBundles.SingleOrDefaultAsync(item => item.Enabled, token);
@@ -59,7 +68,9 @@ public sealed partial class PaymentInformationService
         }, token);
 
     public Task<PaymentBundleDto> DisableAsync(long id, Guid? version, int actorId, string[] roles, CancellationToken token)
-        => Mutate(nameof(DisableAsync), actorId, roles, async now =>
+        => Mutate(nameof(DisableAsync),
+            () => LogValueSummary.Inputs((nameof(id), id), (nameof(version), version), (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)),
+            actorId, roles, async now =>
         {
             var row = await Find(id, version, token);
             if (!row.Enabled) throw new ServiceException(409, "payment_bundle_update_conflict");
@@ -68,7 +79,9 @@ public sealed partial class PaymentInformationService
         }, token);
 
     public async Task DeleteAsync(long id, Guid? version, int actorId, string[] roles, CancellationToken token)
-        => await Mutate(nameof(DeleteAsync), actorId, roles, async _ =>
+        => await Mutate(nameof(DeleteAsync),
+            () => LogValueSummary.Inputs((nameof(id), id), (nameof(version), version), (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)),
+            actorId, roles, async _ =>
         {
             var row = await Find(id, version, token);
             if (row.Enabled) throw new ServiceException(409, "payment_bundle_enabled");
@@ -76,9 +89,9 @@ public sealed partial class PaymentInformationService
             return row;
         }, token, deleting: true);
 
-    private Task<PaymentBundleDto> Mutate(string operation, int actorId, string[] roles,
+    private Task<PaymentBundleDto> Mutate(string operation, Func<string> inputs, int actorId, string[] roles,
         Func<DateTimeOffset, Task<PaymentInformationBundle>> change, CancellationToken token, bool deleting = false)
-        => Run(operation, async () =>
+        => Run(operation, inputs, async () =>
         {
             RequireManage(roles);
             var operations = AppDatabaseOperations.For(database);

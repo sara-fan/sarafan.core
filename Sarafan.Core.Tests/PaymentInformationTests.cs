@@ -364,12 +364,27 @@ public sealed class PaymentInformationTests
         var service = new PaymentInformationService(_db, _clock, logger);
         service.Operations(Admin);
         Reject(async () => await service.CreateAsync(Complete(), Actor, ["operator"], default), "access_denied", 403);
-        await service.CreateAsync(Complete(), Actor, Admin, default);
+        var draft = await service.CreateAsync(Complete(), Actor, Admin, default);
+        var request = Complete(false); request.Version = draft.Version;
+        var updated = await service.UpdateAsync(draft.Id, request, Actor, Admin, default);
+        var enabled = await service.EnableAsync(updated.Id, new(updated.Version, null), Actor, Admin, default);
+        await service.GetAsync(enabled.Id, Admin, default);
+        await service.ListAsync(Admin, 1, 25, "createdAt", "desc", null, null, default);
+        await service.CurrentAsync(default);
+        var digest = enabled.QrUrl!.Split("v=")[1];
+        await service.QrAsync(enabled.Id, digest, Admin, default);
+        var copied = await service.CopyAsync(enabled.Id, enabled.Version, Actor, Admin, default);
+        var disabled = await service.DisableAsync(enabled.Id, enabled.Version, Actor, Admin, default);
+        await service.DeleteAsync(copied.Id, copied.Version, Actor, Admin, default);
+        await service.DeleteAsync(disabled.Id, disabled.Version, Actor, Admin, default);
         var text = string.Join("\n", logger.Records);
         Assert.That(text, Does.Contain(nameof(PaymentInformationService) + ".Operations"));
         Assert.That(text, Does.Contain(nameof(PaymentInformationService) + ".CreateAsync"));
         Assert.That(text, Does.Contain("[redacted]"));
-        foreach (var secret in new[] { "Получатель", "0012345678", Complete().PaymentLink!, Convert.ToBase64String(StoreServiceTests.Png) })
+        foreach (var kind in new[] { "PaymentBundleOpsDto", "PaymentBundleDto", "CurrentPaymentInformationDto", "StoreLogoDto" })
+            Assert.That(text, Does.Contain(kind));
+        foreach (var secret in new[] { "Получатель", "0012345678", Complete().PaymentLink!, Complete().Qr!.FileName,
+                     digest, enabled.Version.ToString(), Convert.ToBase64String(StoreServiceTests.Png) })
             Assert.That(text, Does.Not.Contain(secret));
         Assert.That(logger.Warnings, Is.Zero);
     }
