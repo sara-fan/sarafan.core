@@ -12,12 +12,12 @@ internal static class StoreRules
 {
     internal const int NameMaxLength = 200;
     internal const int MaxPriorityStores = 6;
-    internal const int LogoMaxBytes = 2 * 1024 * 1024;
+    internal const int LogoMaxBytes = ImageUpload.MaxBytes;
     internal const int RequestMaxBytes = LogoMaxBytes + 64 * 1024;
 
     internal static StoreOpsDto Operations(string[] roles, IanaTldCatalogSnapshot tlds) => new(
         [new(StoreStatus.Hidden, "Скрыт", "hidden"), new(StoreStatus.Active, "Показывается в общем списке", "active"), new(StoreStatus.Priority, "Показывается в общем списке и на главной странице", "priority")],
-        new(NameMaxLength, 160, 140, 2048, LogoMaxBytes, ["image/png", "image/jpeg", "image/webp"],
+        new(NameMaxLength, 160, 140, 2048, LogoMaxBytes, ImageUpload.ContentTypes,
             MaxPriorityStores, StoreImageContent.MaxDimension, StoreImageContent.MaxPixels, StoreImageContent.MaxFrames, StoreImageContent.MaxAnimationPixels,
             StoreImageContent.MaxMetadataBytes),
         new(BackofficeAuthorization.IsAllowed(roles, BackofficeAction.ViewStores),
@@ -49,20 +49,6 @@ internal static class StoreRules
         => version is null || version == Guid.Empty
             ? throw new ServiceException(400, "invalid_store_version") : version.Value;
 
-    internal static async Task<(string ContentType, byte[] Content)?> ReadLogoAsync(IFormFile? file, CancellationToken token)
-    {
-        if (file is null) return null;
-        if (file.Length is <= 0 or > LogoMaxBytes) throw new ServiceException(400, "invalid_store_logo_size");
-        var contentType = file.ContentType.ToLowerInvariant();
-        if (contentType is not ("image/png" or "image/jpeg" or "image/webp"))
-            throw new ServiceException(400, "invalid_store_logo_type");
-        // Read at most the advertised length plus one byte; do not trust custom streams or metadata.
-        await using var stream = file.OpenReadStream();
-        var bytes = new byte[(int)file.Length + 1];
-        var length = await stream.ReadAtLeastAsync(bytes, bytes.Length, throwOnEndOfStream: false, cancellationToken: token);
-        if (length != file.Length) throw new ServiceException(400, "invalid_store_logo_size");
-        var content = bytes.AsSpan(0, length).ToArray();
-        if (!StoreImageContent.IsValid(contentType, content)) throw new ServiceException(400, "invalid_store_logo_content");
-        return (contentType, content);
-    }
+    internal static Task<(string ContentType, byte[] Content)?> ReadLogoAsync(IFormFile? file, CancellationToken token)
+        => ImageUpload.ReadAsync(file, LogoMaxBytes, true, code => new ServiceException(400, "invalid_store_logo_" + code), token);
 }

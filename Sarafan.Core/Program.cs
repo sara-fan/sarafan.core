@@ -91,6 +91,7 @@ builder.Services.AddOptions<OrderReviewOptions>().BindConfiguration("OrderReview
     .Validate(value => value.DeliveryMinimumDays > 0 && value.DeliveryMaximumDays >= value.DeliveryMinimumDays && value.DeliveryMaximumDays <= 365, "Invalid delivery estimate range.")
     .ValidateOnStart();
 builder.Services.AddScoped<StoreService>();
+builder.Services.AddScoped<PaymentInformationService>();
 builder.Services.AddScoped<ServiceCatalogueService>();
 builder.Services.AddScoped<OrderLimitService>();
 builder.Services.AddScoped<ProductPreviewService>();

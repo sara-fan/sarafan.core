@@ -105,6 +105,12 @@ internal static class ListDisplaySearch
                 + ((row.Areas & OrderHistoryArea.Customs) != 0 ? customs : "")).TrimEnd(',', ' '));
     }
 
+    internal static IQueryable<PaymentInformationBundle> PaymentBundles(IQueryable<PaymentInformationBundle> query, string search)
+        => Apply(query, search, row => row.RecipientName ?? "—",
+            row => row.Inn ?? "—", row => row.BankName ?? "—",
+            row => row.Enabled ? "Включён" : !row.Published ? "Черновик" : "Отключён",
+            row => AppDbContext.SearchDate(AppDbContext.SearchLocalTime("Europe/Moscow", row.CreatedAt), "DD.MM.YYYY, HH24:MI") + " МСК");
+
     private sealed class Substitute(ParameterExpression parameter, Expression value) : ExpressionVisitor
     {
         protected override Expression VisitParameter(ParameterExpression node) => node == parameter ? value : base.VisitParameter(node);

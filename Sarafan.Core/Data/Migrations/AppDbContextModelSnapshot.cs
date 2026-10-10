@@ -1187,6 +1187,125 @@ namespace Sarafan.Core.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Sarafan.Core.Models.PaymentInformationBundle", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("BankName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("bank_name");
+
+                    b.Property<string>("Bik")
+                        .HasMaxLength(9)
+                        .HasColumnType("character varying(9)")
+                        .HasColumnName("bik");
+
+                    b.Property<string>("CorrespondentAccount")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("correspondent_account");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("integer")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("Enabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("enabled");
+
+                    b.Property<string>("Inn")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("inn");
+
+                    b.Property<string>("Kpp")
+                        .HasMaxLength(9)
+                        .HasColumnType("character varying(9)")
+                        .HasColumnName("kpp");
+
+                    b.Property<string>("PaymentLink")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("payment_link");
+
+                    b.Property<bool>("Published")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("published");
+
+                    b.Property<byte[]>("QrContent")
+                        .HasColumnType("bytea")
+                        .HasColumnName("qr_content");
+
+                    b.Property<string>("QrContentType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("qr_content_type");
+
+                    b.Property<string>("QrSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("qr_sha256");
+
+                    b.Property<string>("RecipientName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("recipient_name");
+
+                    b.Property<int?>("RecipientType")
+                        .HasColumnType("integer")
+                        .HasColumnName("recipient_type");
+
+                    b.Property<string>("SettlementAccount")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("settlement_account");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("UpdatedBy")
+                        .HasColumnType("integer")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("Enabled")
+                        .IsUnique()
+                        .HasDatabaseName("ux_payment_bundles_enabled")
+                        .HasFilter("enabled = TRUE");
+
+                    b.HasIndex("UpdatedBy");
+
+                    b.ToTable("payment_information_bundles", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_payment_bundles_enabled", "NOT enabled OR published");
+
+                            t.HasCheckConstraint("ck_payment_bundles_timestamps", "updated_at >= created_at");
+                        });
+                });
+
             modelBuilder.Entity("Sarafan.Core.Models.RefreshSession", b =>
                 {
                     b.Property<long>("Id")
@@ -1719,6 +1838,21 @@ namespace Sarafan.Core.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.PaymentInformationBundle", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.BackofficeUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Sarafan.Core.Models.BackofficeUser", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Sarafan.Core.Models.RefreshSession", b =>

@@ -21,6 +21,7 @@ internal interface IAppDatabaseOperations
     Task LockConsentsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockCustomerAsync(AppDbContext database, int customerId, CancellationToken cancellationToken);
     Task LockAdministratorMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
+    Task LockPaymentInformationMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockServiceCatalogueMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockIanaTldCatalogAsync(AppDbContext database, CancellationToken cancellationToken);
@@ -88,6 +89,8 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
         AppDbContext database,
         CancellationToken cancellationToken)
         => Task.CompletedTask;
+
+    public Task LockPaymentInformationMutationsAsync(AppDbContext database, CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken) => Task.CompletedTask;
 
