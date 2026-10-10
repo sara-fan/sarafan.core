@@ -108,6 +108,15 @@ public sealed class Order
         UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
     }
 
+    internal void MarkPaid(DateTimeOffset now)
+    {
+        if (Status is not (OrderStatus.QuoteReady or OrderStatus.QuoteExpired))
+            throw new InvalidOperationException("Only an unpaid confirmed order can be marked paid.");
+        var timestamp = NormalizeToPostgresTimestamp(now);
+        UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
+        Status = OrderStatus.Paid;
+    }
+
     internal void MarkCustomsPaid(DateTimeOffset now)
     {
         CustomsPaid = true;

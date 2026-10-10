@@ -609,6 +609,161 @@ public sealed class OperationLoggingTests
         AssertPrivate();
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task OrderPaymentBoundaryNamesInputsAndCancellation(bool cancelled)
+    {
+        await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var orders = new OrderService(database, null!, null!, null!, null!, null!, TimeProvider.System,
+            _factory.CreateLogger<OrderService>());
+        var information = new PaymentInformationService(database, TimeProvider.System, _factory.CreateLogger<PaymentInformationService>());
+        var payment = new OrderPaymentService(orders, information, TimeProvider.System, _factory.CreateLogger<OrderPaymentService>());
+        using var cancellation = new CancellationTokenSource();
+        if (cancelled) cancellation.Cancel();
+        const int customerId = 987654;
+        const string number = "87654321-246810";
+        var failure = await Assert.CatchAsync<Exception>(() => payment.GetAsync(customerId, number, cancellation.Token));
+        Assert.That(failure, Is.InstanceOf(cancelled ? typeof(OperationCanceledException) : typeof(ServiceException)));
+        var operation = typeof(OrderPaymentService).FullName + "." + nameof(OrderPaymentService.GetAsync);
+        AssertBoundary(operation);
+        var entry = _logs.Records.Single(record => record.Event.Id == 1600 && Equals(record.Attributes["code.function.name"], operation));
+        Assert.That(entry.Attributes["sarafan.operation.inputs"],
+            Is.EqualTo($"customerId=[redacted]; number=[redacted]; token=cancellation requested={cancelled}"));
+        Assert.That(string.Join(' ', _logs.Records.Select(record => record.Message)),
+            Does.Not.Contain(customerId.ToString()).And.Not.Contain(number));
+        Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
+        AssertPrivate();
+    }
+
+    [TestCase(nameof(OrderService.MarkOrderPaidAsync), false)]
+    [TestCase(nameof(OrderService.MarkOrderPaidAsync), true)]
+    [TestCase(nameof(OrderService.MarkCustomsPaidAsync), false)]
+    [TestCase(nameof(OrderService.MarkCustomsPaidAsync), true)]
+    public async Task StaffPaymentBoundariesNameAndRedactInputsAndDescribeCancellation(string method, bool cancelled)
+    {
+        await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new OrderService(database, null!, null!, null!, null!, null!, TimeProvider.System,
+            _factory.CreateLogger<OrderService>());
+        using var cancellation = new CancellationTokenSource();
+        if (cancelled) cancellation.Cancel();
+        const string number = "87654321-246810";
+        const int actorId = 987654;
+        var version = DateTimeOffset.Parse("2037-08-19T12:34:56Z");
+        string[] roles = [BackofficeRoles.Operator];
+        var mainPayment = method == nameof(OrderService.MarkOrderPaidAsync);
+        var failure = await Assert.CatchAsync<Exception>(() => mainPayment
+            ? service.MarkOrderPaidAsync(number, new(version), actorId, roles, cancellation.Token)
+            : service.MarkCustomsPaidAsync(number, new(version), actorId, roles, cancellation.Token));
+        Assert.That(failure, Is.InstanceOf(cancelled ? typeof(OperationCanceledException) : typeof(ServiceException)));
+
+        var operation = typeof(OrderService).FullName + "." + method;
+        AssertBoundary(operation);
+        var entry = _logs.Records.Single(record => record.Event.Id == 1600 && Equals(record.Attributes["code.function.name"], operation));
+        var requestKind = mainPayment ? nameof(MarkOrderPaidRequest) : nameof(MarkCustomsPaidRequest);
+        Assert.That(entry.Attributes["sarafan.operation.inputs"],
+            Is.EqualTo($"number=[redacted]; request={requestKind}(version=[redacted]); actorId=[redacted]; roles=[redacted]; token=cancellation requested={cancelled}"));
+        var exit = _logs.Records.Single(record => record.Event.Id == 1601 && Equals(record.Attributes["code.function.name"], operation));
+        Assert.That(exit.Attributes["sarafan.operation.outputs"],
+            Is.EqualTo(cancelled ? "no result; cancelled" : "no result; service rejection; status=404"));
+        Assert.That(_logs.Records.Select(record => record.Level), Is.All.EqualTo(LogLevel.Debug));
+        var logged = string.Join(' ', _logs.Records.Select(record => record.Message)
+            .Concat(_logs.Records.SelectMany(record => record.Attributes.Values).Select(value => value?.ToString())));
+        foreach (var value in new[] { number, actorId.ToString(), "2037", BackofficeRoles.Operator })
+            Assert.That(logged, Does.Not.Contain(value));
+        AssertPrivate();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task PaymentInformationBoundariesNameInputsAndCancellation(bool cancelled)
+    {
+        await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new PaymentInformationService(database, TimeProvider.System, _factory.CreateLogger<PaymentInformationService>());
+        using var cancellation = new CancellationTokenSource();
+        if (cancelled) cancellation.Cancel();
+        var token = cancellation.Token;
+        const long id = 987654;
+        const int actorId = 246810;
+        var roles = PaymentInformationTests.Admin;
+        var version = Guid.NewGuid();
+        var request = new PaymentInformationWriteRequest { RecipientName = Secret, PaymentLink = Secret, Version = version };
+        var calls = new (Func<Task> Call, bool Rejects)[]
+        {
+            (() => service.ListAsync(roles, 1, 25, "createdAt", "desc", Secret, "draft", token), false),
+            (() => service.GetAsync(id, roles, token), true),
+            (() => service.CurrentAsync(token), false),
+            (() => service.QrAsync(id, Secret, roles, token), true),
+            (() => service.CreateAsync(request, actorId, roles, token), true),
+            (() => service.UpdateAsync(id, request, actorId, roles, token), true),
+            (() => service.CopyAsync(id, version, actorId, roles, token), true),
+            (() => service.EnableAsync(id, new(version, new(id, version)), actorId, roles, token), true),
+            (() => service.DisableAsync(id, version, actorId, roles, token), true),
+            (() => service.DeleteAsync(id, version, actorId, roles, token), true)
+        };
+        service.Operations(roles);
+        foreach (var (call, rejects) in calls)
+        {
+            if (cancelled || rejects)
+            {
+                var failure = await Assert.CatchAsync<Exception>(async () => await call());
+                Assert.That(failure, Is.InstanceOf(cancelled ? typeof(OperationCanceledException) : typeof(ServiceException)));
+            }
+            else await call();
+        }
+        foreach (var method in typeof(PaymentInformationService).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        {
+            var operation = typeof(PaymentInformationService).FullName + "." + method.Name;
+            AssertBoundary(operation);
+            var entry = _logs.Records.Single(record => record.Event.Id == 1600 && Equals(record.Attributes["code.function.name"], operation));
+            var inputs = entry.Attributes["sarafan.operation.inputs"]!.ToString()!;
+            foreach (var parameter in method.GetParameters())
+                Assert.That(inputs, Does.Contain(parameter.Name + "="), method.Name);
+            if (method.Name != nameof(PaymentInformationService.Operations))
+                Assert.That(inputs, Does.Contain($"token=cancellation requested={cancelled}"), method.Name);
+        }
+        var logged = string.Join(' ', _logs.Records.Select(record => record.Message)
+            .Concat(_logs.Records.SelectMany(record => record.Attributes.Values).Select(value => value?.ToString())));
+        foreach (var value in new[] { id.ToString(), actorId.ToString(), version.ToString(), Secret, "draft", "createdAt" })
+            Assert.That(logged, Does.Not.Contain(value));
+        Assert.That(_logs.Records.Where(record => record.Event.Id == 1602), Is.Empty);
+        AssertPrivate();
+    }
+
+    [Test]
+    public void PaymentInformationSummariesDescribeKindsWithoutPrivateValues()
+    {
+        var version = Guid.NewGuid();
+        var fields = new PaymentInformationFields(PaymentRecipientType.LegalEntity, Secret, Secret, Secret, Secret, Secret, Secret, Secret, Secret);
+        var bundle = new PaymentBundleDto(987654, version, fields, Secret, false, Secret, default, default, 246810, 246810,
+            true, false, false, true, false);
+        var enabled = new EnabledPaymentBundle(bundle.Id, version);
+        var publicInformation = new PublicPaymentInformationDto(bundle.Id, fields, Secret);
+        var summaries = new (object Value, string Expected)[]
+        {
+            (new PaymentInformationWriteRequest { RecipientName = Secret, PaymentLink = Secret, Version = version },
+                "PaymentInformationWriteRequest(fields/qr/version=[redacted])"),
+            (new PaymentBundleVersionRequest(version), "PaymentBundleVersionRequest(version=[redacted])"),
+            (enabled, "EnabledPaymentBundle(selection=[redacted])"),
+            (new EnablePaymentBundleRequest(version, enabled), "EnablePaymentBundleRequest(version/selection=[redacted])"),
+            (bundle, "PaymentBundleDto(fields/qr/version/staff=[redacted])"),
+            (new PaymentBundlePageDto { Items = [bundle], Search = Secret, State = Secret, EnabledBundle = enabled },
+                "PaymentBundleDto page(count=1; filters/selection=[redacted])"),
+            (PaymentInformationRules.Operations(), "PaymentBundleOpsDto(metadata/actions=[redacted])"),
+            (new CurrentPaymentInformationDto(publicInformation), "CurrentPaymentInformationDto(information=[redacted])"),
+            (publicInformation, "PublicPaymentInformationDto(fields/qr=[redacted])")
+        };
+        foreach (var (value, expected) in summaries)
+        {
+            var summary = LogValueSummary.Describe(value);
+            Assert.That(summary, Is.EqualTo(expected));
+            Assert.That(summary, Does.Not.Contain(Secret).And.Not.Contain(version.ToString())
+                .And.Not.Contain("987654").And.Not.Contain("246810"));
+        }
+    }
+
     [Test]
     public async Task ForecastAndHistoryBoundariesDescribeShapesWithoutPrivateValues()
     {
@@ -706,6 +861,7 @@ public sealed class OperationLoggingTests
         var createdOrder = (await createOrder.Content.ReadFromJsonAsync<OrderDto>())!;
         using var listOrders = await client.GetAsync("/api/v1/orders");
         using var getOrder = await client.GetAsync($"/api/v1/orders/{createdOrder.OrderNumber}");
+        using var getPayment = await client.GetAsync($"/api/v1/orders/{createdOrder.OrderNumber}/payment");
         using var getCheckout = await client.GetAsync($"/api/v1/orders/{createdOrder.OrderNumber}/checkout");
         var customerToken = session.AccessToken;
         using var backofficeLogin = await client.PostAsJsonAsync("/api/v1/backoffice/auth/login", new BackofficeLoginRequest
@@ -805,6 +961,7 @@ public sealed class OperationLoggingTests
                      typeof(AuthenticationService),
                      typeof(JwtTokenService),
                      typeof(OrderService),
+                     typeof(OrderPaymentService),
                      typeof(ProductPreviewService),
                      typeof(AnonymousForecastService)
                  })
@@ -985,6 +1142,8 @@ public sealed class OperationLoggingTests
         await scope.ServiceProvider.GetRequiredService<OrderService>().ExpireQuotesAsync(default);
         await Assert.ThrowsAsync<ServiceException>(() => scope.ServiceProvider.GetRequiredService<OrderService>()
             .SaveCheckoutAsync(0, "00000000-999999", new() { Profile = new() }, default));
+        using var mainPayment = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/payment/paid", new MarkOrderPaidRequest(null));
+        Assert.That(mainPayment.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var duty = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/customs/paid", new MarkCustomsPaidRequest(null));
         Assert.That(duty.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var reject = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/review/reject", new RejectOrderReviewRequest { Reason = Secret });

@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 {
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<Order> Orders => Set<Order>();
+    public DbSet<PaymentInformationBundle> PaymentInformationBundles => Set<PaymentInformationBundle>();
     public DbSet<Store> Stores => Set<Store>();
     public DbSet<StoreLogo> StoreLogos => Set<StoreLogo>();
     public DbSet<CustomerPhoto> CustomerPhotos => Set<CustomerPhoto>();

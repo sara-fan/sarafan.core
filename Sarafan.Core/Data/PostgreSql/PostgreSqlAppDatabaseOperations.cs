@@ -54,6 +54,9 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
             AdministratorMutationLockSql,
             cancellationToken);
 
+    public Task LockPaymentInformationMutationsAsync(AppDbContext database, CancellationToken cancellationToken)
+        => database.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1397315807)", cancellationToken);
+
     public Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken)
         => database.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1397315805)", cancellationToken);
 
