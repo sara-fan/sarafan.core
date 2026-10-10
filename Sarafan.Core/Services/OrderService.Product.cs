@@ -25,6 +25,8 @@ public sealed partial class OrderService
                 var result = await ReviewResultAsync(order.Id, cancellationToken);
                 return details with
                 {
+                    CustomsPaid = order.CustomsPaid,
+                    CanMarkCustomsPaid = CanMarkCustomsPaid(order, await LatestPricingAsync(order.Id, cancellationToken), roles),
                     ReviewReason = result.Reason,
                     ReviewCompletedAt = result.At,
                     SavedLimitSourceEffectiveDate = await SavedLimitSourceEffectiveDate(order.Id, cancellationToken)
@@ -90,7 +92,11 @@ public sealed partial class OrderService
                     database.ChangeTracker.Clear();
                     throw new ServiceException(409, "order_update_conflict");
                 }
-                return StaffDetails(order, roles, pair) with { SavedLimitSourceEffectiveDate = pair?.Usd.SourceEffectiveDate };
+                return StaffDetails(order, roles, pair) with
+                {
+                    SavedLimitSourceEffectiveDate = pair?.Usd.SourceEffectiveDate,
+                    CanMarkCustomsPaid = CanMarkCustomsPaid(order, await LatestPricingAsync(order.Id, cancellationToken), roles)
+                };
             }, cancellationToken);
 
     private async Task<Order> FindPublicOrder(string number, CancellationToken cancellationToken)
@@ -126,6 +132,7 @@ public sealed partial class OrderService
             OrderLimitService.ToDto(pair), order.Status == OrderStatus.UnderReview
                 && BackofficeAuthorization.IsAllowed(roles, BackofficeAction.EditOrderProduct))
         {
+            CustomsPaid = order.CustomsPaid,
             Delivery = ReadCheckout(order)?.Delivery,
             ImageUrl = order.ImageUrl,
             Dimensions = order.LengthCm.HasValue && order.WidthCm.HasValue && order.HeightCm.HasValue

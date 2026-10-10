@@ -55,6 +55,8 @@ public sealed record BackofficeOrderDetailsDto(string OrderNumber, OrderStatus S
     OrderProductDto Product, BackofficeOrderCustomerDto Customer,
     OrderLimitCheckDto LimitCheck, bool CanEditProduct)
 {
+    public bool CustomsPaid { get; init; }
+    public bool CanMarkCustomsPaid { get; init; }
     public OrderCheckoutDeliveryDto? Delivery { get; init; }
     public string? ReviewReason { get; init; }
     public DateTimeOffset? ReviewCompletedAt { get; init; }

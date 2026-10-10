@@ -44,8 +44,9 @@ public sealed partial class OrderService
                  new(500, OrderHistoryKind.CustomerCancelled.GetDisplayName(), "customer-cancelled"),
                  new(600, OrderHistoryKind.ReviewRejected.GetDisplayName(), "review-rejected"),
                  new(700, OrderHistoryKind.QuoteExpired.GetDisplayName(), "quote-expired"),
-                 new(800, OrderHistoryKind.CheckoutSaved.GetDisplayName(), "checkout-saved")],
-                [new(1, ((OrderHistoryArea)1).GetDisplayName(), "creation"), new(2, ((OrderHistoryArea)2).GetDisplayName(), "product"), new(4, ((OrderHistoryArea)4).GetDisplayName(), "pricing"), new(8, ((OrderHistoryArea)8).GetDisplayName(), "status"), new(16, OrderHistoryArea.Checkout.GetDisplayName(), "checkout")],
+                 new(800, OrderHistoryKind.CheckoutSaved.GetDisplayName(), "checkout-saved"),
+                 new(900, OrderHistoryKind.CustomsPaid.GetDisplayName(), "customs-paid")],
+                [new(1, ((OrderHistoryArea)1).GetDisplayName(), "creation"), new(2, ((OrderHistoryArea)2).GetDisplayName(), "product"), new(4, ((OrderHistoryArea)4).GetDisplayName(), "pricing"), new(8, ((OrderHistoryArea)8).GetDisplayName(), "status"), new(16, OrderHistoryArea.Checkout.GetDisplayName(), "checkout"), new(32, OrderHistoryArea.Customs.GetDisplayName(), "customs")],
                 [new(0, "Покупатель", "customer"), new(100, "Сотрудник", "staff"), new(200, "Система", "system")]);
         }, token);
 
@@ -154,7 +155,7 @@ public sealed partial class OrderService
             sortOrder = sortOrder.Trim().ToLowerInvariant();
             if (page < 1 || pageSize is not (10 or 25 or 50 or 100) || search?.Length > 200
                 || sortBy is not ("timestamp" or "event" or "actor") || sortOrder is not ("asc" or "desc")
-                || area is not (null or 1 or 2 or 4 or 8 or 16) || actorType is not (null or 0 or 100 or 200)
+                || area is not (null or 1 or 2 or 4 or 8 or 16 or 32) || actorType is not (null or 0 or 100 or 200)
                 || !TryParseListDate(from, out var fromDate) || !TryParseListDate(to, out var toDate)
                 || fromDate > toDate || fromDate == DateOnly.MinValue || toDate == DateOnly.MaxValue)
                 throw new ServiceException(400, "invalid_order_list_filter");
@@ -228,6 +229,12 @@ public sealed partial class OrderService
                 evidence.StatusBefore, evidence.StatusAfter, evidence.SourceUrl,
                 before is null ? null : ReadCalculation(before), price is null ? null : ReadCalculation(price),
                 before?.ValidUntil, price?.ValidUntil)
-            { CancellationReason = evidence.CancellationReason, ReviewReason = evidence.ReviewReason, CheckoutDeliveryName = evidence.CheckoutAfter?.Delivery.Name };
+            {
+                CancellationReason = evidence.CancellationReason,
+                ReviewReason = evidence.ReviewReason,
+                CheckoutDeliveryName = evidence.CheckoutAfter?.Delivery.Name,
+                CustomsPaidBefore = evidence.CustomsPaidBefore,
+                CustomsPaidAfter = evidence.CustomsPaidAfter
+            };
         }, token);
 }

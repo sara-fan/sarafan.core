@@ -40,6 +40,9 @@ public enum CustomerPricingState { Forecast = 0, Confirmed = 100, Expired = 200 
 
 public sealed record CustomerPricingDto(CustomerPricingState State, decimal? TotalRub,
     DateTimeOffset? CalculatedAt, DateTimeOffset? ValidUntil, DateTimeOffset AsOf,
-    decimal? DomesticDeliveryRub, decimal? CustomsRub);
+    decimal? DomesticDeliveryRub, decimal? CustomsRub)
+{
+    public bool CustomsPaid { get; init; }
+}
 
 public sealed record OrderForecastRequest(OrderSellerPriceDto? SellerPrice, int? Quantity);

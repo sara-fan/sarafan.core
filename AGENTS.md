@@ -266,10 +266,15 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 - Optional pricing services are customer-owned. Staff pricing updates must preserve the persisted selected-service set (empty before the first snapshot); reject additions/removals before any order or snapshot write.
 - Customer order pricing is a required projection over the latest immutable snapshot on list/detail/create; anonymous forecasts use the same calculator with transient inputs and no writes. Only the state, RUB total, timestamps, and customer-visible delivery/customs amounts cross this boundary. Publish the forecast state's customer-facing Ops name as `Ориентировочная стоимость`. Apply the delivery/customs publication gates above and use server `asOf` for expiry. Fetch list snapshots in one bounded batch.
 
+## Customs payment evidence
+
+- FR-CUSTOMS-050 stores `Order.CustomsPaid` independently of pricing, Sarafan payment and customer status. All four established staff roles may mark it through the central MarkCustomsPaid action, only against the expected order version and a saved positive calculated customs RUB amount; unknown/zero/already-paid and unfamiliar-status orders are unavailable. Never recalculate pricing or reset the flag on quote changes. Publish the flag through staff details and customer pricing, but customer amounts retain their confirmation visibility gate.
+- A successful mark advances UpdatedAt and atomically appends history kind 900, area 32, evidence version 5 with false/true paid evidence and unchanged status. Previous evidence versions stay readable. Schema verification remains disconnected; never apply migrations to protected local data.
+
 ## Unified order history
 
 - Record each successful order action atomically as one immutable `OrderHistoryEvent`, linking its product audit and pricing snapshot. Use the resulting order version timestamp for event ordering. Preserve actor-name snapshots and typed versioned status/source evidence; failed writes and idempotent creation retries add no events. Future order mutation workflows must extend this recorder.
-- Staff history reads combine unified events with unlinked legacy evidence through a server-paged query. Pair legacy product/pricing records only on unique order/time/actor matches; never fabricate missing product values or historical actor names. Event-detail lookup is scoped to the public order number. Keep pricing responses limited to current pricing; history has its own list/detail API.
+- Staff history reads combine unified events with unlinked legacy evidence through a server-paged query. Pair legacy product/pricing records only on unique order/time/actor matches; never fabricate missing product values or historical actor names. Event-detail lookup is scoped to the public order number. Keep the history filter allowlist aligned with published area Ops, including Customs=32. Keep pricing responses limited to current pricing; history has its own list/detail API.
 - The history schema belongs in `20260926084356_0_3_0_ServiceCatalogue_2`, including its target model and current model snapshot; preserve the migration identity and existing constraint changes. Do not create a replacement migration or rewrite applied database migration history.
 
 ## Staff list search
