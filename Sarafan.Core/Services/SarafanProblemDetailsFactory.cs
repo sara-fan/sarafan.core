@@ -33,6 +33,12 @@ public sealed class SarafanProblemDetailsFactory(
     private static readonly IReadOnlyDictionary<string, ProblemDefinition> Definitions =
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
+            ["invalid_payment_bundle_version"] = new(400, "Не указан токен комплекта", "Обновите комплект и повторите действие."),
+            ["payment_bundle_update_conflict"] = new(409, "Комплект изменился", "Обновите данные перед повторным действием."),
+            ["payment_bundle_frozen"] = new(409, "Комплект доступен только для просмотра", "Опубликованные реквизиты неизменяемы. Создайте копию комплекта."),
+            ["payment_bundle_enabled"] = new(409, "Комплект включён", "Перед удалением отключите комплект или включите другой."),
+            ["payment_bundle_copy_unavailable"] = new(409, "Копирование недоступно", "Копировать можно только ранее опубликованный комплект."),
+            ["invalid_payment_bundle_filter"] = new(400, "Некорректные параметры списка", "Проверьте страницу, размер страницы, состояние, поиск и сортировку."),
             ["invalid_service_catalogue_service"] = new(400, "Некорректная услуга", "Выберите услугу из каталога."),
             ["service_catalogue_product_reserved"] = new(409, "Базовый тариф товара защищён", "Базовая запись стоимости товара неизменяема. Её нельзя создать повторно, изменить или удалить."),
             ["invalid_service_catalogue_method"] = new(400, "Некорректный способ расчёта", "Выберите способ расчёта из каталога."),
