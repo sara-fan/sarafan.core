@@ -274,7 +274,7 @@ For other file types (XML, JSON, YAML, etc.), use the appropriate comment syntax
 ## Unified order history
 
 - Record each successful order action atomically as one immutable `OrderHistoryEvent`, linking its product audit and pricing snapshot. Use the resulting order version timestamp for event ordering. Preserve actor-name snapshots and typed versioned status/source evidence; failed writes and idempotent creation retries add no events. Future order mutation workflows must extend this recorder.
-- Staff history reads combine unified events with unlinked legacy evidence through a server-paged query. Pair legacy product/pricing records only on unique order/time/actor matches; never fabricate missing product values or historical actor names. Event-detail lookup is scoped to the public order number. Keep pricing responses limited to current pricing; history has its own list/detail API.
+- Staff history reads combine unified events with unlinked legacy evidence through a server-paged query. Pair legacy product/pricing records only on unique order/time/actor matches; never fabricate missing product values or historical actor names. Event-detail lookup is scoped to the public order number. Keep the history filter allowlist aligned with published area Ops, including Customs=32. Keep pricing responses limited to current pricing; history has its own list/detail API.
 - The history schema belongs in `20260926084356_0_3_0_ServiceCatalogue_2`, including its target model and current model snapshot; preserve the migration identity and existing constraint changes. Do not create a replacement migration or rewrite applied database migration history.
 
 ## Staff list search

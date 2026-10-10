@@ -94,6 +94,8 @@ public sealed partial class OrderPricingTests
     [TestCase(1, 25, "unknown", "desc", null, null, null, null)]
     [TestCase(1, 25, "timestamp", "unknown", null, null, null, null)]
     [TestCase(1, 25, "timestamp", "desc", 3, null, null, null)]
+    [TestCase(1, 25, "timestamp", "desc", 33, null, null, null)]
+    [TestCase(1, 25, "timestamp", "desc", 64, null, null, null)]
     [TestCase(1, 25, "timestamp", "desc", null, 1, null, null)]
     [TestCase(1, 25, "timestamp", "desc", null, null, "invalid", null)]
     [TestCase(1, 25, "timestamp", "desc", null, null, null, "invalid")]

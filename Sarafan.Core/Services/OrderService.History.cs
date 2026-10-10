@@ -155,7 +155,7 @@ public sealed partial class OrderService
             sortOrder = sortOrder.Trim().ToLowerInvariant();
             if (page < 1 || pageSize is not (10 or 25 or 50 or 100) || search?.Length > 200
                 || sortBy is not ("timestamp" or "event" or "actor") || sortOrder is not ("asc" or "desc")
-                || area is not (null or 1 or 2 or 4 or 8 or 16) || actorType is not (null or 0 or 100 or 200)
+                || area is not (null or 1 or 2 or 4 or 8 or 16 or 32) || actorType is not (null or 0 or 100 or 200)
                 || !TryParseListDate(from, out var fromDate) || !TryParseListDate(to, out var toDate)
                 || fromDate > toDate || fromDate == DateOnly.MinValue || toDate == DateOnly.MaxValue)
                 throw new ServiceException(400, "invalid_order_list_filter");
