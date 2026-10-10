@@ -15,7 +15,7 @@ internal static class LogValueSummary
 {
     private static readonly HashSet<string> PrivateListStateNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        "page", "pageSize", "sortBy", "sortOrder", "search", "processed", "kind", "action", "service", "entryId", "customerId", "documentId"
+        "page", "pageSize", "sortBy", "sortOrder", "search", "processed", "kind", "action", "service", "entryId", "customerId", "documentId", "state"
     };
 
     // Only these explicit projections may read values. Never serialize or call ToString on arbitrary input.
@@ -43,6 +43,15 @@ internal static class LogValueSummary
         StoreListDto<PublicStoreDto> stores => $"PublicStoreDto collection(count={stores.Items.Length})",
         StoreListDto<StaffStoreDto> stores => $"StaffStoreDto collection(count={stores.Items.Length})",
         StoreOpsDto => "StoreOpsDto(catalogue/actions=[redacted])",
+        PaymentInformationWriteRequest => "PaymentInformationWriteRequest(fields/qr/version=[redacted])",
+        PaymentBundleVersionRequest => "PaymentBundleVersionRequest(version=[redacted])",
+        EnabledPaymentBundle => "EnabledPaymentBundle(selection=[redacted])",
+        EnablePaymentBundleRequest => "EnablePaymentBundleRequest(version/selection=[redacted])",
+        PaymentBundleDto => "PaymentBundleDto(fields/qr/version/staff=[redacted])",
+        PaymentBundlePageDto bundles => $"PaymentBundleDto page(count={bundles.Items.Length}; filters/selection=[redacted])",
+        PaymentBundleOpsDto => "PaymentBundleOpsDto(metadata/actions=[redacted])",
+        CurrentPaymentInformationDto => "CurrentPaymentInformationDto(information=[redacted])",
+        PublicPaymentInformationDto => "PublicPaymentInformationDto(fields/qr=[redacted])",
         ServiceCatalogueWriteRequest => "ServiceCatalogueWriteRequest(parameters/dates/version=[redacted])",
         AnonymousForecastRequest => "AnonymousForecastRequest(sellerPrice/quantity=[redacted])",
         AnonymousForecastDto => "AnonymousForecastDto(calculatedAt/totalRub=[redacted])",
@@ -76,6 +85,9 @@ internal static class LogValueSummary
         BackofficeRoleDto => "BackofficeRoleDto([redacted])",
         IReadOnlyCollection<BackofficeRoleDto> roles => $"BackofficeRoleDto collection(count={roles.Count})",
         CustomerDto => "CustomerDto([redacted])",
+        OrderPaymentDto => "OrderPaymentDto(order/amount/information=[redacted])",
+        MarkOrderPaidRequest => "MarkOrderPaidRequest(version=[redacted])",
+        MarkCustomsPaidRequest => "MarkCustomsPaidRequest(version=[redacted])",
         OrderDto => "OrderDto(identity/product/pricing=[redacted])",
         IReadOnlyCollection<CustomerOrderListItemDto> orders => $"CustomerOrderListItemDto collection(count={orders.Count})",
         Customer => "Customer([redacted])",
