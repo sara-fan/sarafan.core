@@ -147,6 +147,7 @@ public sealed class CustomersController(
         var customerId = CurrentCustomerId();
         return await consents.WithPersonalDataAsync<ActionResult>(customerId, async () =>
         {
+            await ConsentTransaction.LockCustomer(database, customerId, cancellationToken);
             var photoResult = await ReadPhoto(file, cancellationToken);
             if (photoResult.Result is not null) return photoResult.Result;
             var upload = photoResult.Value!;
@@ -163,11 +164,15 @@ public sealed class CustomersController(
 
     [HttpDelete("photo")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<ActionResult> DeletePhoto(CancellationToken cancellationToken)
+    public Task<ActionResult> DeletePhoto(CancellationToken cancellationToken)
     {
-        await RemovePhoto(CurrentCustomerId(), cancellationToken);
-        await database.SaveChangesAsync(cancellationToken);
-        return NoContent();
+        var customerId = CurrentCustomerId();
+        return ConsentTransaction.Run<ActionResult>(database, async () =>
+        {
+            await ConsentTransaction.LockCustomer(database, customerId, cancellationToken);
+            await RemovePhoto(customerId, cancellationToken);
+            return NoContent();
+        }, cancellationToken);
     }
 
     private async Task RemovePhoto(int customerId, CancellationToken cancellationToken)

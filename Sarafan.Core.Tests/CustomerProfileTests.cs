@@ -144,6 +144,67 @@ public sealed partial class CustomerFlowTests
         Assert.That(await response.Content.ReadAsByteArrayAsync(), Is.EqualTo(ProfilePng));
     }
 
+    [TestCase("current")]
+    [TestCase("missing")]
+    [TestCase("refused")]
+    public async Task LegacyPhoto_DeleteIsIdempotentAndOwnerScopedWithoutRequiringCurrentConsent(string consent)
+    {
+        var (session, _) = await Register(NextPhone());
+        var (other, _) = await Register(NextPhone());
+        using var initial = await SaveProfileForm(session.AccessToken, ProfilePng, name: "Сохранено");
+        initial.EnsureSuccessStatusCode();
+        var saved = (await initial.Content.ReadFromJsonAsync<CustomerDto>())!;
+        using var otherSaved = await SaveProfileForm(other.AccessToken, ProfilePng);
+        otherSaved.EnsureSuccessStatusCode();
+
+        if (consent == "missing")
+        {
+            await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            database.ConsentEvents.RemoveRange(await database.ConsentEvents
+                .Where(row => row.CustomerId == session.Customer.Id && row.Kind == LegalDocumentKind.PersonalDataConsent).ToArrayAsync());
+            await database.SaveChangesAsync();
+        }
+        else if (consent == "refused")
+        {
+            var document = (await _client.GetFromJsonAsync<CurrentDocumentDto>(
+                $"/api/v1/legal/current/{(int)LegalDocumentKind.PersonalDataConsent}"))!.Document!;
+            using var refusal = AuthorizedRequest(HttpMethod.Post, "/api/v1/consents/me/personal-data", session.AccessToken);
+            refusal.Content = JsonContent.Create(new ConsentDecisionRequest
+            {
+                DocumentId = document.Id,
+                ContentHash = document.ContentHash,
+                Decision = "refuse",
+                IdempotencyKey = Guid.NewGuid()
+            });
+            using var refused = await _client.SendAsync(refusal);
+            refused.EnsureSuccessStatusCode();
+        }
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var delete = AuthorizedRequest(HttpMethod.Delete, "/api/v1/customers/me/photo", session.AccessToken);
+            using var deleted = await _client.SendAsync(delete);
+            Assert.That(deleted.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+            using var photo = AuthorizedRequest(HttpMethod.Get, "/api/v1/customers/me/photo", session.AccessToken);
+            using var removed = await _client.SendAsync(photo);
+            Assert.That(removed.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        }
+        using var current = AuthorizedRequest(HttpMethod.Get, "/api/v1/customers/me", session.AccessToken);
+        using var currentResponse = await _client.SendAsync(current);
+        var customer = (await currentResponse.Content.ReadFromJsonAsync<CustomerDto>())!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(customer.HasPhoto, Is.False);
+            Assert.That(customer.Profile, Is.EqualTo(saved.Profile));
+            Assert.That(customer.State, Is.EqualTo(saved.State));
+            Assert.That(customer.UpdatedAt, Is.EqualTo(saved.UpdatedAt));
+        });
+        using var otherPhoto = AuthorizedRequest(HttpMethod.Get, "/api/v1/customers/me/photo", other.AccessToken);
+        using var otherResponse = await _client.SendAsync(otherPhoto);
+        Assert.That(await otherResponse.Content.ReadAsByteArrayAsync(), Is.EqualTo(ProfilePng));
+    }
+
     private static async Task<SarafanProblemDetails> AssertPhotoProblem(HttpResponseMessage response, string expected)
     {
         var problem = (await response.Content.ReadFromJsonAsync<SarafanProblemDetails>())!;
