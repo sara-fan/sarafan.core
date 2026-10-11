@@ -42,6 +42,7 @@ public sealed record CustomerPricingDto(CustomerPricingState State, decimal? Tot
     DateTimeOffset? CalculatedAt, DateTimeOffset? ValidUntil, DateTimeOffset AsOf,
     decimal? DomesticDeliveryRub, decimal? CustomsRub)
 {
+    public bool MainPaymentPaid { get; init; }
     public bool CustomsPaid { get; init; }
 }
 

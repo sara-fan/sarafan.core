@@ -117,6 +117,21 @@ public sealed class Order
         Status = OrderStatus.Paid;
     }
 
+    internal OrderStatus? NextStage => Status switch
+    {
+        OrderStatus.Paid => OrderStatus.Delivering,
+        OrderStatus.Delivering => OrderStatus.Received,
+        _ => null
+    };
+
+    internal void AdvanceFulfilment(OrderStatus target, DateTimeOffset now)
+    {
+        if (NextStage != target) throw new InvalidOperationException("Only the next Pilot stage can be recorded.");
+        var timestamp = NormalizeToPostgresTimestamp(now);
+        UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
+        Status = target;
+    }
+
     internal void MarkCustomsPaid(DateTimeOffset now)
     {
         CustomsPaid = true;

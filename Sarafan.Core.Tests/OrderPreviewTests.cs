@@ -91,10 +91,11 @@ public sealed class OrderPreviewTests
             Assert.That(ops.PricingStates.Select(item => item.Value), Is.EqualTo(new[] { 0, 100, 200 }));
             Assert.That(ops.PricingStates[0].Name, Is.EqualTo("Ориентировочная стоимость"));
             Assert.That(root.EnumerateObject().Select(item => item.Name),
-                Is.EquivalentTo(new[] { "state", "totalRub", "calculatedAt", "validUntil", "asOf", "domesticDeliveryRub", "customsRub", "customsPaid" }));
+                Is.EquivalentTo(new[] { "state", "totalRub", "calculatedAt", "validUntil", "asOf", "domesticDeliveryRub", "customsRub", "mainPaymentPaid", "customsPaid" }));
             Assert.That(root.GetProperty("state").GetInt32(), Is.Zero);
             Assert.That(root.GetProperty("domesticDeliveryRub").ValueKind, Is.EqualTo(JsonValueKind.Null));
             Assert.That(root.GetProperty("customsRub").ValueKind, Is.EqualTo(JsonValueKind.Null));
+            Assert.That(root.GetProperty("mainPaymentPaid").GetBoolean(), Is.False);
             Assert.That(root.GetProperty("customsPaid").GetBoolean(), Is.False);
             Assert.That(await database.Orders.CountAsync(), Is.Zero);
             Assert.That(await database.OrderPricingSnapshots.CountAsync(), Is.Zero);

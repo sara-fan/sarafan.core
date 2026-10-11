@@ -100,3 +100,17 @@ Staff details expose nullable mainPaymentRub and canMarkOrderPaid. Version misma
 
 Customer UI revalidates before following the bank HTTPS link in the same tab. Changes to amount, order version or bundle require another click; bank return never confirms payment. QR previews and links disappear at the server-relative expiry boundary and on identity/route changes. No payment data is stored in browser persistence or logs.
 Verification uses InMemory Core and mocked UI tests only. This flow adds no migration; existing 0_3_7_Payments remains unchanged.
+
+## Pilot fulfilment and paid presentation
+
+ORDER FR-070/071/072 and [planning issue #18](https://github.com/sara-fan/sarafan/issues/18) add `Delivering=350` without changing existing status IDs or database schema.
+All four staff roles may POST `/api/v1/backoffice/orders/{orderNumber}/fulfilment` with `{expectedUpdatedAt,status}`.
+Only Paid → Delivering → Received is permitted, one transition per request. Staff details expose nullable `nextStage`.
+The shared mutation advances the version and records DeliveryStarted=1100 / OrderReceived=1200, Status area 8, evidence version 3, server time and staff-name snapshot atomically.
+Stale requests return `409 order_update_conflict`; skipped, repeated or unsupported stages return `409 order_fulfilment_unavailable`.
+
+Customer details include `stages:[{status,at}]`, containing only the actual main-payment/delivery/receipt events in chronological order, without staff identity or audit payload.
+Customer pricing and staff details include boolean `mainPaymentPaid`, derived from the immutable OrderPaid event, not estimates or a browser bank return.
+Both interfaces reuse the customs paid indicator for the main total and known Russian delivery (including zero) already included in that main payment.
+Unknown delivery has no paid mark and no independent delivery-payment action is introduced.
+Cancelled orders reveal saved customs zero/positive amounts even before quote confirmation; unknown stays null. Active unconfirmed orders still conceal internal customs forecasts.

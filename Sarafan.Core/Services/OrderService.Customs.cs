@@ -19,8 +19,8 @@ public sealed partial class OrderService
 
     public Task<BackofficeOrderDetailsDto> MarkCustomsPaidAsync(string number, MarkCustomsPaidRequest request,
         int actorId, string[] roles, CancellationToken token)
-        => StaffPaymentMutation(nameof(MarkCustomsPaidAsync),
+        => StaffOrderMutation(nameof(MarkCustomsPaidAsync),
             () => LogValueSummary.Inputs((nameof(number), number), (nameof(request), request),
                 (nameof(actorId), actorId), (nameof(roles), roles), (nameof(token), token)),
-            number, request.ExpectedUpdatedAt, actorId, roles, false, token);
+            number, request.ExpectedUpdatedAt, actorId, roles, OrderHistoryKind.CustomsPaid, token);
 }

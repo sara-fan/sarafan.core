@@ -72,5 +72,27 @@ public sealed partial class PaymentInformationApiTests
         using var repeat = await Send(HttpMethod.Post, paidPath, staff, JsonContent.Create(new { expectedUpdatedAt = result.UpdatedAt }));
         await Problem(repeat, HttpStatusCode.Conflict, "order_payment_unavailable");
         Assert.That(await db.Set<OrderHistoryEvent>().CountAsync(row => row.Kind == OrderHistoryKind.OrderPaid), Is.EqualTo(1));
+        const string fulfilmentPath = "/api/v1/backoffice/orders/12345678-1/fulfilment";
+        foreach (var token in new[] { null, customer })
+        {
+            using var denied = await Send(HttpMethod.Post, fulfilmentPath, token, JsonContent.Create(new AdvanceOrderRequest(result.UpdatedAt, OrderStatus.Delivering)));
+            Assert.That(denied.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        }
+        foreach (var target in new[] { OrderStatus.Delivering, OrderStatus.Received })
+        {
+            var previousVersion = result.UpdatedAt;
+            using var next = await Send(HttpMethod.Post, fulfilmentPath, staff, JsonContent.Create(new AdvanceOrderRequest(previousVersion, target)));
+            Assert.That(next.StatusCode, Is.EqualTo(HttpStatusCode.OK), await next.Content.ReadAsStringAsync());
+            Assert.That(next.Headers.CacheControl!.NoStore, Is.True);
+            result = (await next.Content.ReadFromJsonAsync<BackofficeOrderDetailsDto>())!;
+            Assert.That(result.Status, Is.EqualTo(target));
+            Assert.That(result.MainPaymentPaid, Is.True);
+            using var stale = await Send(HttpMethod.Post, fulfilmentPath, staff, JsonContent.Create(new AdvanceOrderRequest(previousVersion, target)));
+            await Problem(stale, HttpStatusCode.Conflict, "order_update_conflict");
+        }
+        using var completed = await Send(HttpMethod.Get, "/api/v1/orders/12345678-1", customer);
+        var delivered = (await completed.Content.ReadFromJsonAsync<OrderDto>())!;
+        Assert.That(delivered.Stages.Select(item => item.Status), Is.EqualTo(new[] { OrderStatus.Paid, OrderStatus.Delivering, OrderStatus.Received }));
+        Assert.That(delivered.Pricing.MainPaymentPaid, Is.True);
     }
 }

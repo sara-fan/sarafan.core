@@ -421,7 +421,7 @@ public sealed partial class OrderService(
         return ToDto(order, order.Customer.OrderCode!,
             await CustomerPricingAsync(order, timeProvider.GetUtcNow(), cancellationToken, checkoutPricing || order.CheckoutData is not null), cancelledAt)
             with
-        { ReviewReason = result.Reason, ReviewCompletedAt = result.At };
+        { ReviewReason = result.Reason, ReviewCompletedAt = result.At, Stages = await CustomerStagesAsync(order.Id, cancellationToken) };
     }
 
     private async Task<IReadOnlyList<CustomerOrderListItemDto>> ListCoreAsync(
@@ -448,13 +448,14 @@ public sealed partial class OrderService(
                 item.Quantity,
                 item.CreatedAt,
                 item.CheckoutData != null,
-                item.CustomsPaid))
+                item.CustomsPaid,
+                database.Set<OrderHistoryEvent>().Any(history => history.OrderId == item.Id && history.Kind == OrderHistoryKind.OrderPaid)))
             .ToArrayAsync(cancellationToken);
 
         var snapshots = await LatestCustomerPricingAsync(rows.Select(row => row.Id).ToArray(), cancellationToken);
         var now = timeProvider.GetUtcNow();
         return rows.Select(row => ToCustomerDto(row,
-            CustomerPricing(snapshots.GetValueOrDefault(row.Id), now, row.HasCheckout, row.CustomsPaid))).ToArray();
+            CustomerPricing(snapshots.GetValueOrDefault(row.Id), now, row.HasCheckout, row.CustomsPaid, row.Status == OrderStatus.Cancelled, row.MainPaymentPaid))).ToArray();
     }
 
     private static int NormalizeQuantity(int? quantity)
@@ -583,7 +584,8 @@ public sealed partial class OrderService(
         int Quantity,
         DateTimeOffset CreatedAt,
         bool HasCheckout,
-        bool CustomsPaid);
+        bool CustomsPaid,
+        bool MainPaymentPaid);
 
     private sealed record BackofficeOrderProjection(
         string CustomerOrderCode,

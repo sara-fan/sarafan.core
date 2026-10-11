@@ -24,6 +24,7 @@ public sealed class OrderStatusTests
         new(OrderStatus.DeliveringToUsWarehouse, 320, "Доставляем на склад в США", "delivering_to_us_warehouse", 300, "Выполняется", "in_progress"),
         new(OrderStatus.DeliveredToUsWarehouse, 330, "Получен на складе в США", "delivered_to_us_warehouse", 300, "Выполняется", "in_progress"),
         new(OrderStatus.DeliveringToRussia, 340, "Доставляем в Россию", "delivering_to_russia", 300, "Выполняется", "in_progress"),
+        new(OrderStatus.Delivering, 350, "Доставляется", "delivering", 300, "Выполняется", "in_progress"),
         new(OrderStatus.DeliveredToRussianWarehouse, 360, "Получен на складе в России", "delivered_to_russian_warehouse", 300, "Выполняется", "in_progress"),
         new(OrderStatus.DeliveringInRussia, 380, "Доставляем по России", "delivering_in_russia", 300, "Выполняется", "in_progress"),
         new(OrderStatus.Received, 400, "Получен", "received", 400, "Завершён", "completed"),
@@ -54,13 +55,12 @@ public sealed class OrderStatusTests
 
         Assert.That(
             statuses.Where(status => (int)status is >= 300 and < 400).Select(status => (int)status),
-            Is.EqualTo(new[] { 300, 310, 320, 330, 340, 360, 380 }));
+            Is.EqualTo(new[] { 300, 310, 320, 330, 340, 350, 360, 380 }));
     }
 
     [TestCase(-1)]
     [TestCase(int.MinValue)]
     [TestCase(int.MaxValue)]
-    [TestCase(350)]
     [TestCase(370)]
     [TestCase(390)]
     public void UndefinedStatus_HasNeutralPresentationAndNoActions(int value)

@@ -208,9 +208,11 @@ public sealed class OrderCreationTests
             Assert.That(first.Characteristics, Is.Null);
             Assert.That(first.AppliedExchangeRate, Is.Null);
             Assert.That(getByLocation.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(getByLocationResponse! with { Pricing = first.Pricing }, Is.EqualTo(first));
+            Assert.That(getByLocationResponse!.Stages, Is.EqualTo(first.Stages));
+            Assert.That(getByLocationResponse with { Pricing = first.Pricing, Stages = first.Stages }, Is.EqualTo(first));
             Assert.That(replayResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
-            Assert.That(replay! with { Pricing = first.Pricing }, Is.EqualTo(first));
+            Assert.That(replay!.Stages, Is.EqualTo(first.Stages));
+            Assert.That(replay with { Pricing = first.Pricing, Stages = first.Stages }, Is.EqualTo(first));
             Assert.That(getByLocationResponse.Pricing!.AsOf, Is.GreaterThanOrEqualTo(first.Pricing!.AsOf));
             Assert.That(replay.Pricing!.AsOf, Is.GreaterThanOrEqualTo(first.Pricing.AsOf));
             Assert.That(conflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
@@ -433,7 +435,8 @@ public sealed class OrderCreationTests
         {
             Assert.That(create.StatusCode, Is.EqualTo(HttpStatusCode.Created));
             Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(stored! with { Pricing = order.Pricing }, Is.EqualTo(order));
+            Assert.That(stored!.Stages, Is.EqualTo(order.Stages));
+            Assert.That(stored with { Pricing = order.Pricing, Stages = order.Stages }, Is.EqualTo(order));
         }
     }
 

@@ -27,6 +27,8 @@ public sealed class RejectOrderReviewRequest
     public string? Reason { get; set; }
 }
 
+public sealed record OrderStageDto(OrderStatus Status, DateTimeOffset At);
+
 public sealed record OrderDeliveryEstimateDto(int MinimumDays, int MaximumDays);
 
 public sealed class CancelOrderRequest
@@ -77,6 +79,7 @@ public sealed record OrderDto(
     public required OrderProductDto Product { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
+    public IReadOnlyList<OrderStageDto> Stages { get; init; } = [];
     public bool CanCancel { get; init; }
     public DateTimeOffset? CancelledAt { get; init; }
     public bool ShowReviewFields { get; init; }

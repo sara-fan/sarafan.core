@@ -17,6 +17,7 @@ public enum OrderStatus
     DeliveringToUsWarehouse = 320,
     DeliveredToUsWarehouse = 330,
     DeliveringToRussia = 340,
+    Delivering = 350,                                   // Pilot fulfilment stage
     DeliveredToRussianWarehouse = 360,
     DeliveringInRussia = 380,
 
@@ -41,6 +42,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringToUsWarehouse => "Доставляем на склад в США",
         OrderStatus.DeliveredToUsWarehouse => "Получен на складе в США",
         OrderStatus.DeliveringToRussia => "Доставляем в Россию",
+        OrderStatus.Delivering => "Доставляется",
         OrderStatus.DeliveredToRussianWarehouse => "Получен на складе в России",
         OrderStatus.DeliveringInRussia => "Доставляем по России",
         OrderStatus.Received => "Получен",
@@ -59,6 +61,7 @@ public static class OrderStatusExtensions
         OrderStatus.DeliveringToUsWarehouse => "delivering_to_us_warehouse",
         OrderStatus.DeliveredToUsWarehouse => "delivered_to_us_warehouse",
         OrderStatus.DeliveringToRussia => "delivering_to_russia",
+        OrderStatus.Delivering => "delivering",
         OrderStatus.DeliveredToRussianWarehouse => "delivered_to_russian_warehouse",
         OrderStatus.DeliveringInRussia => "delivering_in_russia",
         OrderStatus.Received => "received",
@@ -73,6 +76,7 @@ public static class OrderStatusExtensions
         OrderStatus.PurchasingItem or
         OrderStatus.DeliveringToUsWarehouse or
         OrderStatus.DeliveredToUsWarehouse or
+        OrderStatus.Delivering or
         OrderStatus.DeliveringToRussia or
         OrderStatus.DeliveredToRussianWarehouse or
         OrderStatus.DeliveringInRussia => (int)OrderStatus.Paid,
@@ -91,6 +95,7 @@ public static class OrderStatusExtensions
         OrderStatus.PurchasingItem or
         OrderStatus.DeliveringToUsWarehouse or
         OrderStatus.DeliveredToUsWarehouse or
+        OrderStatus.Delivering or
         OrderStatus.DeliveringToRussia or
         OrderStatus.DeliveredToRussianWarehouse or
         OrderStatus.DeliveringInRussia => "Выполняется",
@@ -109,6 +114,7 @@ public static class OrderStatusExtensions
         OrderStatus.PurchasingItem or
         OrderStatus.DeliveringToUsWarehouse or
         OrderStatus.DeliveredToUsWarehouse or
+        OrderStatus.Delivering or
         OrderStatus.DeliveringToRussia or
         OrderStatus.DeliveredToRussianWarehouse or
         OrderStatus.DeliveringInRussia => "in_progress",
@@ -131,6 +137,7 @@ public static class OrderStatusExtensions
         OrderStatus.PurchasingItem or
         OrderStatus.DeliveringToUsWarehouse or
         OrderStatus.DeliveredToUsWarehouse or
+        OrderStatus.Delivering or
         OrderStatus.DeliveringToRussia or
         OrderStatus.DeliveredToRussianWarehouse or
         OrderStatus.DeliveringInRussia => false,
@@ -142,6 +149,7 @@ public static class OrderStatusExtensions
         OrderStatus.UnderReview => 14,
         OrderStatus.QuoteReady or OrderStatus.QuoteExpired => 32,
         OrderStatus.Paid => 48,
+        OrderStatus.Delivering => 75,
         OrderStatus.PurchasingItem => 56,
         OrderStatus.DeliveringToUsWarehouse => 64,
         OrderStatus.DeliveredToUsWarehouse => 70,
