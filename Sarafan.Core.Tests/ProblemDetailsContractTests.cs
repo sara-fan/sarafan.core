@@ -418,7 +418,8 @@ public sealed class ProblemDetailsContractTests
             ["photo_not_found"] = 404,
             ["invalid_photo_size"] = 400,
             ["invalid_photo_type"] = 400,
-            ["invalid_photo_content"] = 400
+            ["invalid_photo_content"] = 400,
+            ["validation_failed"] = 400
         };
 
         foreach (var (code, status) in expected)
@@ -789,6 +790,7 @@ public sealed class ProblemDetailsContractTests
             "invalid_photo_size" => InvalidPhotoSizeProblem(),
             "invalid_photo_type" => InvalidPhotoTypeProblem(),
             "invalid_photo_content" => InvalidPhotoContentProblem(),
+            "validation_failed" => ConflictingPhotoChangesProblem(),
             _ => throw new ArgumentOutOfRangeException(nameof(code))
         };
 

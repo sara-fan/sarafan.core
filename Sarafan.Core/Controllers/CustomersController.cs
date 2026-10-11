@@ -54,29 +54,46 @@ public sealed class CustomersController(
     }
 
     [HttpPut]
+    [Consumes("application/json")]
     [ServiceFilter(typeof(PersonalDataConsentFilter))]
     [ProducesResponseType<CustomerDto>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<CustomerDto>> Update(
-        CustomerProfileUpdateRequest request,
-        CancellationToken cancellationToken)
-    {
-        var customerId = CurrentCustomerId();
-        var customer = await database.Customers
-            .SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
-        if (customer is null)
-        {
-            return CustomerNotFoundProblem();
-        }
+    public Task<ActionResult<CustomerDto>> Update(CustomerProfileUpdateRequest request, CancellationToken cancellationToken)
+        => SaveProfile(request, null, false, cancellationToken);
 
+    [HttpPut("profile")]
+    [Consumes("multipart/form-data")]
+    [ServiceFilter(typeof(PersonalDataConsentFilter))]
+    [RequestSizeLimit(MaxPhotoSize + 64 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxPhotoSize + 64 * 1024)]
+    [ProducesResponseType<CustomerDto>(StatusCodes.Status200OK)]
+    public Task<ActionResult<CustomerDto>> Save([FromForm] CustomerProfileSaveRequest request, CancellationToken cancellationToken)
+        => SaveProfile(request, request.Photo, request.RemovePhoto, cancellationToken);
+
+    private async Task<ActionResult<CustomerDto>> SaveProfile(
+        CustomerProfileUpdateRequest request, IFormFile? file, bool removePhoto, CancellationToken cancellationToken)
+    {
+        if (file is not null && removePhoto) return ConflictingPhotoChangesProblem();
+        var customerId = CurrentCustomerId();
         return await consents.WithPersonalDataAsync<ActionResult<CustomerDto>>(customerId, async () =>
         {
+            await ConsentTransaction.LockCustomer(database, customerId, cancellationToken);
+            var customer = await database.Customers.SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
+            if (customer is null) return CustomerNotFoundProblem();
+            PhotoUpload? upload = null;
+            if (file is not null)
+            {
+                var photoResult = await ReadPhoto(file, cancellationToken);
+                if (photoResult.Result is not null) return photoResult.Result;
+                upload = photoResult.Value!;
+            }
+            var now = timeProvider.GetUtcNow();
+            if (upload is not null) await ApplyPhoto(customerId, upload, now, cancellationToken);
+            else if (removePhoto) await RemovePhoto(customerId, cancellationToken);
             Apply(customer, request);
             customer.State = CustomerProfileState.Evaluate(customer);
-            customer.UpdatedAt = timeProvider.GetUtcNow();
+            customer.UpdatedAt = now;
             await database.SaveChangesAsync(cancellationToken);
-            var hasPhoto = await database.CustomerPhotos
-                .AsNoTracking()
-                .AnyAsync(item => item.CustomerId == customerId, cancellationToken);
+            var hasPhoto = await database.CustomerPhotos.AsNoTracking().AnyAsync(item => item.CustomerId == customerId, cancellationToken);
             return Ok(CustomerDto.From(customer, hasPhoto));
         }, cancellationToken);
     }
@@ -123,60 +140,23 @@ public sealed class CustomersController(
     [ServiceFilter(typeof(PersonalDataConsentFilter))]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxPhotoSize + 64 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxPhotoSize + 64 * 1024)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> PutPhoto(IFormFile file, CancellationToken cancellationToken)
     {
         var customerId = CurrentCustomerId();
         return await consents.WithPersonalDataAsync<ActionResult>(customerId, async () =>
         {
-            if (file.Length is <= 0 or > MaxPhotoSize)
-            {
-                return InvalidPhotoSizeProblem();
-            }
-
-            if (!PhotoSignatures.TryGetValue(file.ContentType, out var signatureValidator))
-            {
-                return InvalidPhotoTypeProblem();
-            }
-
-            await using var stream = file.OpenReadStream();
-            await using var buffer = new MemoryStream((int)file.Length);
-            await stream.CopyToAsync(buffer, cancellationToken);
-            var content = buffer.ToArray();
-            if (!signatureValidator(content))
-            {
-                return InvalidPhotoContentProblem();
-            }
-
+            await ConsentTransaction.LockCustomer(database, customerId, cancellationToken);
+            var photoResult = await ReadPhoto(file, cancellationToken);
+            if (photoResult.Result is not null) return photoResult.Result;
+            var upload = photoResult.Value!;
             if (!await database.Customers.AnyAsync(item => item.Id == customerId, cancellationToken))
             {
                 return CustomerNotFoundProblem();
             }
 
-            var photo = await database.CustomerPhotos
-                .SingleOrDefaultAsync(item => item.CustomerId == customerId, cancellationToken);
-            if (photo is null)
-            {
-                photo = new CustomerPhoto
-                {
-                    CustomerId = customerId,
-                    FileName = SafeFileName(file.FileName),
-                    ContentType = file.ContentType,
-                    Content = content,
-                    Size = content.Length,
-                    UpdatedAt = timeProvider.GetUtcNow()
-                };
-                database.CustomerPhotos.Add(photo);
-            }
-            else
-            {
-                photo.FileName = SafeFileName(file.FileName);
-                photo.ContentType = file.ContentType;
-                photo.Content = content;
-                photo.Size = content.Length;
-                photo.UpdatedAt = timeProvider.GetUtcNow();
-            }
-
+            await ApplyPhoto(customerId, upload, timeProvider.GetUtcNow(), cancellationToken);
             await database.SaveChangesAsync(cancellationToken);
             return NoContent();
         }, cancellationToken);
@@ -184,18 +164,51 @@ public sealed class CustomersController(
 
     [HttpDelete("photo")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<ActionResult> DeletePhoto(CancellationToken cancellationToken)
+    public Task<ActionResult> DeletePhoto(CancellationToken cancellationToken)
     {
         var customerId = CurrentCustomerId();
-        var photo = await database.CustomerPhotos
-            .SingleOrDefaultAsync(item => item.CustomerId == customerId, cancellationToken);
-        if (photo is not null)
+        return ConsentTransaction.Run<ActionResult>(database, async () =>
         {
-            database.CustomerPhotos.Remove(photo);
-            await database.SaveChangesAsync(cancellationToken);
-        }
+            await ConsentTransaction.LockCustomer(database, customerId, cancellationToken);
+            await RemovePhoto(customerId, cancellationToken);
+            return NoContent();
+        }, cancellationToken);
+    }
 
-        return NoContent();
+    private async Task RemovePhoto(int customerId, CancellationToken cancellationToken)
+    {
+        var photo = await database.CustomerPhotos.SingleOrDefaultAsync(item => item.CustomerId == customerId, cancellationToken);
+        if (photo is not null) database.CustomerPhotos.Remove(photo);
+    }
+
+    private sealed record PhotoUpload(string FileName, string ContentType, byte[] Content);
+
+    private async Task<ActionResult<PhotoUpload>> ReadPhoto(IFormFile file, CancellationToken cancellationToken)
+    {
+        if (file.Length is <= 0 or > MaxPhotoSize) return InvalidPhotoSizeProblem();
+        if (!PhotoSignatures.TryGetValue(file.ContentType, out var signatureValidator))
+            return InvalidPhotoTypeProblem();
+        await using var stream = file.OpenReadStream();
+        await using var buffer = new MemoryStream((int)file.Length);
+        await stream.CopyToAsync(buffer, cancellationToken);
+        var content = buffer.ToArray();
+        if (!signatureValidator(content)) return InvalidPhotoContentProblem();
+        return new PhotoUpload(SafeFileName(file.FileName), file.ContentType, content);
+    }
+
+    private async Task ApplyPhoto(int customerId, PhotoUpload upload, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var photo = await database.CustomerPhotos.SingleOrDefaultAsync(item => item.CustomerId == customerId, cancellationToken);
+        if (photo is null)
+        {
+            photo = new CustomerPhoto { CustomerId = customerId, FileName = upload.FileName, ContentType = upload.ContentType, Content = upload.Content };
+            database.CustomerPhotos.Add(photo);
+        }
+        photo.FileName = upload.FileName;
+        photo.ContentType = upload.ContentType;
+        photo.Content = upload.Content;
+        photo.Size = upload.Content.Length;
+        photo.UpdatedAt = now;
     }
 
     private static void Apply(Customer profile, CustomerProfileUpdateRequest request)

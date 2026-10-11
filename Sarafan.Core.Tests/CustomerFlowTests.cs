@@ -19,7 +19,7 @@ namespace Sarafan.Core.Tests;
 
 [TestFixture]
 [NonParallelizable]
-public sealed class CustomerFlowTests
+public sealed partial class CustomerFlowTests
 {
     private static int _phoneSequence = 100;
     private HttpClient _client = null!;

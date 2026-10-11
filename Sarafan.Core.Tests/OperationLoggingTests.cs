@@ -522,6 +522,19 @@ public sealed class OperationLoggingTests
         Assert.That(fallback.Attributes, Does.Not.ContainKey("ProblemCode"));
     }
 
+    [Test]
+    public void PhotoConflictProblemBoundaryRedactsInputsAndLocalizedMessages()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString($"?photo={Secret}");
+        var factory = new SarafanProblemDetailsFactory(_factory.CreateLogger<SarafanProblemDetailsFactory>());
+        factory.CreateConflictingPhotoChangesResult(context);
+        AssertBoundary($"{typeof(SarafanProblemDetailsFactory).FullName}.CreateConflictingPhotoChangesResult");
+        Assert.That(string.Join(' ', _logs.Records.Select(record => record.Message)),
+            Does.Not.Contain("Выберите загрузку или удаление фотографии."));
+        AssertPrivate();
+    }
+
     [TestCase(null, "null")]
     [TestCase(PhoneValidationReason.Empty, "Empty")]
     [TestCase(PhoneValidationReason.UnsupportedCharacters, "UnsupportedCharacters")]
@@ -912,6 +925,10 @@ public sealed class OperationLoggingTests
             new CancelOrderRequest { ExpectedUpdatedAt = createdOrder.UpdatedAt, Reason = Secret });
         using var get = await client.GetAsync("/api/v1/customers/me");
         using var update = await client.PutAsJsonAsync("/api/v1/customers/me", new CustomerProfileUpdateRequest { FirstName = Secret });
+        using var profileForm = new MultipartFormDataContent();
+        profileForm.Add(new StringContent(Secret), "firstName");
+        profileForm.Add(new StringContent("true"), "removePhoto");
+        using var saveProfile = await client.PutAsync("/api/v1/customers/me/profile", profileForm);
         const string postalCode = "654321";
         using var updateDeliveryAddress = await client.PutAsJsonAsync("/api/v1/customers/me/delivery-address",
             new CustomerDeliveryAddress(postalCode, Secret, Secret));
@@ -941,6 +958,7 @@ public sealed class OperationLoggingTests
         Assert.That(backofficeOrders.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(get.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(update.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(saveProfile.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(updateDeliveryAddress.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(photo.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         Assert.That(putPhoto.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));

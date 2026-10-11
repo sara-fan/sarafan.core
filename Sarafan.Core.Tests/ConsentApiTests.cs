@@ -322,6 +322,10 @@ public sealed class ConsentApiTests
         malformedPhoto.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("multipart/form-data");
         using var gatedPhoto = await _client.PutAsync("/api/v1/customers/me/photo", malformedPhoto);
         Assert.That(gatedPhoto.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        using var malformedProfile = new StringContent("not a multipart body");
+        malformedProfile.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
+        using var gatedProfile = await _client.PutAsync("/api/v1/customers/me/profile", malformedProfile);
+        Assert.That(gatedProfile.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
         using var mineBefore = await _client.GetAsync("/api/v1/consents/me");
         Assert.That((await Read<CustomerConsentsDto>(mineBefore)).Statuses.Single(x => x.Kind == LegalDocumentKind.PersonalDataConsent).Status, Is.EqualTo("missing"));
         var stale = Decision(pd); stale.DocumentId = Guid.NewGuid();

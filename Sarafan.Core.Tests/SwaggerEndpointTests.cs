@@ -3,6 +3,7 @@
 // This file is a part of the Sarafan application
 
 using System.Net;
+using System.Text.Json;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -56,5 +57,11 @@ public sealed class SwaggerEndpointTests
             Assert.That(root.Headers.Location?.OriginalString, Is.EqualTo("/swagger"));
             Assert.That(swagger.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         });
+        using var document = JsonDocument.Parse(await swagger.Content.ReadAsStringAsync());
+        var paths = document.RootElement.GetProperty("paths");
+        Assert.That(paths.GetProperty("/api/v1/customers/me").GetProperty("put")
+            .GetProperty("requestBody").GetProperty("content").TryGetProperty("application/json", out _), Is.True);
+        Assert.That(paths.GetProperty("/api/v1/customers/me/profile").GetProperty("put")
+            .GetProperty("requestBody").GetProperty("content").TryGetProperty("multipart/form-data", out _), Is.True);
     }
 }
