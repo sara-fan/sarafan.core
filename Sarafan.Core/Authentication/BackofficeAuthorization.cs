@@ -28,7 +28,8 @@ public enum BackofficeAction
     ManageOrderPricing = 14,
     MarkCustomsPaid = 15,
     ManagePaymentInformation = 16,
-    MarkOrderPaid = 17
+    MarkOrderPaid = 17,
+    AdvanceOrderFulfilment = 18
 }
 
 public static class BackofficeAuthenticationDefaults
@@ -49,6 +50,7 @@ public static class BackofficePolicies
     public const string ManagePaymentInformation = "backoffice:manage-payment-information";
     public const string MarkCustomsPaid = "backoffice:mark-customs-paid";
     public const string MarkOrderPaid = "backoffice:mark-order-paid";
+    public const string AdvanceOrderFulfilment = "backoffice:advance-order-fulfilment";
     public const string EditOrderProduct = "backoffice:edit-order-product";
     public const string ManageUsers = "backoffice:manage-users";
     public const string ManageRoles = "backoffice:manage-roles";
@@ -78,6 +80,7 @@ public static class BackofficeAuthorization
             [BackofficeAction.ManagePaymentInformation] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.MarkCustomsPaid] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
             [BackofficeAction.MarkOrderPaid] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
+            [BackofficeAction.AdvanceOrderFulfilment] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
             [BackofficeAction.EditOrderProduct] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
             [BackofficeAction.ManageUsers] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.ManageRoles] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
@@ -110,6 +113,7 @@ public static class BackofficeAuthorization
         AddPolicy(options, BackofficePolicies.ManagePaymentInformation, BackofficeAction.ManagePaymentInformation);
         AddPolicy(options, BackofficePolicies.MarkCustomsPaid, BackofficeAction.MarkCustomsPaid);
         AddPolicy(options, BackofficePolicies.MarkOrderPaid, BackofficeAction.MarkOrderPaid);
+        AddPolicy(options, BackofficePolicies.AdvanceOrderFulfilment, BackofficeAction.AdvanceOrderFulfilment);
         AddPolicy(options, BackofficePolicies.EditOrderProduct, BackofficeAction.EditOrderProduct);
         AddPolicy(options, BackofficePolicies.ManageUsers, BackofficeAction.ManageUsers);
         AddPolicy(options, BackofficePolicies.ManageRoles, BackofficeAction.ManageRoles);

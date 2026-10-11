@@ -636,6 +636,17 @@ public sealed class OperationLoggingTests
         AssertPrivate();
     }
 
+    [TestCase(OrderStatus.Delivering, "Delivering")]
+    [TestCase(OrderStatus.Received, "Received")]
+    [TestCase(OrderStatus.Paid, "[redacted]")]
+    [TestCase((OrderStatus)987654, "[redacted]")]
+    public void FulfilmentSummaryAllowsOnlyAcceptedStagesAndRedactsVersion(OrderStatus status, string label)
+    {
+        var request = new AdvanceOrderRequest(DateTimeOffset.Parse("2037-08-19T12:34:56Z"), status);
+        Assert.That(LogValueSummary.Describe(request),
+            Is.EqualTo($"AdvanceOrderRequest(status={label}; version=[redacted])"));
+    }
+
     [TestCase(nameof(OrderService.AdvanceFulfilmentAsync), false)]
     [TestCase(nameof(OrderService.AdvanceFulfilmentAsync), true)]
     [TestCase(nameof(OrderService.MarkOrderPaidAsync), false)]
@@ -667,8 +678,9 @@ public sealed class OperationLoggingTests
         AssertBoundary(operation);
         var entry = _logs.Records.Single(record => record.Event.Id == 1600 && Equals(record.Attributes["code.function.name"], operation));
         var requestKind = fulfilment ? nameof(AdvanceOrderRequest) : mainPayment ? nameof(MarkOrderPaidRequest) : nameof(MarkCustomsPaidRequest);
+        var stageSummary = fulfilment ? "status=Delivering; " : "";
         Assert.That(entry.Attributes["sarafan.operation.inputs"],
-            Is.EqualTo($"number=[redacted]; request={requestKind}(version=[redacted]); actorId=[redacted]; roles=[redacted]; token=cancellation requested={cancelled}"));
+            Is.EqualTo($"number=[redacted]; request={requestKind}({stageSummary}version=[redacted]); actorId=[redacted]; roles=[redacted]; token=cancellation requested={cancelled}"));
         var exit = _logs.Records.Single(record => record.Event.Id == 1601 && Equals(record.Attributes["code.function.name"], operation));
         Assert.That(exit.Attributes["sarafan.operation.outputs"],
             Is.EqualTo(cancelled ? "no result; cancelled" : "no result; service rejection; status=404"));

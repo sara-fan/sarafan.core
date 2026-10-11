@@ -37,7 +37,7 @@ public sealed partial class OrderService
             var customsPayment = kind == OrderHistoryKind.CustomsPaid;
             var target = kind == OrderHistoryKind.DeliveryStarted ? OrderStatus.Delivering : OrderStatus.Received;
             BackofficeAuthorization.RequireAllowed(roles, mainPayment ? BackofficeAction.MarkOrderPaid
-                : customsPayment ? BackofficeAction.MarkCustomsPaid : BackofficeAction.ManualQuotes);
+                : customsPayment ? BackofficeAction.MarkCustomsPaid : BackofficeAction.AdvanceOrderFulfilment);
             if (kind is not (OrderHistoryKind.OrderPaid or OrderHistoryKind.CustomsPaid or OrderHistoryKind.DeliveryStarted or OrderHistoryKind.OrderReceived))
                 throw new ServiceException(409, "order_fulfilment_unavailable");
             var order = await FindPublicOrder(number, token);

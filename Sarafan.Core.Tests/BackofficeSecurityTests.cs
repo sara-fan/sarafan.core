@@ -149,6 +149,7 @@ public sealed class BackofficeSecurityTests
             BackofficePolicies.ManageRoles,
             BackofficePolicies.OperationalQueue,
             BackofficePolicies.ManualQuotes,
+            BackofficePolicies.AdvanceOrderFulfilment,
             BackofficePolicies.ManageLegalDocuments,
             BackofficePolicies.ViewServiceCatalogue,
             BackofficePolicies.ManageServiceCatalogue,

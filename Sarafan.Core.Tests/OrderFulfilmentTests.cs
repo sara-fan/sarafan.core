@@ -18,6 +18,7 @@ public sealed partial class OrderPricingTests
     [TestCase(BackofficeRoles.Operator)]
     public async Task PilotStagesAreSequentialVersionedAndProjectedWithoutPrivateEvidence(string role)
     {
+        Assert.That(BackofficeAuthorization.IsAllowed([role], BackofficeAction.AdvanceOrderFulfilment), Is.True);
         await PaymentCheckout(100);
         var before = await service.GetAsync(order.CustomerId, "12345678-1", default);
         Assert.That(before.Stages, Is.Empty);
