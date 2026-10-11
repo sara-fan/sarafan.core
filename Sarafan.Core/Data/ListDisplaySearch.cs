@@ -108,7 +108,8 @@ internal static class ListDisplaySearch
     internal static IQueryable<PaymentInformationBundle> PaymentBundles(IQueryable<PaymentInformationBundle> query, string search)
         => Apply(query, search, row => row.RecipientName ?? "—",
             row => row.Inn ?? "—", row => row.BankName ?? "—",
-            row => row.Enabled ? "Включён" : !row.Published ? "Черновик" : "Отключён",
+            row => row.Enabled ? PaymentInformationRules.EnabledDisplayName
+                : !row.Published ? PaymentInformationRules.DraftDisplayName : PaymentInformationRules.DisabledDisplayName,
             row => AppDbContext.SearchDate(AppDbContext.SearchLocalTime("Europe/Moscow", row.CreatedAt), "DD.MM.YYYY, HH24:MI") + " МСК");
 
     private sealed class Substitute(ParameterExpression parameter, Expression value) : ExpressionVisitor

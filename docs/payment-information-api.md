@@ -11,7 +11,7 @@ Drafts can omit any field; supplied values are validated. Enabling requires comp
 Legal entities require 10-digit INN and 9-digit KPP; individual entrepreneurs require 12-digit INN and no KPP.
 Accounts contain 20 digits and BIK contains 9 digits. Preserve leading zeroes.
 
-Visible states are draft (Черновик), enabled (Включён), and disabled (Отключён).
+Visible states are draft (Черновик), enabled (Используются), and disabled (Не используются). Core owns these labels; Ops, display search and state sorting share the same names.
 First enablement permanently freezes the contents through the persisted published flag. No first-enablement time or staff actor is stored.
 Previously enabled bundles can be enabled again. Copying a published bundle creates an editable disabled draft with its QR.
 Any inactive bundle can be deleted, including previously published bundles. Enabled bundles cannot be deleted.
