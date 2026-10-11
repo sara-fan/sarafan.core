@@ -369,6 +369,14 @@ public sealed class SarafanProblemDetailsFactory(
         => OperationLogging.Run(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(CreateResult)}",
             () => ProblemInputs(statusCode, code), () => Result(Create(context, statusCode, code)));
 
+    public ObjectResult CreateConflictingPhotoChangesResult(HttpContext context)
+        => OperationLogging.Run(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(CreateConflictingPhotoChangesResult)}",
+            () => "context=[redacted]", () => Result(Create(
+                context,
+                StatusCodes.Status400BadRequest,
+                "validation_failed",
+                new Dictionary<string, string[]> { ["photo"] = ["Выберите загрузку или удаление фотографии."] })));
+
     public ObjectResult CreateValidationResult(HttpContext context, ModelStateDictionary modelState)
         => OperationLogging.Run(_logger, $"{typeof(SarafanProblemDetailsFactory).FullName}.{nameof(CreateValidationResult)}",
             () => "context/modelState=[redacted]", () => CreateValidationResultCore(context, modelState));

@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Sarafan.Core.Data;
 using Sarafan.Core.Models;
 using Sarafan.Core.RestModels;
+using Sarafan.Core.Services;
 
 namespace Sarafan.Core.Tests;
 
@@ -96,9 +97,9 @@ public sealed partial class CustomerFlowTests
             type: scenario == "type" ? "text/plain" : "image/png",
             remove: scenario == "both", email: scenario == "email" ? "invalid" : "changed@example.com", name: "Несохранено");
         Assert.That(failed.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
-        var problem = await failed.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.That(problem.GetProperty("code").GetString(), Is.EqualTo(expected));
-        if (scenario == "both") Assert.That(problem.GetProperty("errors").TryGetProperty("photo", out _), Is.True);
+        var problem = await AssertPhotoProblem(failed, expected);
+        if (scenario == "both")
+            Assert.That(problem.Errors!["photo"], Is.EqualTo(new[] { "Выберите загрузку или удаление фотографии." }));
         await using var scope = IntegrationTestEnvironment.Factory.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var customer = await database.Customers.SingleAsync(row => row.Id == session.Customer.Id);
@@ -108,6 +109,57 @@ public sealed partial class CustomerFlowTests
             Assert.That(customer.Email, Is.EqualTo("saved@example.com"));
         });
         Assert.That((await database.CustomerPhotos.SingleAsync(row => row.CustomerId == customer.Id)).Content, Is.EqualTo(ProfilePng));
+    }
+
+    [TestCase("type", "invalid_photo_type")]
+    [TestCase("content", "invalid_photo_content")]
+    [TestCase("empty", "invalid_photo_size")]
+    [TestCase("size", "invalid_photo_size")]
+    public async Task LegacyPhoto_InvalidUploadPreservesSavedPhoto(string scenario, string expected)
+    {
+        var (session, _) = await Register(NextPhone());
+        using var initial = await SaveProfileForm(session.AccessToken, ProfilePng, name: "Сохранено");
+        initial.EnsureSuccessStatusCode();
+        var saved = (await initial.Content.ReadFromJsonAsync<CustomerDto>())!;
+        var bytes = scenario switch
+        {
+            "content" => new byte[] { 1, 2, 3 },
+            "empty" => [],
+            "size" => new byte[5 * 1024 * 1024 + 1],
+            _ => ProfilePng
+        };
+        using var form = new MultipartFormDataContent();
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue(scenario == "type" ? "text/plain" : "image/png");
+        form.Add(content, "file", "avatar.png");
+        using var request = AuthorizedRequest(HttpMethod.Put, "/api/v1/customers/me/photo", session.AccessToken);
+        request.Content = form;
+        using var failed = await _client.SendAsync(request);
+        await AssertPhotoProblem(failed, expected);
+        using var current = AuthorizedRequest(HttpMethod.Get, "/api/v1/customers/me", session.AccessToken);
+        using var unchanged = await _client.SendAsync(current);
+        Assert.That(await unchanged.Content.ReadFromJsonAsync<CustomerDto>(), Is.EqualTo(saved));
+        using var photo = AuthorizedRequest(HttpMethod.Get, "/api/v1/customers/me/photo", session.AccessToken);
+        using var response = await _client.SendAsync(photo);
+        Assert.That(await response.Content.ReadAsByteArrayAsync(), Is.EqualTo(ProfilePng));
+    }
+
+    private static async Task<SarafanProblemDetails> AssertPhotoProblem(HttpResponseMessage response, string expected)
+    {
+        var problem = (await response.Content.ReadFromJsonAsync<SarafanProblemDetails>())!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo(SarafanProblemDetailsFactory.MediaType));
+            Assert.That(response.Content.Headers.ContentLanguage, Does.Contain("ru"));
+            Assert.That(problem.Status, Is.EqualTo((int)response.StatusCode));
+            Assert.That(problem.Code, Is.EqualTo(expected));
+            Assert.That(problem.Type, Is.EqualTo(SarafanProblemDetailsFactory.TypeBase + expected.Replace('_', '-')));
+            Assert.That(problem.Instance, Is.EqualTo("urn:sarafan:problem:" + problem.TraceId));
+            Assert.That(problem.Title, Does.Match("[А-Яа-я]"));
+            Assert.That(problem.Detail, Does.Match("[А-Яа-я]"));
+        });
+        return problem;
     }
 
     [Test]

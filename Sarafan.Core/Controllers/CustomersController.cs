@@ -69,21 +69,23 @@ public sealed class CustomersController(
     public Task<ActionResult<CustomerDto>> Save([FromForm] CustomerProfileSaveRequest request, CancellationToken cancellationToken)
         => SaveProfile(request, request.Photo, request.RemovePhoto, cancellationToken);
 
-    private Task<ActionResult<CustomerDto>> SaveProfile(
+    private async Task<ActionResult<CustomerDto>> SaveProfile(
         CustomerProfileUpdateRequest request, IFormFile? file, bool removePhoto, CancellationToken cancellationToken)
     {
-        if (file is not null && removePhoto)
-            throw new ServiceException(400, "validation_failed")
-            {
-                Errors = new Dictionary<string, string[]> { ["photo"] = ["Выберите загрузку или удаление фотографии."] }
-            };
+        if (file is not null && removePhoto) return ConflictingPhotoChangesProblem();
         var customerId = CurrentCustomerId();
-        return consents.WithPersonalDataAsync<ActionResult<CustomerDto>>(customerId, async () =>
+        return await consents.WithPersonalDataAsync<ActionResult<CustomerDto>>(customerId, async () =>
         {
             await ConsentTransaction.LockCustomer(database, customerId, cancellationToken);
             var customer = await database.Customers.SingleOrDefaultAsync(item => item.Id == customerId, cancellationToken);
             if (customer is null) return CustomerNotFoundProblem();
-            var upload = file is null ? null : await ReadPhoto(file, cancellationToken);
+            PhotoUpload? upload = null;
+            if (file is not null)
+            {
+                var photoResult = await ReadPhoto(file, cancellationToken);
+                if (photoResult.Result is not null) return photoResult.Result;
+                upload = photoResult.Value!;
+            }
             var now = timeProvider.GetUtcNow();
             if (upload is not null) await ApplyPhoto(customerId, upload, now, cancellationToken);
             else if (removePhoto) await RemovePhoto(customerId, cancellationToken);
@@ -145,7 +147,9 @@ public sealed class CustomersController(
         var customerId = CurrentCustomerId();
         return await consents.WithPersonalDataAsync<ActionResult>(customerId, async () =>
         {
-            var upload = await ReadPhoto(file, cancellationToken);
+            var photoResult = await ReadPhoto(file, cancellationToken);
+            if (photoResult.Result is not null) return photoResult.Result;
+            var upload = photoResult.Value!;
             if (!await database.Customers.AnyAsync(item => item.Id == customerId, cancellationToken))
             {
                 return CustomerNotFoundProblem();
@@ -174,17 +178,17 @@ public sealed class CustomersController(
 
     private sealed record PhotoUpload(string FileName, string ContentType, byte[] Content);
 
-    private static async Task<PhotoUpload> ReadPhoto(IFormFile file, CancellationToken cancellationToken)
+    private async Task<ActionResult<PhotoUpload>> ReadPhoto(IFormFile file, CancellationToken cancellationToken)
     {
-        if (file.Length is <= 0 or > MaxPhotoSize) throw new ServiceException(400, "invalid_photo_size");
+        if (file.Length is <= 0 or > MaxPhotoSize) return InvalidPhotoSizeProblem();
         if (!PhotoSignatures.TryGetValue(file.ContentType, out var signatureValidator))
-            throw new ServiceException(400, "invalid_photo_type");
+            return InvalidPhotoTypeProblem();
         await using var stream = file.OpenReadStream();
         await using var buffer = new MemoryStream((int)file.Length);
         await stream.CopyToAsync(buffer, cancellationToken);
         var content = buffer.ToArray();
-        if (!signatureValidator(content)) throw new ServiceException(400, "invalid_photo_content");
-        return new(SafeFileName(file.FileName), file.ContentType, content);
+        if (!signatureValidator(content)) return InvalidPhotoContentProblem();
+        return new PhotoUpload(SafeFileName(file.FileName), file.ContentType, content);
     }
 
     private async Task ApplyPhoto(int customerId, PhotoUpload upload, DateTimeOffset now, CancellationToken cancellationToken)

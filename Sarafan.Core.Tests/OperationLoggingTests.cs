@@ -522,6 +522,19 @@ public sealed class OperationLoggingTests
         Assert.That(fallback.Attributes, Does.Not.ContainKey("ProblemCode"));
     }
 
+    [Test]
+    public void PhotoConflictProblemBoundaryRedactsInputsAndLocalizedMessages()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString($"?photo={Secret}");
+        var factory = new SarafanProblemDetailsFactory(_factory.CreateLogger<SarafanProblemDetailsFactory>());
+        factory.CreateConflictingPhotoChangesResult(context);
+        AssertBoundary($"{typeof(SarafanProblemDetailsFactory).FullName}.CreateConflictingPhotoChangesResult");
+        Assert.That(string.Join(' ', _logs.Records.Select(record => record.Message)),
+            Does.Not.Contain("Выберите загрузку или удаление фотографии."));
+        AssertPrivate();
+    }
+
     [TestCase(null, "null")]
     [TestCase(PhoneValidationReason.Empty, "Empty")]
     [TestCase(PhoneValidationReason.UnsupportedCharacters, "UnsupportedCharacters")]

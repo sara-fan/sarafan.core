@@ -77,6 +77,9 @@ public abstract class SarafanControllerBase(SarafanProblemDetailsFactory problem
             StatusCodes.Status404NotFound,
             "photo_not_found");
 
+    protected ActionResult ConflictingPhotoChangesProblem()
+        => problemDetailsFactory.CreateConflictingPhotoChangesResult(HttpContext);
+
     protected ActionResult InvalidPhotoSizeProblem()
         => problemDetailsFactory.CreateResult(
             HttpContext,
