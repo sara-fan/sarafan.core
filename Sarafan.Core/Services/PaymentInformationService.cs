@@ -82,7 +82,8 @@ public sealed partial class PaymentInformationService(AppDbContext database, Tim
             "recipientName" => row => row.RecipientName,
             "inn" => row => row.Inn,
             "bankName" => row => row.BankName,
-            "state" => row => row.Enabled ? "Включён" : !row.Published ? "Черновик" : "Отключён",
+            "state" => row => row.Enabled ? PaymentInformationRules.EnabledDisplayName
+                : !row.Published ? PaymentInformationRules.DraftDisplayName : PaymentInformationRules.DisabledDisplayName,
             "createdAt" => row => row.CreatedAt,
             _ => row => row.Id
         };

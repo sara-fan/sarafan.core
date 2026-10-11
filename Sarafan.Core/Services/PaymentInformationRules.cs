@@ -9,13 +9,16 @@ namespace Sarafan.Core.Services;
 
 internal static class PaymentInformationRules
 {
+    internal const string DraftDisplayName = "Черновик";
+    internal const string EnabledDisplayName = "Используются";
+    internal const string DisabledDisplayName = "Не используются";
     internal const int NameMaxLength = 200;
     internal const int LinkMaxLength = 2048;
     internal const int RequestMaxBytes = ImageUpload.MaxBytes + 64 * 1024;
 
     internal static PaymentBundleOpsDto Operations() => new(
         [new(0, "Юридическое лицо", "legal-entity"), new(1, "Индивидуальный предприниматель", "individual-entrepreneur")],
-        [new("draft", "Черновик"), new("enabled", "Включён"), new("disabled", "Отключён")],
+        [new("draft", DraftDisplayName), new("enabled", EnabledDisplayName), new("disabled", DisabledDisplayName)],
         new(NameMaxLength, LinkMaxLength, ImageUpload.MaxBytes, ImageUpload.ContentTypes,
             ImageContent.MaxDimension, ImageContent.MaxPixels, ImageContent.MaxMetadataBytes), true);
 

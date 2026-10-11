@@ -44,18 +44,20 @@ public sealed partial class OrderService
 
     private async Task<CustomerPricingDto> CustomerPricingAsync(Order order, DateTimeOffset now,
         CancellationToken token, bool deliverySelected = false)
-        => CustomerPricing(await LatestPricingAsync(order.Id, token), now, deliverySelected, order.CustomsPaid);
+        => CustomerPricing(await LatestPricingAsync(order.Id, token), now, deliverySelected, order.CustomsPaid,
+            order.Status == OrderStatus.Cancelled, await MainPaymentPaidAsync(order.Id, token));
 
-    private static CustomerPricingDto CustomerPricing(OrderPricingSnapshot? snapshot, DateTimeOffset now, bool deliverySelected = false, bool customsPaid = false)
+    private static CustomerPricingDto CustomerPricing(OrderPricingSnapshot? snapshot, DateTimeOffset now, bool deliverySelected = false, bool customsPaid = false, bool cancelled = false, bool mainPaymentPaid = false)
     {
         if (snapshot is null)
-            return new(CustomerPricingState.Forecast, null, null, null, now, null, null);
+            return new(CustomerPricingState.Forecast, null, null, null, now, null, null)
+            { CustomsPaid = customsPaid, MainPaymentPaid = mainPaymentPaid };
         var calculation = ReadCalculation(snapshot);
         var state = snapshot.ValidUntil is null ? CustomerPricingState.Forecast
             : now >= snapshot.ValidUntil ? CustomerPricingState.Expired : CustomerPricingState.Confirmed;
         return new(state, calculation.TotalRub, calculation.CalculatedAt, snapshot.ValidUntil, now,
-            deliverySelected ? ExcludedRub(calculation, ServiceKind.DomesticDelivery) : null, snapshot.ValidUntil is null ? null : ExcludedRub(calculation, ServiceKind.CustomsPayments))
-        { CustomsPaid = customsPaid };
+            deliverySelected ? ExcludedRub(calculation, ServiceKind.DomesticDelivery) : null, snapshot.ValidUntil is null && !cancelled ? null : ExcludedRub(calculation, ServiceKind.CustomsPayments))
+        { CustomsPaid = customsPaid, MainPaymentPaid = mainPaymentPaid };
     }
 
     private static decimal? ExcludedRub(OrderPriceCalculationDto calculation, ServiceKind service)

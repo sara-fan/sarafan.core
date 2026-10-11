@@ -97,7 +97,7 @@ public sealed partial class OrderPricingTests
     [TestCase(OrderStatus.CannotDeliver, false)]
     [TestCase((OrderStatus)(-1), false)]
     [TestCase((OrderStatus)305, false)]
-    [TestCase((OrderStatus)350, false)]
+    [TestCase(OrderStatus.Delivering, true)]
     [TestCase((OrderStatus)370, false)]
     [TestCase((OrderStatus)999, false)]
     public async Task CustomerDeliveryEstimateFollowsActiveOrderStates(OrderStatus status, bool expectedEstimate)

@@ -194,7 +194,7 @@ public sealed class PaymentInformationTests
         await Create(Complete());
         var active = await Enable(await Create(), first);
         var ops = _service.Operations(Admin);
-        Assert.That(ops.States.Select(item => item.Name), Is.EqualTo(new[] { "Черновик", "Включён", "Отключён" }));
+        Assert.That(ops.States.Select(item => item.Name), Is.EqualTo(new[] { "Черновик", "Используются", "Не используются" }));
         foreach (var sort in new[] { "id", "recipientName", "inn", "bankName", "state", "createdAt" })
             foreach (var direction in new[] { "asc", "desc" })
             {
@@ -207,7 +207,7 @@ public sealed class PaymentInformationTests
             var page = await _service.ListAsync(Admin, 1, 25, "id", "desc", null, state, default);
             Assert.That(page.Items.All(row => row.State == state), Is.True);
         }
-        foreach (var search in new[] { "включён", "черновик", "отключён", "Получатель", "0012345678", "БАНК", "10.10.2026", "—", "  " })
+        foreach (var search in new[] { "используются", "черновик", "не используются", "Получатель", "0012345678", "БАНК", "10.10.2026", "—", "  " })
         {
             var page = await _service.ListAsync(Admin, 1, 50, "id", "desc", search, null, default);
             Assert.That(page.Items, Is.Not.Empty, search);

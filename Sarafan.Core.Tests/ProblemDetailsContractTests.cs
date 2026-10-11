@@ -527,6 +527,7 @@ public sealed class ProblemDetailsContractTests
             ["invalid_order_list_filter"] = 400,
             ["invalid_order_idempotency_key"] = 400,
             ["order_creation_conflict"] = 409,
+            ["order_fulfilment_unavailable"] = 409,
             ["order_number_allocation_failed"] = 503,
             ["invalid_code"] = 401,
             ["invalid_access_token"] = 401,

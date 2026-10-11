@@ -636,6 +636,19 @@ public sealed class OperationLoggingTests
         AssertPrivate();
     }
 
+    [TestCase(OrderStatus.Delivering, "Delivering")]
+    [TestCase(OrderStatus.Received, "Received")]
+    [TestCase(OrderStatus.Paid, "[redacted]")]
+    [TestCase((OrderStatus)987654, "[redacted]")]
+    public void FulfilmentSummaryAllowsOnlyAcceptedStagesAndRedactsVersion(OrderStatus status, string label)
+    {
+        var request = new AdvanceOrderRequest(DateTimeOffset.Parse("2037-08-19T12:34:56Z"), status);
+        Assert.That(LogValueSummary.Describe(request),
+            Is.EqualTo($"AdvanceOrderRequest(status={label}; version=[redacted])"));
+    }
+
+    [TestCase(nameof(OrderService.AdvanceFulfilmentAsync), false)]
+    [TestCase(nameof(OrderService.AdvanceFulfilmentAsync), true)]
     [TestCase(nameof(OrderService.MarkOrderPaidAsync), false)]
     [TestCase(nameof(OrderService.MarkOrderPaidAsync), true)]
     [TestCase(nameof(OrderService.MarkCustomsPaidAsync), false)]
@@ -653,7 +666,10 @@ public sealed class OperationLoggingTests
         var version = DateTimeOffset.Parse("2037-08-19T12:34:56Z");
         string[] roles = [BackofficeRoles.Operator];
         var mainPayment = method == nameof(OrderService.MarkOrderPaidAsync);
-        var failure = await Assert.CatchAsync<Exception>(() => mainPayment
+        var fulfilment = method == nameof(OrderService.AdvanceFulfilmentAsync);
+        var failure = await Assert.CatchAsync<Exception>(() => fulfilment
+            ? service.AdvanceFulfilmentAsync(number, new(version, OrderStatus.Delivering), actorId, roles, cancellation.Token)
+            : mainPayment
             ? service.MarkOrderPaidAsync(number, new(version), actorId, roles, cancellation.Token)
             : service.MarkCustomsPaidAsync(number, new(version), actorId, roles, cancellation.Token));
         Assert.That(failure, Is.InstanceOf(cancelled ? typeof(OperationCanceledException) : typeof(ServiceException)));
@@ -661,9 +677,10 @@ public sealed class OperationLoggingTests
         var operation = typeof(OrderService).FullName + "." + method;
         AssertBoundary(operation);
         var entry = _logs.Records.Single(record => record.Event.Id == 1600 && Equals(record.Attributes["code.function.name"], operation));
-        var requestKind = mainPayment ? nameof(MarkOrderPaidRequest) : nameof(MarkCustomsPaidRequest);
+        var requestKind = fulfilment ? nameof(AdvanceOrderRequest) : mainPayment ? nameof(MarkOrderPaidRequest) : nameof(MarkCustomsPaidRequest);
+        var stageSummary = fulfilment ? "status=Delivering; " : "";
         Assert.That(entry.Attributes["sarafan.operation.inputs"],
-            Is.EqualTo($"number=[redacted]; request={requestKind}(version=[redacted]); actorId=[redacted]; roles=[redacted]; token=cancellation requested={cancelled}"));
+            Is.EqualTo($"number=[redacted]; request={requestKind}({stageSummary}version=[redacted]); actorId=[redacted]; roles=[redacted]; token=cancellation requested={cancelled}"));
         var exit = _logs.Records.Single(record => record.Event.Id == 1601 && Equals(record.Attributes["code.function.name"], operation));
         Assert.That(exit.Attributes["sarafan.operation.outputs"],
             Is.EqualTo(cancelled ? "no result; cancelled" : "no result; service rejection; status=404"));
@@ -1144,6 +1161,8 @@ public sealed class OperationLoggingTests
             .SaveCheckoutAsync(0, "00000000-999999", new() { Profile = new() }, default));
         using var mainPayment = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/payment/paid", new MarkOrderPaidRequest(null));
         Assert.That(mainPayment.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        using var fulfilment = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/fulfilment", new AdvanceOrderRequest(null, OrderStatus.Delivering));
+        Assert.That(fulfilment.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var duty = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/customs/paid", new MarkCustomsPaidRequest(null));
         Assert.That(duty.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         using var reject = await client.PostAsJsonAsync("/api/v1/backoffice/orders/00000000-999999/review/reject", new RejectOrderReviewRequest { Reason = Secret });

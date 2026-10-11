@@ -26,6 +26,8 @@ public sealed partial class OrderService
                 var result = await ReviewResultAsync(order.Id, cancellationToken);
                 return details with
                 {
+                    MainPaymentPaid = await MainPaymentPaidAsync(order.Id, cancellationToken),
+                    NextStage = order.NextStage,
                     CustomsPaid = order.CustomsPaid,
                     CanMarkCustomsPaid = CanMarkCustomsPaid(order, snapshot, roles),
                     CanMarkOrderPaid = CanMarkOrderPaid(order, snapshot, roles),

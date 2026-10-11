@@ -57,6 +57,11 @@ public sealed class BackofficeOrdersController(
     public async Task<ActionResult<BackofficeOrderDetailsDto>> MarkOrderPaid(string orderNumber, MarkOrderPaidRequest request, CancellationToken token)
         => Ok(await orders.MarkOrderPaidAsync(orderNumber, request, CurrentBackofficeUserId(), User.FindAll("role").Select(claim => claim.Value).ToArray(), token));
 
+    [HttpPost("{orderNumber}/fulfilment")]
+    [Authorize(Policy = BackofficePolicies.AdvanceOrderFulfilment)]
+    public async Task<ActionResult<BackofficeOrderDetailsDto>> AdvanceFulfilment(string orderNumber, AdvanceOrderRequest request, CancellationToken token)
+        => Ok(await orders.AdvanceFulfilmentAsync(orderNumber, request, CurrentBackofficeUserId(), User.FindAll("role").Select(claim => claim.Value).ToArray(), token));
+
     [HttpPost("{orderNumber}/customs/paid")]
     [Authorize(Policy = BackofficePolicies.MarkCustomsPaid)]
     public async Task<ActionResult<BackofficeOrderDetailsDto>> MarkCustomsPaid(string orderNumber, MarkCustomsPaidRequest request, CancellationToken token)

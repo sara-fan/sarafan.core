@@ -55,6 +55,8 @@ public sealed record BackofficeOrderDetailsDto(string OrderNumber, OrderStatus S
     OrderProductDto Product, BackofficeOrderCustomerDto Customer,
     OrderLimitCheckDto LimitCheck, bool CanEditProduct)
 {
+    public bool MainPaymentPaid { get; init; }
+    public OrderStatus? NextStage { get; init; }
     public bool CustomsPaid { get; init; }
     public bool CanMarkCustomsPaid { get; init; }
     public bool CanMarkOrderPaid { get; init; }

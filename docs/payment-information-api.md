@@ -11,7 +11,7 @@ Drafts can omit any field; supplied values are validated. Enabling requires comp
 Legal entities require 10-digit INN and 9-digit KPP; individual entrepreneurs require 12-digit INN and no KPP.
 Accounts contain 20 digits and BIK contains 9 digits. Preserve leading zeroes.
 
-Visible states are draft (Черновик), enabled (Включён), and disabled (Отключён).
+Visible states are draft (Черновик), enabled (Используются), and disabled (Не используются). Core owns these labels; Ops, display search and state sorting share the same names.
 First enablement permanently freezes the contents through the persisted published flag. No first-enablement time or staff actor is stored.
 Previously enabled bundles can be enabled again. Copying a published bundle creates an editable disabled draft with its QR.
 Any inactive bundle can be deleted, including previously published bundles. Enabled bundles cannot be deleted.
@@ -92,7 +92,7 @@ The no-store envelope is `{order, mainPaymentRub, canPay, paymentInformation}`; 
 The main payment is the saved confirmed total plus known domestic delivery. Unknown delivery remains null in pricing and contributes no charge; known zero remains zero. Customs is separate.
 Payment requires QuoteReady, saved checkout, an unexpired confirmed calculation and a complete enabled bundle. The final eligibility check after bundle loading gates both canPay and paymentInformation. Otherwise canPay is false and paymentInformation is null, including when the quote expires during the read.
 
-All four staff roles may POST `/api/v1/backoffice/orders/{orderNumber}/payment/paid` with `{expectedUpdatedAt}`.
+The dedicated MarkOrderPaid action/policy allows all four staff roles to POST `/api/v1/backoffice/orders/{orderNumber}/payment/paid` with `{expectedUpdatedAt}`.
 Core enforces authorization at controller and service boundaries. A saved checkout and complete confirmed calculation are required; QuoteReady and QuoteExpired are eligible. Expired quotes require external reconciliation by staff. Bundle availability does not control manual confirmation.
 The atomic mutation advances UpdatedAt, sets Paid and appends one OrderPaid=1000, Status=8, version-3 staff event with actor-name snapshot and server timestamp. Customs evidence and saved pricing remain independent and unchanged.
 Main/customs confirmation logging uses the shared safe-summary catalogue with named parameters, request kinds and cancellation state; order numbers, request versions, staff IDs and roles remain redacted.
@@ -100,3 +100,17 @@ Staff details expose nullable mainPaymentRub and canMarkOrderPaid. Version misma
 
 Customer UI revalidates before following the bank HTTPS link in the same tab. Changes to amount, order version or bundle require another click; bank return never confirms payment. QR previews and links disappear at the server-relative expiry boundary and on identity/route changes. No payment data is stored in browser persistence or logs.
 Verification uses InMemory Core and mocked UI tests only. This flow adds no migration; existing 0_3_7_Payments remains unchanged.
+
+## Pilot fulfilment and paid presentation
+
+ORDER FR-070/071/072 and [planning issue #18](https://github.com/sara-fan/sarafan/issues/18) add `Delivering=350` without changing existing status IDs or database schema.
+The dedicated AdvanceOrderFulfilment action/policy allows all four staff roles to POST `/api/v1/backoffice/orders/{orderNumber}/fulfilment` with `{expectedUpdatedAt,status}`.
+Only Paid → Delivering → Received is permitted, one transition per request. Staff details expose nullable `nextStage`.
+The shared mutation advances the version and records DeliveryStarted=1100 / OrderReceived=1200, Status area 8, evidence version 3, server time and staff-name snapshot atomically.
+Stale requests return `409 order_update_conflict`; skipped, repeated or unsupported stages return `409 order_fulfilment_unavailable`.
+
+Customer details include `stages:[{status,at}]`, containing only the actual main-payment/delivery/receipt events in chronological order, without staff identity or audit payload.
+Customer pricing and staff details include boolean `mainPaymentPaid`, derived from the immutable OrderPaid event, not estimates or a browser bank return.
+Both interfaces reuse the shared paid-indicator component, driven by mainPaymentPaid, for the main total and known Russian delivery (including zero) already included in that main payment. Customs indicators continue using independent customsPaid evidence.
+Unknown delivery has no paid mark and no independent delivery-payment action is introduced.
+Cancelled orders reveal saved customs zero/positive amounts even before quote confirmation; unknown stays null. Active unconfirmed orders still conceal internal customs forecasts.

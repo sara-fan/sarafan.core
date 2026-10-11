@@ -86,6 +86,7 @@ internal static class LogValueSummary
         IReadOnlyCollection<BackofficeRoleDto> roles => $"BackofficeRoleDto collection(count={roles.Count})",
         CustomerDto => "CustomerDto([redacted])",
         OrderPaymentDto => "OrderPaymentDto(order/amount/information=[redacted])",
+        AdvanceOrderRequest request => $"AdvanceOrderRequest(status={request.Status switch { OrderStatus.Delivering => "Delivering", OrderStatus.Received => "Received", _ => "[redacted]" }}; version=[redacted])",
         MarkOrderPaidRequest => "MarkOrderPaidRequest(version=[redacted])",
         MarkCustomsPaidRequest => "MarkCustomsPaidRequest(version=[redacted])",
         OrderDto => "OrderDto(identity/product/pricing=[redacted])",
