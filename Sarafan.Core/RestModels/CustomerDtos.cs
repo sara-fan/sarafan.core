@@ -62,7 +62,7 @@ public sealed record CustomerProfileDto(
         profile.Address);
 }
 
-public sealed class CustomerProfileUpdateRequest
+public class CustomerProfileUpdateRequest
 {
     [StringLength(100, ErrorMessage = "Длина поля не должна превышать {1} символов.")]
     public string? LastName { get; set; }
