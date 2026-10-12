@@ -17,3 +17,7 @@ Search follows the [staff list search contract](staff-list-search.md). Expanded 
 ### Main payment confirmation
 
 OrderPaid=1000 (`order-paid`, «Заказ оплачен») uses Status area=8 and evidence version=3, with QuoteReady=100 or QuoteExpired=200 before and Paid=300 after. It has a server timestamp and staff actor-name snapshot. Reuse status-change rendering; it contains no bank/QR data, customs evidence or new pricing snapshot. Older versions and customs kind 900/area 32/version 5 remain readable.
+
+### Logibooks registration
+
+LogibooksRegistered=1300 (logibooks-registered) uses area=64 and evidence version=6. It preserves before/after order status and records original staff attribution plus operationId, registerId, parcelId and source (adapter/reconciliation). Reconciliation adds reconcilerId, reconcilerName and reconciledAt. Exactly one event is linked to each accepted register row; rejected/unresolved rows have no acceptance event. See [register integration](logibooks-register-api.md). Existing versions 1–5 and unfamiliar numeric statuses remain readable.

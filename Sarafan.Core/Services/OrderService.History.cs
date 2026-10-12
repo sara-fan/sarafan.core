@@ -18,19 +18,8 @@ public sealed partial class OrderService
     private void AddHistory(Order order, DateTimeOffset at, OrderHistoryKind kind, OrderHistoryArea areas,
         OrderHistoryActor actorType, int? actorId, string actorName, OrderProductAuditEvent? product,
         OrderPricingSnapshot? pricing, OrderHistoryEvidence evidence)
-        => database.Set<OrderHistoryEvent>().Add(new()
-        {
-            Order = order,
-            At = at,
-            Kind = kind,
-            Areas = areas,
-            ActorType = actorType,
-            ActorId = actorId,
-            ActorName = actorName,
-            ProductAudit = product,
-            PricingSnapshot = pricing,
-            Payload = JsonSerializer.Serialize(evidence, PricingJson)
-        });
+        => database.Set<OrderHistoryEvent>().Add(OrderHistoryWriter.Create(order, at, kind, areas, actorType,
+            actorId, actorName, evidence, product, pricing));
 
     public Task<OrderHistoryOpsDto> HistoryOperationsAsync(string number, string[] roles, CancellationToken token)
         => PricingRun(nameof(HistoryOperationsAsync),
@@ -48,8 +37,9 @@ public sealed partial class OrderService
                  new(900, OrderHistoryKind.CustomsPaid.GetDisplayName(), "customs-paid"),
                  new(1000, OrderHistoryKind.OrderPaid.GetDisplayName(), "order-paid"),
                  new(1100, OrderHistoryKind.DeliveryStarted.GetDisplayName(), "delivery-started"),
-                 new(1200, OrderHistoryKind.OrderReceived.GetDisplayName(), "order-received")],
-                [new(1, ((OrderHistoryArea)1).GetDisplayName(), "creation"), new(2, ((OrderHistoryArea)2).GetDisplayName(), "product"), new(4, ((OrderHistoryArea)4).GetDisplayName(), "pricing"), new(8, ((OrderHistoryArea)8).GetDisplayName(), "status"), new(16, OrderHistoryArea.Checkout.GetDisplayName(), "checkout"), new(32, OrderHistoryArea.Customs.GetDisplayName(), "customs")],
+                 new(1200, OrderHistoryKind.OrderReceived.GetDisplayName(), "order-received"),
+                 new(1300, OrderHistoryKind.LogibooksRegistered.GetDisplayName(), "logibooks-registered")],
+                [new(1, ((OrderHistoryArea)1).GetDisplayName(), "creation"), new(2, ((OrderHistoryArea)2).GetDisplayName(), "product"), new(4, ((OrderHistoryArea)4).GetDisplayName(), "pricing"), new(8, ((OrderHistoryArea)8).GetDisplayName(), "status"), new(16, OrderHistoryArea.Checkout.GetDisplayName(), "checkout"), new(32, OrderHistoryArea.Customs.GetDisplayName(), "customs"), new(64, OrderHistoryArea.Logibooks.GetDisplayName(), "logibooks")],
                 [new(0, "Покупатель", "customer"), new(100, "Сотрудник", "staff"), new(200, "Система", "system")]);
         }, token);
 
@@ -158,7 +148,7 @@ public sealed partial class OrderService
             sortOrder = sortOrder.Trim().ToLowerInvariant();
             if (page < 1 || pageSize is not (10 or 25 or 50 or 100) || search?.Length > 200
                 || sortBy is not ("timestamp" or "event" or "actor") || sortOrder is not ("asc" or "desc")
-                || area is not (null or 1 or 2 or 4 or 8 or 16 or 32) || actorType is not (null or 0 or 100 or 200)
+                || area is not (null or 1 or 2 or 4 or 8 or 16 or 32 or 64) || actorType is not (null or 0 or 100 or 200)
                 || !TryParseListDate(from, out var fromDate) || !TryParseListDate(to, out var toDate)
                 || fromDate > toDate || fromDate == DateOnly.MinValue || toDate == DateOnly.MaxValue)
                 throw new ServiceException(400, "invalid_order_list_filter");
@@ -237,7 +227,8 @@ public sealed partial class OrderService
                 ReviewReason = evidence.ReviewReason,
                 CheckoutDeliveryName = evidence.CheckoutAfter?.Delivery.Name,
                 CustomsPaidBefore = evidence.CustomsPaidBefore,
-                CustomsPaidAfter = evidence.CustomsPaidAfter
+                CustomsPaidAfter = evidence.CustomsPaidAfter,
+                Logibooks = evidence.Logibooks
             };
         }, token);
 }

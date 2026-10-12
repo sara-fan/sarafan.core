@@ -794,6 +794,127 @@ public sealed class OperationLoggingTests
         }
     }
 
+    private static LogibooksOperationDto PrivateLogibooksOperation(string state = "PartiallySucceeded", string phase = "Applied")
+        => new(Guid.NewGuid(), Guid.NewGuid(), Secret, state, phase,
+            new(2037, 8, 19, 12, 34, 56, TimeSpan.Zero), new(2037, 8, 19, 12, 34, 56, TimeSpan.Zero),
+            Guid.NewGuid(), 2, 1, 1, 0, 987654, true,
+            new() { Title = Secret, Detail = Secret, Code = Secret, TraceId = Secret });
+
+    [Test]
+    public void LogibooksSummariesIdentifyResultsAndCountsWithoutPrivateValues()
+    {
+        var operation = PrivateLogibooksOperation();
+        var goods = new LogibooksGoods(Secret, Secret, 98765.43m, 246810, Secret, Secret,
+            LastName: Secret, FirstName: Secret, Patronymic: Secret, Email: Secret,
+            PassportSeries: Secret, PassportNumber: Secret, PassportIssueDate: new(2037, 8, 19),
+            PassportIssuedBy: Secret, Inn: Secret, PostalCode: Secret, City: Secret, Address: Secret,
+            Currency: Secret, TnVed: Secret, Sender: Secret);
+        var metadata = new LogibooksMetadata(Secret, 54321);
+        var selection = new LogibooksOrderSelection(Secret, operation.CreatedAt);
+        LogibooksIssue[] issues = [new(Secret, Secret, Secret)];
+        var remoteRow = new LogibooksRemoteRow(246810, Secret, Secret, 987654, 987654, 987654, issues);
+        var remote = new LogibooksRemoteResult(987654, 2, 1, 1, [remoteRow]);
+        var row = new LogibooksRowDto(246810, Secret, Secret, 987654, 987654, 987654, issues, goods);
+        var summaries = new (object Value, string Expected)[]
+        {
+            (new LogibooksPreviewRequest(operation.Id, Secret, [selection], new(Secret, Secret, Secret, new(2037, 8, 19))),
+                "LogibooksPreviewRequest(selection/label/register/operation=[redacted])"),
+            (new LogibooksCreateRequest(operation.Id, Secret, [selection], 987654, Secret, new(Secret, Secret, Secret, new(2037, 8, 19))),
+                "LogibooksCreateRequest(selection/label/register/operation/version/fingerprint=[redacted])"),
+            (new LogibooksReconcileRequest(operation.Version, operation.AttemptId!.Value, 987654, true, Secret, [new(246810, true, 987654)]),
+                "LogibooksReconcileRequest(evidence/versions/note=[redacted])"),
+            (new LogibooksOpsDto(true, false, 987654, 987654, 987654, 987654, 987654, 987654, [Secret], [new(987654, Secret, Secret)], new(987654, Secret, Secret, Secret)),
+                "LogibooksOpsDto(enabled=True; metadata/actions=[redacted])"),
+            (new LogibooksPreviewDto(operation.Id, Secret, 987654, Secret, metadata, [goods, goods], [Secret]),
+                "LogibooksPreviewDto(count=2; register/goods/selection=[redacted])"),
+            (operation,
+                "LogibooksOperationDto(state=PartiallySucceeded; phase=Applied; total=2; created=1; rejected=1; unresolved=0; investigationRequired=True; identifiers/label/failure=[redacted])"),
+            (new PagedResult<LogibooksOperationDto> { Items = [operation], Search = Secret,
+                Sorting = new() { SortBy = Secret, SortOrder = Secret }, Pagination = new() { TotalCount = 987654 } },
+                "LogibooksOperationDto page(count=1; filters/metadata=[redacted])"),
+            (new PagedResult<LogibooksRowDto> { Items = [row], Search = Secret,
+                Sorting = new() { SortBy = Secret, SortOrder = Secret }, Pagination = new() { TotalCount = 987654 } },
+                "LogibooksRowDto page(count=1; filters/goods/evidence=[redacted])"),
+            (remote, "LogibooksRemoteResult(processed=2; created=1; failed=1; rows/identifiers=[redacted])"),
+            (new LogibooksRemoteReceipt(remote, true, Secret),
+                "LogibooksRemoteReceipt(definitive=True; result=LogibooksRemoteResult(processed=2; created=1; failed=1; rows/identifiers=[redacted]); failure=[redacted])"),
+            (new LogibooksRemoteReceipt(null, true, Secret),
+                "LogibooksRemoteReceipt(definitive=True; result=null; failure=[redacted])"),
+            (new LogibooksRemoteReceipt(null, false, Secret),
+                "LogibooksRemoteReceipt(definitive=False; result=null; failure=[redacted])"),
+            (goods, "[redacted]"), (metadata, "LogibooksMetadata(fields=[redacted])"), (new LogibooksRegisterInput(Secret, Secret, Secret, new(2037, 8, 19)), "LogibooksRegisterInput(fields=[redacted])"), (row, "[redacted]"), (remoteRow, "[redacted]"),
+            (new LogibooksPayload(metadata, [goods]), "[redacted]")
+        };
+        foreach (var (value, expected) in summaries)
+        {
+            Assert.That(LogValueSummary.Describe(value), Is.EqualTo(expected));
+            OperationLogging.Run(_logger, Operation, () => LogValueSummary.Inputs(("request", value)), () => value);
+            Assert.That(_logs.Records.Last().Attributes["sarafan.operation.outputs"], Is.EqualTo(expected));
+        }
+        var logged = string.Join(' ', _logs.Records.Select(record => record.Message)
+            .Concat(_logs.Records.SelectMany(record => record.Attributes.Values).Select(value => value?.ToString())));
+        foreach (var value in new[] { operation.Id.ToString(), operation.Version.ToString(), operation.AttemptId.ToString(),
+            "987654", "246810", "98765", "54321", "2037" })
+            Assert.That(logged, Does.Not.Contain(value));
+        AssertPrivate();
+    }
+
+    [TestCase("Submitting", "Queued", "Submitting", "Queued")]
+    [TestCase("Succeeded", "Dispatching", "Succeeded", "Dispatching")]
+    [TestCase("PartiallySucceeded", "ReceiptRetained", "PartiallySucceeded", "ReceiptRetained")]
+    [TestCase("Rejected", "Applied", "Rejected", "Applied")]
+    [TestCase("Unknown", "Applied", "Unknown", "Applied")]
+    [TestCase(Secret, Secret, "[redacted]", "[redacted]")]
+    [TestCase(null, null, "[redacted]", "[redacted]")]
+    [TestCase("submitting", "queued", "[redacted]", "[redacted]")]
+    [TestCase("Succeeded\nprivate-value-must-not-appear", "Applied\nprivate-value-must-not-appear", "[redacted]", "[redacted]")]
+    public void LogibooksOperationSummariesAllowOnlyKnownStateAndPhase(string? state, string? phase, string expectedState, string expectedPhase)
+    {
+        var summary = LogValueSummary.Describe(PrivateLogibooksOperation(state!, phase!));
+        Assert.That(summary, Does.StartWith($"LogibooksOperationDto(state={expectedState}; phase={expectedPhase};"));
+        Assert.That(summary, Does.Not.Contain(Secret).And.Not.Contain("\n"));
+    }
+
+    [TestCase(null, false)]
+    [TestCase(Secret, false)]
+    [TestCase(null, true)]
+    [TestCase(Secret, true)]
+    public async Task LogibooksRowsBoundaryNamesAndRedactsEveryInput(string? search, bool cancelled)
+    {
+        await using var database = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var operationId = Guid.NewGuid();
+        var payload = new LogibooksPayload(new(Secret, 1), [new(Secret, Secret, 12.34m, 1, Secret, Secret)]);
+        database.Add(new LogibooksRegister
+        {
+            Id = operationId,
+            FileName = Secret,
+            Request = LogibooksMapping.Serialize(payload),
+            Rows = [new() { RowNumber = 1, OrderId = 987654, OrderNumber = Secret }]
+        });
+        await database.SaveChangesAsync();
+        var service = new LogibooksRegisterService(database, new LogibooksTestOptions(new()), TimeProvider.System,
+            new(), _factory.CreateLogger<LogibooksRegisterService>());
+        using var cancellation = new CancellationTokenSource();
+        if (cancelled) cancellation.Cancel();
+        if (cancelled)
+            await Assert.ThrowsAsync<OperationCanceledException>(() => service.RowsAsync(operationId, 1, 25, search,
+                [BackofficeRoles.ShiftManager], cancellation.Token));
+        else
+            Assert.That((await service.RowsAsync(operationId, 1, 25, search, [BackofficeRoles.ShiftManager], cancellation.Token)).Items, Has.Length.EqualTo(1));
+        var operation = typeof(LogibooksRegisterService).FullName + "." + nameof(LogibooksRegisterService.RowsAsync);
+        AssertBoundary(operation);
+        var entry = _logs.Records.Single(record => record.Event.Id == 1600);
+        Assert.That(entry.Attributes["sarafan.operation.inputs"],
+            Is.EqualTo($"id=[redacted]; page=[redacted]; pageSize=[redacted]; search=[redacted]; roles=[redacted]; token=cancellation requested={cancelled}"));
+        var exit = _logs.Records.Single(record => record.Event.Id == 1601);
+        Assert.That(exit.Attributes["sarafan.operation.outputs"], Is.EqualTo(cancelled ? "no result; cancelled"
+            : "LogibooksRowDto page(count=1; filters/goods/evidence=[redacted])"));
+        Assert.That(_logs.Records.Select(record => record.Level), Is.All.EqualTo(LogLevel.Debug));
+        Assert.That(string.Join(' ', _logs.Records.Select(record => record.Message)), Does.Not.Contain(operationId.ToString()));
+        AssertPrivate();
+    }
+
     [Test]
     public async Task ForecastAndHistoryBoundariesDescribeShapesWithoutPrivateValues()
     {

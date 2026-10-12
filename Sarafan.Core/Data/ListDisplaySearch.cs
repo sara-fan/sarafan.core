@@ -93,6 +93,7 @@ internal static class ListDisplaySearch
         var status = OrderHistoryArea.Status.GetDisplayName() + ", ";
         var checkout = OrderHistoryArea.Checkout.GetDisplayName() + ", ";
         var customs = OrderHistoryArea.Customs.GetDisplayName() + ", ";
+        var logibooks = OrderHistoryArea.Logibooks.GetDisplayName() + ", ";
         return Apply(query, search,
             row => AppDbContext.SearchDate(AppDbContext.SearchLocalTime("Europe/Moscow", row.At), "DD.MM.YYYY, HH24:MI") + " МСК",
             Label<OrderService.HistoryRow, OrderHistoryKind>(row => row.Kind, value => value.GetDisplayName()),
@@ -102,7 +103,8 @@ internal static class ListDisplaySearch
                 + ((row.Areas & OrderHistoryArea.Pricing) != 0 ? pricing : "")
                 + ((row.Areas & OrderHistoryArea.Status) != 0 ? status : "")
                 + ((row.Areas & OrderHistoryArea.Checkout) != 0 ? checkout : "")
-                + ((row.Areas & OrderHistoryArea.Customs) != 0 ? customs : "")).TrimEnd(',', ' '));
+                + ((row.Areas & OrderHistoryArea.Customs) != 0 ? customs : "")
+                + ((row.Areas & OrderHistoryArea.Logibooks) != 0 ? logibooks : "")).TrimEnd(',', ' '));
     }
 
     internal static IQueryable<PaymentInformationBundle> PaymentBundles(IQueryable<PaymentInformationBundle> query, string search)

@@ -29,7 +29,8 @@ public enum BackofficeAction
     MarkCustomsPaid = 15,
     ManagePaymentInformation = 16,
     MarkOrderPaid = 17,
-    AdvanceOrderFulfilment = 18
+    AdvanceOrderFulfilment = 18,
+    ManageLogibooksRegisters = 19
 }
 
 public static class BackofficeAuthenticationDefaults
@@ -50,6 +51,7 @@ public static class BackofficePolicies
     public const string ManagePaymentInformation = "backoffice:manage-payment-information";
     public const string MarkCustomsPaid = "backoffice:mark-customs-paid";
     public const string MarkOrderPaid = "backoffice:mark-order-paid";
+    public const string ManageLogibooksRegisters = "backoffice:manage-logibooks-registers";
     public const string AdvanceOrderFulfilment = "backoffice:advance-order-fulfilment";
     public const string EditOrderProduct = "backoffice:edit-order-product";
     public const string ManageUsers = "backoffice:manage-users";
@@ -76,6 +78,7 @@ public static class BackofficeAuthorization
             [BackofficeAction.DeleteStore] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.ViewServiceCatalogue] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
             [BackofficeAction.ManageServiceCatalogue] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
+            [BackofficeAction.ManageLogibooksRegisters] = new HashSet<string>([BackofficeRoles.Administrator, BackofficeRoles.ShiftManager], StringComparer.Ordinal),
             [BackofficeAction.ManageOrderPricing] = new HashSet<string>([BackofficeRoles.Administrator, BackofficeRoles.ShiftManager], StringComparer.Ordinal),
             [BackofficeAction.ManagePaymentInformation] = new HashSet<string>([BackofficeRoles.Administrator], StringComparer.Ordinal),
             [BackofficeAction.MarkCustomsPaid] = new HashSet<string>(BackofficeRoles.Codes, StringComparer.Ordinal),
@@ -109,6 +112,7 @@ public static class BackofficeAuthorization
         AddPolicy(options, BackofficePolicies.DeleteStore, BackofficeAction.DeleteStore);
         AddPolicy(options, BackofficePolicies.ViewServiceCatalogue, BackofficeAction.ViewServiceCatalogue);
         AddPolicy(options, BackofficePolicies.ManageServiceCatalogue, BackofficeAction.ManageServiceCatalogue);
+        AddPolicy(options, BackofficePolicies.ManageLogibooksRegisters, BackofficeAction.ManageLogibooksRegisters);
         AddPolicy(options, BackofficePolicies.ManageOrderPricing, BackofficeAction.ManageOrderPricing);
         AddPolicy(options, BackofficePolicies.ManagePaymentInformation, BackofficeAction.ManagePaymentInformation);
         AddPolicy(options, BackofficePolicies.MarkCustomsPaid, BackofficeAction.MarkCustomsPaid);

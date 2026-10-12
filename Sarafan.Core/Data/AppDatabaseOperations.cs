@@ -24,6 +24,9 @@ internal interface IAppDatabaseOperations
     Task LockPaymentInformationMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
     Task LockServiceCatalogueMutationsAsync(AppDbContext database, CancellationToken cancellationToken);
+    Task LockLogibooksAsync(AppDbContext database, CancellationToken cancellationToken);
+    Task LockOrdersAsync(AppDbContext database, long[] ids, CancellationToken cancellationToken);
+    IQueryable<LogibooksRegisterRow> SearchLogibooksRows(AppDbContext database, Guid id, string search);
     Task LockIanaTldCatalogAsync(AppDbContext database, CancellationToken cancellationToken);
     Task<Customer?> FindCustomerForUpdateAsync(AppDbContext database, int customerId, CancellationToken cancellationToken);
     bool IsCustomerOrderCodeCollision(DbUpdateException exception);
@@ -95,6 +98,17 @@ internal sealed class InMemoryAppDatabaseOperations : IAppDatabaseOperations
     public Task LockStoreMutationsAsync(AppDbContext database, CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task LockServiceCatalogueMutationsAsync(AppDbContext database, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task LockLogibooksAsync(AppDbContext database, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task LockOrdersAsync(AppDbContext database, long[] ids, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public IQueryable<LogibooksRegisterRow> SearchLogibooksRows(AppDbContext database, Guid id, string search)
+    {
+        var query = database.Set<LogibooksRegisterRow>().Where(x => x.RegisterId == id);
+        var matches = query.AsNoTracking().Include(x => x.Register).AsEnumerable()
+            .Where(x => LogibooksRowSearch.Matches(x, search)).Select(x => x.RowNumber).ToArray();
+        return query.Where(x => matches.Contains(x.RowNumber));
+    }
 
     public Task LockIanaTldCatalogAsync(
         AppDbContext database,

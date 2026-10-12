@@ -116,15 +116,7 @@ public sealed partial class OrderService
             .SingleAsync(order => order.Id == id, cancellationToken);
     }
 
-    private static (string Code, long Sequence) ParsePublicOrderNumber(string number)
-    {
-        var parts = number.Split('-');
-        if (parts.Length != 2 || parts[0].Length != 8 || parts[0].Any(c => c is < '0' or > '9')
-            || !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var sequence)
-            || sequence <= 0 || parts[1] != sequence.ToString(CultureInfo.InvariantCulture))
-            throw new ServiceException(404, "resource_not_found");
-        return (parts[0], sequence);
-    }
+    private static (string Code, long Sequence) ParsePublicOrderNumber(string number) => PublicOrderNumbers.Parse(number);
 
     private static BackofficeOrderDetailsDto StaffDetails(Order order, string[] roles, OrderLimitRatePair? pair)
     {

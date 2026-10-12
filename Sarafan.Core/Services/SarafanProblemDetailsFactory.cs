@@ -33,6 +33,14 @@ public sealed class SarafanProblemDetailsFactory(
     private static readonly IReadOnlyDictionary<string, ProblemDefinition> Definitions =
         new Dictionary<string, ProblemDefinition>(StringComparer.Ordinal)
         {
+            ["invalid_logibooks_register"] = new(400, "Некорректный таможенный реестр", "Проверьте название, выбор заказов и подтверждение проверки."),
+            ["logibooks_disabled"] = new(503, "Создание таможенных реестров не настроено", "Обратитесь к администратору для включения интеграции."),
+            ["logibooks_preview_changed"] = new(409, "Данные таможенного реестра изменились", "Обновите выбор заказов и предварительный просмотр."),
+            ["logibooks_update_conflict"] = new(409, "Операция изменилась", "Обновите операцию перед повторным действием."),
+            ["logibooks_rejected"] = new(502, "Таможенный реестр отклонён", "Проверьте результаты строк и настройки интеграции."),
+            ["logibooks_auth_failed"] = new(502, "Нет доступа к таможенным реестрам", "Проверьте учётную запись адаптера и её права."),
+            ["logibooks_unknown"] = new(502, "Результат отправки неизвестен", "Проверьте завершение исходной попытки создания таможенного реестра перед сверкой результатов."),
+            ["logibooks_conflicting_evidence"] = new(502, "Результаты проверки расходятся", "Требуется расследование. Повторная отправка заказов заблокирована."),
             ["invalid_payment_bundle_version"] = new(400, "Не указан токен комплекта", "Обновите комплект и повторите действие."),
             ["payment_bundle_update_conflict"] = new(409, "Комплект изменился", "Обновите данные перед повторным действием."),
             ["payment_bundle_frozen"] = new(409, "Комплект доступен только для просмотра", "Опубликованные реквизиты неизменяемы. Создайте копию комплекта."),
@@ -293,6 +301,20 @@ public sealed class SarafanProblemDetailsFactory(
                 "Время ожидания истекло",
                 "Повторите попытку позже.")
         };
+
+    internal static SarafanProblemDetails ReadRetainedLogibooksFailure(string json)
+    {
+        var details = JsonSerializer.Deserialize<SarafanProblemDetails>(json, SerializerOptions)!;
+        if (details.Code.StartsWith("logibooks_", StringComparison.Ordinal)
+            && Definitions.TryGetValue(details.Code, out var definition)
+            && details.Status == definition.StatusCode
+            && details.Type == $"{TypeBase}{details.Code.Replace('_', '-')}")
+        {
+            details.Title = definition.Title;
+            details.Detail = definition.Detail;
+        }
+        return details;
+    }
 
     public SarafanProblemDetails Create(
         HttpContext context,

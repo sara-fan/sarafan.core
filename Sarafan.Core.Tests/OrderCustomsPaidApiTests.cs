@@ -34,7 +34,7 @@ public sealed partial class OrderProductApiTests
         Assert.That(pricing.Items, Is.Not.Empty);
         Assert.That(pricing.Items.All(item => item.Kind != Sarafan.Core.Models.OrderHistoryKind.CustomsPaid), Is.True);
 
-        using var invalid = await _staff.GetAsync(historyPath + "?area=64");
+        using var invalid = await _staff.GetAsync(historyPath + "?area=128");
         Assert.That(invalid.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
         Assert.That((await invalid.Content.ReadFromJsonAsync<SarafanProblemDetails>())!.Code, Is.EqualTo("invalid_order_list_filter"));
     }

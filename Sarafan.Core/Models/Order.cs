@@ -132,6 +132,12 @@ public sealed class Order
         Status = target;
     }
 
+    internal void RecordLogibooksRegistration(DateTimeOffset now)
+    {
+        var timestamp = NormalizeToPostgresTimestamp(now);
+        UpdatedAt = timestamp > UpdatedAt ? timestamp : UpdatedAt.AddMicroseconds(1);
+    }
+
     internal void MarkCustomsPaid(DateTimeOffset now)
     {
         CustomsPaid = true;

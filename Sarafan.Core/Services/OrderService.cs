@@ -356,6 +356,7 @@ public sealed partial class OrderService(
             ? []
             : await ordered.Skip((int)offset).Take(pageSize)
                 .Select(item => new BackofficeOrderProjection(
+                    item.Id,
                     item.Customer.OrderCode!,
                     item.CustomerOrderNumber,
                     item.Status,
@@ -368,10 +369,20 @@ public sealed partial class OrderService(
                     item.CreatedAt,
                     item.UpdatedAt))
                 .ToArrayAsync(cancellationToken);
+        var pageIds = rows.Select(row => row.Id).ToArray();
+        var holds = await database.Set<LogibooksRegisterRow>().AsNoTracking()
+            .Where(row => pageIds.Contains(row.OrderId) && (row.Blocking || row.Register.InvestigationRequired))
+            .Select(row => new { row.OrderId, row.RegisterId }).ToArrayAsync(cancellationToken);
+        var held = holds.GroupBy(row => row.OrderId).ToDictionary(group => group.Key, group => group.First().RegisterId);
         var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize);
         return new BackofficeOrderPageDto
         {
-            Items = rows.Select(ToBackofficeDto).ToArray(),
+            Items = rows.Select(row =>
+            {
+                var operationId = held.TryGetValue(row.Id, out var holdingId) ? (Guid?)holdingId : null;
+                var reason = LogibooksMapping.Ineligible(row.Status, row.SellerPrice, row.SellerPriceCurrency, operationId.HasValue);
+                return ToBackofficeDto(row) with { Logibooks = new(reason is null, reason, operationId) };
+            }).ToArray(),
             Pagination = new PaginationInfo
             {
                 CurrentPage = page,
@@ -588,6 +599,7 @@ public sealed partial class OrderService(
         bool MainPaymentPaid);
 
     private sealed record BackofficeOrderProjection(
+        long Id,
         string CustomerOrderCode,
         long CustomerOrderNumber,
         OrderStatus Status,

@@ -142,6 +142,8 @@ public sealed record BackofficeOrderOpsDto(
     IReadOnlyList<CurrencyOpsItemDto> Currencies,
     IReadOnlyList<BackofficeOrderStatusFilterGroupDto> StatusGroups)
 {
+    public bool LogibooksEnabled { get; init; }
+    public int LogibooksMaximumOrders { get; init; }
     public OrderProductLimitsDto? ProductLimits { get; init; }
 }
 
@@ -154,7 +156,10 @@ public sealed record BackofficeOrderListItemDto(
     OrderSellerPriceDto? SellerPrice,
     int Quantity,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public LogibooksEligibilityDto? Logibooks { get; init; }
+}
 
 public sealed class BackofficeOrderPageDto : PagedResult<BackofficeOrderListItemDto>
 {
