@@ -63,6 +63,43 @@ internal sealed class PostgreSqlAppDatabaseOperations : IAppDatabaseOperations
     public Task LockServiceCatalogueMutationsAsync(AppDbContext database, CancellationToken cancellationToken)
         => database.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1397315806)", cancellationToken);
 
+    public Task LockLogibooksAsync(AppDbContext database, CancellationToken cancellationToken)
+        => database.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1397315808)", cancellationToken);
+
+    public IQueryable<LogibooksRegisterRow> SearchLogibooksRows(AppDbContext database, Guid id, string search)
+    {
+        var term = ListDisplaySearch.Normalize(search);
+        // strpos is a literal substring comparison; %, _ and backslashes have no wildcard meaning.
+        return database.Set<LogibooksRegisterRow>().FromSqlInterpolated($"""
+            SELECT r.* FROM logibooks_register_rows r
+            JOIN logibooks_registers o ON o.id = r.register_id
+            CROSS JOIN LATERAL (SELECT o.request->'parcels'->(r.row_number - 1) AS goods) g
+            WHERE r.register_id = {id} AND EXISTS (
+                SELECT 1 FROM (VALUES
+                    (g.goods->>'postingNumber'), (g.goods->>'tnVed'), (g.goods->>'productName'), (g.goods->>'productLink'),
+                    (g.goods->>'lastName'), (g.goods->>'firstName'), (g.goods->>'patronymic'),
+                    (g.goods->>'phone'), (g.goods->>'email'), (g.goods->>'postalCode'), (g.goods->>'city'), (g.goods->>'address'),
+                    (concat_ws(' ', nullif(g.goods->>'passportSeries', ''), nullif(g.goods->>'passportNumber', ''),
+                        CASE WHEN nullif(g.goods->>'passportIssuedBy', '') IS NOT NULL OR g.goods->>'passportIssueDate' IS NOT NULL THEN 'выдан' END,
+                        nullif(g.goods->>'passportIssuedBy', ''), to_char((g.goods->>'passportIssueDate')::date, 'DD.MM.YYYY'))),
+                    (g.goods->>'inn'), (g.goods->>'sender'), (g.goods->>'senderPhone'), (g.goods->>'senderEmail'),
+                    (g.goods->>'senderAddress'), (g.goods->>'countryCode'), (g.goods->>'senderCountryCode'), (g.goods->>'tradingCountryCode'),
+                    (replace(replace(to_char((g.goods->>'unitPrice')::numeric,
+                        'FM999,999,999,999,999,999,990.00'), ',', ' '), '.', ',') || {Currency.Usd.GetSymbol()}),
+                    ({Currency.Usd.GetSymbol()}), (g.goods->>'quantity'),
+                    (replace(to_char((g.goods->>'weightKg')::numeric, 'FM999999999999999990.000'), '.', ',')),
+                    (CASE r.outcome WHEN 1 THEN 'Создана' WHEN 2 THEN 'Отклонена' ELSE 'Результат неизвестен' END),
+                    (coalesce(r.parcel_id::text, '—')),
+                    (coalesce((SELECT string_agg(issue->>'msg', '; ' ORDER BY ordinal)
+                        FROM jsonb_array_elements(r.issues) WITH ORDINALITY AS i(issue, ordinal)), '—'))
+                ) AS fields(value)
+                WHERE strpos(lower(trim(replace(replace(coalesce(nullif(fields.value, ''), '—'), chr(160), ' '), chr(8239), ' '))), {term}) > 0)
+            """);
+    }
+
+    public Task LockOrdersAsync(AppDbContext database, long[] ids, CancellationToken cancellationToken)
+        => database.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM orders WHERE id = ANY({ids}) ORDER BY id FOR UPDATE", cancellationToken);
+
     public Task LockIanaTldCatalogAsync(
         AppDbContext database,
         CancellationToken cancellationToken)

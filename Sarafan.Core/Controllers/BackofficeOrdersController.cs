@@ -19,14 +19,17 @@ namespace Sarafan.Core.Controllers;
 public sealed class BackofficeOrdersController(
     OrderService orders,
     OrderLimitService limits,
-    SarafanProblemDetailsFactory problems) : SarafanControllerBase(problems)
+    SarafanProblemDetailsFactory problems,
+    Microsoft.Extensions.Options.IOptionsMonitor<LogibooksOptions> logibooks) : SarafanControllerBase(problems)
 {
     [HttpGet("ops")]
     [ProducesResponseType<BackofficeOrderOpsDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<BackofficeOrderOpsDto>> Operations(CancellationToken cancellationToken)
         => Ok(OrderOperationsCatalog.CreateBackoffice() with
         {
-            ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken))
+            ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken)),
+            LogibooksEnabled = logibooks.CurrentValue.Enabled,
+            LogibooksMaximumOrders = LogibooksMapping.MaximumOrders
         });
 
     [HttpGet("{orderNumber}")]

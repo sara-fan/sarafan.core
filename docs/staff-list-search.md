@@ -15,3 +15,5 @@ The withdrawal queue accepts free text rather than digits only. Search combines 
 Tariff search reads the displayed summary from saved snapshots, including methods, percentages, money, ordered bands and validity periods. It never searches raw JSON. History search does not load detail evidence. No schema migration is required; deploy Core before or together with back office.
 
 Search tests use EF Core InMemory for behavior and disconnected Npgsql query generation for SQL composition checks. Run `dotnet test --filter FullyQualifiedName~ListDisplaySearchTests`. Tests do not provision or connect to PostgreSQL, locally or in GitHub Actions.
+
+Logibooks operation lists additionally search the displayed filename/state/Moscow timestamp, total/created/rejected/unresolved counts and register ID. Their independently paged result rows search public order number, frozen goods name, formatted USD unit price, quantity/weight, outcome, parcel ID and joined issue messages. Both apply literal matching before counts and paging; recipient/passport fields and raw request/receipt JSON remain excluded.

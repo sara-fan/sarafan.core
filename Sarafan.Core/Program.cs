@@ -87,6 +87,11 @@ builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddSingleton<ICustomerOrderCodeGenerator, CustomerOrderCodeGenerator>();
 builder.Services.AddScoped<ICustomerOrderCodeCollisionDetector, CustomerOrderCodeCollisionDetector>();
 builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<LogibooksRegisterService>();
+builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<LogibooksOptions>, LogibooksOptionsValidator>();
+builder.Services.AddOptions<LogibooksOptions>().BindConfiguration("Logibooks").ValidateOnStart();
+builder.Services.AddHttpClient<ILogibooksClient, LogibooksClient>(client => client.Timeout = Timeout.InfiniteTimeSpan)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<OrderPaymentService>();
 builder.Services.AddOptions<OrderReviewOptions>().BindConfiguration("OrderReview")
     .Validate(value => value.DeliveryMinimumDays > 0 && value.DeliveryMaximumDays >= value.DeliveryMinimumDays && value.DeliveryMaximumDays <= 365, "Invalid delivery estimate range.")

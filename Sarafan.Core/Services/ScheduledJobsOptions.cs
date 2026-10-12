@@ -11,6 +11,8 @@ public sealed class ScheduledJobsOptions
 {
     public const string SectionName = "ScheduledJobs";
 
+    public ScheduledJobOptions LogibooksRegisters { get; set; } = new() { Cron = "0/5 * * * * ?", RunOnStartup = true };
+
     public ScheduledJobOptions QuoteExpiry { get; set; } = new() { Cron = "0 * * * * ?", RunOnStartup = false };
 
     public ScheduledJobOptions ExchangeRates { get; set; } = new()
@@ -47,6 +49,7 @@ internal sealed class ScheduledJobsOptionsValidator : IValidateOptions<Scheduled
     public ValidateOptionsResult Validate(string? name, ScheduledJobsOptions options)
     {
         var failures = new List<string>();
+        Validate(nameof(options.LogibooksRegisters), options.LogibooksRegisters, failures);
         Validate(nameof(options.QuoteExpiry), options.QuoteExpiry, failures);
         Validate(nameof(options.ExchangeRates), options.ExchangeRates, failures);
         Validate(nameof(options.ConsentRetention), options.ConsentRetention, failures);

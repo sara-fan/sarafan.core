@@ -847,6 +847,266 @@ namespace Sarafan.Core.Data.Migrations
                     b.ToTable("legal_document_audit_events", (string)null);
                 });
 
+            modelBuilder.Entity("Sarafan.Core.Models.LogibooksReceipt", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("attempt_id");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("hash");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<int?>("ReconcilerId")
+                        .HasColumnType("integer")
+                        .HasColumnName("reconciler_id");
+
+                    b.Property<string>("ReconcilerName")
+                        .HasMaxLength(605)
+                        .HasColumnType("character varying(605)")
+                        .HasColumnName("reconciler_name");
+
+                    b.Property<Guid>("RegisterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("register_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RegisterId", "AttemptId", "Hash")
+                        .IsUnique();
+
+                    b.ToTable("logibooks_receipts", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.LogibooksReconciliation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("ActorId")
+                        .HasColumnType("integer")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(605)
+                        .HasColumnType("character varying(605)")
+                        .HasColumnName("actor_name");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("attempt_id");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<Guid>("RegisterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("register_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RegisterId");
+
+                    b.ToTable("logibooks_reconciliations", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.LogibooksRegister", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("ActorId")
+                        .HasColumnType("integer")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(605)
+                        .HasColumnType("character varying(605)")
+                        .HasColumnName("actor_name");
+
+                    b.Property<Guid?>("AttemptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("attempt_id");
+
+                    b.Property<bool>("AuthenticationRetried")
+                        .HasColumnType("boolean")
+                        .HasColumnName("authentication_retried");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("Deadline")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deadline");
+
+                    b.Property<string>("Failure")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("failure");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("IntentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("intent_hash");
+
+                    b.Property<bool>("InvestigationRequired")
+                        .HasColumnType("boolean")
+                        .HasColumnName("investigation_required");
+
+                    b.Property<int>("MappingVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("mapping_version");
+
+                    b.Property<int>("Phase")
+                        .HasColumnType("integer")
+                        .HasColumnName("phase");
+
+                    b.Property<int?>("RemoteRegisterId")
+                        .HasColumnType("integer")
+                        .HasColumnName("remote_register_id");
+
+                    b.Property<string>("Request")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("request");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer")
+                        .HasColumnName("state");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("target");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Phase", "CreatedAt");
+
+                    b.ToTable("logibooks_registers", (string)null);
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.LogibooksRegisterRow", b =>
+                {
+                    b.Property<Guid>("RegisterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("register_id");
+
+                    b.Property<int>("RowNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("row_number");
+
+                    b.Property<long?>("AcceptanceHistoryEventId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("acceptance_history_event_id");
+
+                    b.Property<bool>("Blocking")
+                        .HasColumnType("boolean")
+                        .HasColumnName("blocking");
+
+                    b.Property<int?>("CheckStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("check_status");
+
+                    b.Property<DateTimeOffset>("ExpectedUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expected_updated_at");
+
+                    b.Property<string>("Issues")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("issues");
+
+                    b.Property<long>("OrderId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("order_id");
+
+                    b.Property<string>("OrderNumber")
+                        .IsRequired()
+                        .HasMaxLength(29)
+                        .HasColumnType("character varying(29)")
+                        .HasColumnName("order_number");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("integer")
+                        .HasColumnName("outcome");
+
+                    b.Property<int?>("ParcelId")
+                        .HasColumnType("integer")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<int?>("StatusId")
+                        .HasColumnType("integer")
+                        .HasColumnName("status_id");
+
+                    b.HasKey("RegisterId", "RowNumber");
+
+                    b.HasIndex("AcceptanceHistoryEventId")
+                        .IsUnique();
+
+                    b.HasIndex("OrderId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_logibooks_blocking_order")
+                        .HasFilter("blocking");
+
+                    b.ToTable("logibooks_register_rows", (string)null);
+                });
+
             modelBuilder.Entity("Sarafan.Core.Models.Order", b =>
                 {
                     b.Property<long>("Id")
@@ -1753,6 +2013,54 @@ namespace Sarafan.Core.Data.Migrations
                     b.Navigation("BackofficeUser");
                 });
 
+            modelBuilder.Entity("Sarafan.Core.Models.LogibooksReceipt", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.LogibooksRegister", "Register")
+                        .WithMany()
+                        .HasForeignKey("RegisterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Register");
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.LogibooksReconciliation", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.LogibooksRegister", "Register")
+                        .WithMany()
+                        .HasForeignKey("RegisterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Register");
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.LogibooksRegisterRow", b =>
+                {
+                    b.HasOne("Sarafan.Core.Models.OrderHistoryEvent", "AcceptanceHistoryEvent")
+                        .WithMany()
+                        .HasForeignKey("AcceptanceHistoryEventId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Sarafan.Core.Models.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Sarafan.Core.Models.LogibooksRegister", "Register")
+                        .WithMany("Rows")
+                        .HasForeignKey("RegisterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AcceptanceHistoryEvent");
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Register");
+                });
+
             modelBuilder.Entity("Sarafan.Core.Models.Order", b =>
                 {
                     b.HasOne("Sarafan.Core.Models.ExchangeRateHistory", "AppliedExchangeRateHistory")
@@ -1909,6 +2217,11 @@ namespace Sarafan.Core.Data.Migrations
                     b.Navigation("Photo");
 
                     b.Navigation("RefreshSessions");
+                });
+
+            modelBuilder.Entity("Sarafan.Core.Models.LogibooksRegister", b =>
+                {
+                    b.Navigation("Rows");
                 });
 
             modelBuilder.Entity("Sarafan.Core.Models.Store", b =>

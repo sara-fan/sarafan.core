@@ -57,6 +57,18 @@ internal static class LogValueSummary
         AnonymousForecastDto => "AnonymousForecastDto(calculatedAt/totalRub=[redacted])",
         OrderForecastRequest => "OrderForecastRequest(sellerPrice/quantity=[redacted])",
         CustomerPricingDto => "CustomerPricingDto(state/amounts/timestamps=[redacted])",
+        LogibooksPreviewRequest => "LogibooksPreviewRequest(selection/label/register/operation=[redacted])",
+        LogibooksCreateRequest => "LogibooksCreateRequest(selection/label/register/operation/version/fingerprint=[redacted])",
+        LogibooksRegisterInput => "LogibooksRegisterInput(fields=[redacted])",
+        LogibooksMetadata => "LogibooksMetadata(fields=[redacted])",
+        LogibooksReconcileRequest => "LogibooksReconcileRequest(evidence/versions/note=[redacted])",
+        LogibooksOpsDto ops => $"LogibooksOpsDto(enabled={ops.Enabled}; metadata/actions=[redacted])",
+        LogibooksPreviewDto preview => $"LogibooksPreviewDto(count={preview.Parcels.Length}; register/goods/selection=[redacted])",
+        LogibooksOperationDto operation => $"LogibooksOperationDto(state={LogibooksStateName(operation.State)}; phase={LogibooksPhaseName(operation.Phase)}; total={operation.Total}; created={operation.Created}; rejected={operation.Rejected}; unresolved={operation.Unresolved}; investigationRequired={operation.InvestigationRequired}; identifiers/label/failure=[redacted])",
+        PagedResult<LogibooksOperationDto> operations => $"LogibooksOperationDto page(count={operations.Items.Length}; filters/metadata=[redacted])",
+        PagedResult<LogibooksRowDto> rows => $"LogibooksRowDto page(count={rows.Items.Length}; filters/goods/evidence=[redacted])",
+        LogibooksRemoteResult result => $"LogibooksRemoteResult(processed={result.Processed}; created={result.Created}; failed={result.Failed}; rows/identifiers=[redacted])",
+        LogibooksRemoteReceipt receipt => $"LogibooksRemoteReceipt(definitive={receipt.Definitive}; result={Describe(receipt.Result)}; failure=[redacted])",
         OrderHistoryOpsDto => "OrderHistoryOpsDto(metadata=[redacted])",
         OrderHistoryPageDto history => $"OrderHistoryItemDto page(count={history.Items.Length}; filters=[redacted])",
         OrderHistoryDetailDto => "OrderHistoryDetailDto(event/evidence=[redacted])",
@@ -115,6 +127,20 @@ internal static class LogValueSummary
         EmptyResult => "no body",
         OperationLogging.OperationCompleted => "completed; no return value",
         bool result => result ? "true" : "false",
+        _ => "[redacted]"
+    };
+
+    private static string LogibooksStateName(string? state) => state switch
+    {
+        nameof(LogibooksState.Submitting) or nameof(LogibooksState.Succeeded) or nameof(LogibooksState.PartiallySucceeded)
+            or nameof(LogibooksState.Rejected) or nameof(LogibooksState.Unknown) => state,
+        _ => "[redacted]"
+    };
+
+    private static string LogibooksPhaseName(string? phase) => phase switch
+    {
+        nameof(LogibooksPhase.Queued) or nameof(LogibooksPhase.Dispatching) or nameof(LogibooksPhase.ReceiptRetained)
+            or nameof(LogibooksPhase.Applied) => phase,
         _ => "[redacted]"
     };
 }

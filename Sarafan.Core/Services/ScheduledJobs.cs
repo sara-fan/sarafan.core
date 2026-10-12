@@ -25,6 +25,7 @@ internal static class ScheduledJobs
 
         services.AddQuartz(quartz =>
         {
+            AddJob<LogibooksRegisterJob>(quartz, nameof(ScheduledJobsOptions.LogibooksRegisters), schedules.LogibooksRegisters);
             AddJob<QuoteExpiryJob>(quartz, nameof(ScheduledJobsOptions.QuoteExpiry), schedules.QuoteExpiry);
             AddJob<ExchangeRateJob>(quartz, nameof(ScheduledJobsOptions.ExchangeRates), schedules.ExchangeRates);
             AddJob<ConsentRetentionJob>(quartz, nameof(ScheduledJobsOptions.ConsentRetention), schedules.ConsentRetention);
