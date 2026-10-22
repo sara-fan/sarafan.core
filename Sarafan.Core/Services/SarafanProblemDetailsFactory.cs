@@ -6,7 +6,9 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -370,15 +372,28 @@ public sealed class SarafanProblemDetailsFactory(
             "invalid_order_comment" => "comment",
             _ => null
         };
+        var detail = definition.Detail;
+        var endpoint = context.GetEndpoint() ?? context.Features.Get<IExceptionHandlerFeature>()?.Endpoint;
+        var action = endpoint?.Metadata.GetMetadata<ControllerActionDescriptor>();
+        if (action?.ControllerTypeInfo.AsType() == typeof(Controllers.OrdersController)
+            && action.ActionName == nameof(Controllers.OrdersController.Create))
+        {
+            detail = code switch
+            {
+                "order_quantity_limit_exceeded" => "Не больше 4 одинаковых товаров в одном заказе",
+                "order_value_limit_exceeded" => OrderLimitService.CreationExceededMessage,
+                _ => detail
+            };
+        }
         if (errors is null && field is not null)
-            errors = new Dictionary<string, string[]> { [field] = [definition.Detail] };
+            errors = new Dictionary<string, string[]> { [field] = [detail] };
         context.Response.Headers.ContentLanguage = "ru";
         var details = new SarafanProblemDetails
         {
             Type = $"{TypeBase}{code.Replace('_', '-')}",
             Title = definition.Title,
             Status = definition.StatusCode,
-            Detail = code == "invalid_phone" ? PhoneDetail(phoneValidationReason, definition.Detail) : definition.Detail,
+            Detail = code == "invalid_phone" ? PhoneDetail(phoneValidationReason, detail) : detail,
             Instance = $"urn:sarafan:problem:{traceId}",
             Code = code,
             Errors = errors,

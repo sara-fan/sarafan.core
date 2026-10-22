@@ -147,6 +147,39 @@ public sealed partial class OrderPricingTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
+    [TestCase(OrderStatus.Paid)]
+    [TestCase(OrderStatus.Delivering)]
+    [TestCase(OrderStatus.Received)]
+    public async Task PaidCustomerPricesRemainConfirmedAfterDeadlineWithoutChangingSnapshots(OrderStatus status)
+    {
+        await PaymentCheckout(55);
+        var before = await service.GetAsync(order.CustomerId, "12345678-1", default);
+        await service.MarkOrderPaidAsync("12345678-1", new(order.UpdatedAt), actorId, Shift, default);
+        if (status is OrderStatus.Delivering or OrderStatus.Received)
+            await service.AdvanceFulfilmentAsync("12345678-1", new(order.UpdatedAt, OrderStatus.Delivering), actorId, Shift, default);
+        if (status == OrderStatus.Received)
+            await service.AdvanceFulfilmentAsync("12345678-1", new(order.UpdatedAt, OrderStatus.Received), actorId, Shift, default);
+        var snapshots = await db.OrderPricingSnapshots.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.Payload, row.At, row.ValidUntil }).ToArrayAsync();
+        var later = new OrderService(db, null!, null!, null!, null!, null!, new OffsetClock(Now.AddDays(2)),
+            NullLogger<OrderService>.Instance);
+        var detail = await later.GetAsync(order.CustomerId, "12345678-1", default);
+        var list = (await later.ListAsync(order.CustomerId, default)).Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(detail.Status, Is.EqualTo(status));
+            Assert.That(detail.Pricing.State, Is.EqualTo(CustomerPricingState.Confirmed));
+            Assert.That(detail.Pricing.MainPaymentPaid, Is.True);
+            Assert.That(detail.Pricing.TotalRub, Is.EqualTo(before.Pricing.TotalRub));
+            Assert.That(detail.Pricing.ValidUntil, Is.EqualTo(before.Pricing.ValidUntil));
+            Assert.That(detail.Pricing.DomesticDeliveryRub, Is.EqualTo(55));
+            Assert.That(detail.Pricing.CustomsRub, Is.EqualTo(120));
+            Assert.That(list.Pricing, Is.EqualTo(detail.Pricing));
+        });
+        Assert.That(await db.OrderPricingSnapshots.AsNoTracking().OrderBy(row => row.Id)
+            .Select(row => new { row.Id, row.Payload, row.At, row.ValidUntil }).ToArrayAsync(), Is.EqualTo(snapshots));
+    }
+
     [Test]
     public void ManualAmountsUseNumericKeysWithoutChangingOtherEnums()
     {

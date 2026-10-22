@@ -37,7 +37,7 @@ public sealed record OrderProductDto(string? ProductName, OrderSellerPriceDto? S
 public sealed record OrderLimitCheckDto(decimal MaximumAmount, Currency Currency, bool Available,
     DateOnly? SourceEffectiveDate, decimal? MaximumTotalUsd)
 {
-    public string ExceededMessage => Services.OrderLimitService.ExceededMessage;
+    public string ExceededMessage { get; init; } = Services.OrderLimitService.ExceededMessage;
 }
 
 public sealed record OrderProductLimitsDto(int MinimumQuantity, int MaximumQuantity,
