@@ -24,7 +24,7 @@ public sealed class OrderOperationsController(
         => Ok(OrderOperationsCatalog.CreatePublic(await tlds.GetRequiredAsync(cancellationToken)) with
         {
             CheckoutDeliveries = OrderCheckoutDeliveryOptionDto.PilotOptions,
-            ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken)),
+            ProductLimits = OrderLimitService.Limits(await limits.GetPairAsync(cancellationToken), forCreation: true),
             PricingStates =
             [
                 new(0, "Ориентировочная стоимость", "forecast"),

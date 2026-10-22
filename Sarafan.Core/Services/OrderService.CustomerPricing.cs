@@ -54,7 +54,7 @@ public sealed partial class OrderService
             { CustomsPaid = customsPaid, MainPaymentPaid = mainPaymentPaid };
         var calculation = ReadCalculation(snapshot);
         var state = snapshot.ValidUntil is null ? CustomerPricingState.Forecast
-            : now >= snapshot.ValidUntil ? CustomerPricingState.Expired : CustomerPricingState.Confirmed;
+            : !mainPaymentPaid && now >= snapshot.ValidUntil ? CustomerPricingState.Expired : CustomerPricingState.Confirmed;
         return new(state, calculation.TotalRub, calculation.CalculatedAt, snapshot.ValidUntil, now,
             deliverySelected ? ExcludedRub(calculation, ServiceKind.DomesticDelivery) : null, snapshot.ValidUntil is null && !cancelled ? null : ExcludedRub(calculation, ServiceKind.CustomsPayments))
         { CustomsPaid = customsPaid, MainPaymentPaid = mainPaymentPaid };

@@ -319,8 +319,10 @@ public sealed partial class OrderProductApiTests
         var details = await Details(order.OrderNumber);
         var ops = await _customer.GetFromJsonAsync<OrderOpsDto>("/api/v1/orders/ops");
         var staffOps = await _staff.GetFromJsonAsync<BackofficeOrderOpsDto>("/api/v1/backoffice/orders/ops");
-        Assert.That(ops!.ProductLimits, Is.EqualTo(staffOps!.ProductLimits));
-        Assert.That(details.LimitCheck, Is.EqualTo(ops.ProductLimits!.ValueLimit));
+        Assert.That(ops!.ProductLimits! with { ValueLimit = staffOps!.ProductLimits!.ValueLimit }, Is.EqualTo(staffOps.ProductLimits));
+        Assert.That(ops.ProductLimits.ValueLimit.ExceededMessage, Is.EqualTo("Общая стоимость товаров в заказе не более 900€"));
+        Assert.That(staffOps.ProductLimits.ValueLimit.ExceededMessage, Is.EqualTo(OrderLimitService.ExceededMessage));
+        Assert.That(details.LimitCheck, Is.EqualTo(staffOps.ProductLimits!.ValueLimit));
         Assert.That(details.LimitCheck.MaximumAmount, Is.EqualTo(900m));
         Assert.That(details.LimitCheck.MaximumTotalUsd, Is.EqualTo(1125m));
         Assert.That(ops.ProductLimits.StoreNameMaximumLength, Is.EqualTo(200));
@@ -379,9 +381,13 @@ public sealed partial class OrderProductApiTests
     public async Task QuantityMoneyAndUnavailableRatesRejectBeforeAllocatingIdentity()
     {
         using var quantity = await Create(Guid.NewGuid(), quantity: 5);
-        await Problem(quantity, HttpStatusCode.BadRequest, "order_quantity_limit_exceeded");
+        var quantityProblem = await Problem(quantity, HttpStatusCode.BadRequest, "order_quantity_limit_exceeded");
+        Assert.That(quantityProblem.Detail, Is.EqualTo("Не больше 4 одинаковых товаров в одном заказе"));
+        Assert.That(quantityProblem.Errors!["quantity"], Is.EqualTo(new[] { quantityProblem.Detail }));
         using var excess = await Create(Guid.NewGuid(), price: 281.26m, quantity: 4);
-        await Problem(excess, HttpStatusCode.BadRequest, "order_value_limit_exceeded");
+        var valueProblem = await Problem(excess, HttpStatusCode.BadRequest, "order_value_limit_exceeded");
+        Assert.That(valueProblem.Detail, Is.EqualTo("Общая стоимость товаров в заказе не более 900€"));
+        Assert.That(valueProblem.Errors!["sellerPrice"], Is.EqualTo(new[] { valueProblem.Detail }));
         foreach (var (raw, expectedMessage) in new[]
         {
             ("null", "Поле обязательно для заполнения."),
@@ -419,7 +425,8 @@ public sealed partial class OrderProductApiTests
         await Problem(unavailable, HttpStatusCode.ServiceUnavailable, "order_limit_rates_unavailable");
         var ops = await _customer.GetFromJsonAsync<OrderOpsDto>("/api/v1/orders/ops");
         var staffOps = await _staff.GetFromJsonAsync<BackofficeOrderOpsDto>("/api/v1/backoffice/orders/ops");
-        Assert.That(ops!.ProductLimits, Is.EqualTo(staffOps!.ProductLimits));
+        Assert.That(ops!.ProductLimits! with { ValueLimit = staffOps!.ProductLimits!.ValueLimit }, Is.EqualTo(staffOps.ProductLimits));
+        Assert.That(ops.ProductLimits.ValueLimit.ExceededMessage, Is.EqualTo("Общая стоимость товаров в заказе не более 900€"));
         Assert.That(ops.ProductLimits!.ValueLimit.Available, Is.False);
         Assert.That(ops.ProductLimits.ValueLimit.MaximumAmount, Is.EqualTo(900m));
         Assert.That(await _customer.GetFromJsonAsync<CustomerOrderListItemDto[]>("/api/v1/orders"), Is.Empty);
@@ -440,7 +447,9 @@ public sealed partial class OrderProductApiTests
         await Problem(absent, HttpStatusCode.Conflict, "order_update_conflict");
         request.ExpectedUpdatedAt = details.UpdatedAt; request.Quantity = 5;
         using var invalid = await Put(order.OrderNumber, request);
-        await Problem(invalid, HttpStatusCode.BadRequest, "order_quantity_limit_exceeded");
+        var invalidProblem = await Problem(invalid, HttpStatusCode.BadRequest, "order_quantity_limit_exceeded");
+        Assert.That(invalidProblem.Detail,
+            Is.EqualTo("Такое количество товара может быть признано коммерческой партией и запрещено к ввозу"));
         request.Quantity = 1; request.StoreName = new string('я', 201);
         using var invalidStore = await Put(order.OrderNumber, request);
         await Problem(invalidStore, HttpStatusCode.BadRequest, "invalid_order_store_name");
@@ -613,11 +622,12 @@ public sealed partial class OrderProductApiTests
         request.Headers.Add("Idempotency-Key", key.ToString());
         return await _customer.SendAsync(request);
     }
-    private static async Task Problem(HttpResponseMessage response, HttpStatusCode status, string code)
+    private static async Task<SarafanProblemDetails> Problem(HttpResponseMessage response, HttpStatusCode status, string code)
     {
         Assert.That(response.StatusCode, Is.EqualTo(status));
         var body = (await response.Content.ReadFromJsonAsync<SarafanProblemDetails>())!;
         Assert.That(body.Code, Is.EqualTo(code));
         Assert.That(response.Content.Headers.ContentLanguage, Does.Contain("ru"));
+        return body;
     }
 }

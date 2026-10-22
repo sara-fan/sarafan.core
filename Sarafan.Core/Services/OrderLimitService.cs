@@ -29,6 +29,7 @@ public sealed class OrderLimitService(AppDbContext database, TimeProvider timePr
     public static readonly decimal MaximumAmountEur = BaseMaximumAmountEur * ExchangeRateReserveCoefficient;
     public static readonly decimal ExchangeRateReservePercent = (1m - ExchangeRateReserveCoefficient) * 100m;
     public static string ExceededMessage => FormattableString.Invariant($"Максимальная стоимость заказа при экспресс-перевозке {MaximumAmountEur:0.############################}{Currency.Eur.GetSymbol()} с учётом резерва {ExchangeRateReservePercent:0.############################}% на изменение курса");
+    public static string CreationExceededMessage => FormattableString.Invariant($"Общая стоимость товаров в заказе не более {MaximumAmountEur:0.############################}{Currency.Eur.GetSymbol()}");
 
     public Task<OrderLimitRatePair?> GetPairAsync(CancellationToken cancellationToken)
         => OperationLogging.RunAsync(logger, $"{typeof(OrderLimitService).FullName}.{nameof(GetPairAsync)}",
@@ -48,8 +49,9 @@ public sealed class OrderLimitService(AppDbContext database, TimeProvider timePr
     internal static OrderLimitCheckDto ToDto(OrderLimitRatePair? pair)
         => pair?.ToDto() ?? new(OrderLimitService.MaximumAmountEur, Currency.Eur, false, null, null);
 
-    internal static OrderProductLimitsDto Limits(OrderLimitRatePair? pair)
-        => new(1, 4, 1, 200, 500, 200, 200, 2000, Currency.Usd, 99999999.99m, 2, ToDto(pair));
+    internal static OrderProductLimitsDto Limits(OrderLimitRatePair? pair, bool forCreation = false)
+        => new(1, 4, 1, 200, 500, 200, 200, 2000, Currency.Usd, 99999999.99m, 2,
+            ToDto(pair) with { ExceededMessage = forCreation ? CreationExceededMessage : ExceededMessage });
 
     internal static OrderLimitRatePair? Validate(OrderProductDto product, OrderLimitRatePair? pair)
     {
